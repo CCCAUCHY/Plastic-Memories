@@ -241,10 +241,10 @@ Plastic Memories 的原则是**以可靠回溯替代记忆存储**：
 
 Agent 的轨迹管理能力存在明显的相变临界点：
 
-* **亚临界状态**：GC 能力不足 $\rightarrow$ 上下文噪音累积 $\rightarrow$ 推理与判断劣化 $\rightarrow$ 轨迹失控 $\rightarrow$ 恶性循环。
+* **亚临界状态**：GC 能力不足 $\rightarrow$ 上下文噪声累积 $\rightarrow$ 推理与判断劣化 $\rightarrow$ 轨迹失控 $\rightarrow$ 恶性循环。
 * **超临界状态**：具备基础 GC 能力 $\rightarrow$ 维持低熵工作面 $\rightarrow$ 保持高置信推理 $\rightarrow$ 决策合理 $\rightarrow$ 维持健康循环。
 
-跨越阈值后，工作量的累加不再是长程 Agent 退化的主要诱因。系统只因任务本身的固有复杂度而受限，不再因自产生的历史噪音而自溃。
+跨越阈值后，工作量的累加不再是长程 Agent 退化的主要诱因。系统只因任务本身的固有复杂度而受限，不再因自产生的历史噪声而自溃。
 
 ### 4. 优雅退化（Graceful Degradation）
 
@@ -257,7 +257,7 @@ Plastic Memories 是一个**轨迹质量控制层**，而非底层执行的前�
 ```text
 会话启动 ──► 任务执行 ──► STABILIZE（沉淀当前关键状态）
                │     │
-               │     ├──► HIDE（剪枝非关键噪音）
+               │     ├──► HIDE（剪枝非关键噪声）
                │     ├──► INSPECT / REHYDRATE（回溯与物化旧知）
                │     └──► FORK_BACK（探测偏离时回退分叉）
                ▼
