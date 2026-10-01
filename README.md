@@ -1,3 +1,5 @@
+First draft 初稿
+
 # Plastic Memories
 
 > A DSH plugin for maintaining a clean, reversible, model-facing context surface over a persistent session trace.
