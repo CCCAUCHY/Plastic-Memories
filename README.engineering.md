@@ -52,3 +52,8 @@ See LICENSE.
 
 Internal handover/process documents and the real session-log fixtures used by the test-suite are intentionally not published.
 To run the tests locally, provide your own session exports under pm-h0/fixtures/ with the same file names.
+
+## Prebuilt package
+
+The installable tarball is committed under dist/ (link/staged installs are local-only and not published).
+    dsh plugin --profile <profile> add file:$PWD/dist/dsh-plugin-plastic-memories-h0-0.17.1.tgz

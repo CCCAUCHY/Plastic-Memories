@@ -4,11 +4,11 @@
 .env.*
 *.token
 # build / install artifacts
+# 只提交打包产物（.tgz）；staged/link 版与本地目录不提交
+dist/*.map
 node_modules/
-dist/
 staged/
 .work/
-*.tgz
 # real session logs & exports (privacy)
 pm-h0/fixtures/
 会话日志原件/

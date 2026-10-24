@@ -52,3 +52,8 @@ pm-h0/trajectory-vendor.js 是 DSH @deepseek-ai/dsh-client-ui-trajectory 客户�
 
 内部交接/过程文档，以及测试套件使用的真实会话日志夹具，均有意不公开。
 如需在本地跑测试，请把自己的会话导出放到 pm-h0/fixtures/ 下，并使用同名文件。
+
+## 预构建安装包
+
+可直接安装的 tgz 已提交在 dist/ 下（link/staged 安装方式属于本地开发，不发布）。
+    dsh plugin --profile <profile> add file:$PWD/dist/dsh-plugin-plastic-memories-h0-0.17.1.tgz
