@@ -1,0 +1,79 @@
+{
+  "name": "dsh-plugin-plastic-memories-h0",
+  "version": "0.17.1",
+  "description": "Plastic Memories — H0 route: plastic memory projection over DSH surfaceOp",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./markers": "./markers.js",
+    "./locale/*.json": "./locale/*.json",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "commands.js",
+    "generations.js",
+    "engine.js",
+    "coords.js",
+    "grouping.js",
+    "cookie.js",
+    "spans.js",
+    "plasticize.js",
+    "preview.js",
+    "retrospect.js",
+    "schema.js",
+    "markers.js",
+    "cordis.patch.yml",
+    "presets/*.yml",
+    "locale/*.json"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": [
+        "./cordis.patch.yml",
+        "./presets/pm.patch.yml"
+      ]
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-renderer",
+        "@deepseek-ai/dsh-client-ui-session"
+      ]
+    }
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "cordis",
+    "context-management",
+    "plastic-memories"
+  ],
+  "engines": {
+    "node": ">=22",
+    "dsh": ">=0.2.0-rc.2 <0.3.0-0"
+  },
+  "license": "MIT",
+  "scripts": {
+    "test": "node selftest.mjs && node integration.mjs && node livetest.mjs && node hooks.mjs && node ptctest.mjs && node multicall.mjs && node balanced.mjs && node persist.mjs && node zeroanchor.mjs && node groupingtest.mjs && node cookietest.mjs && node autohide.mjs && node uitest.mjs && node diffcheck.mjs && node contexttest.mjs && node atomicity.mjs && node versioncheck.mjs",
+    "test:selftest": "node selftest.mjs",
+    "test:integration": "node integration.mjs",
+    "test:livetest": "node livetest.mjs",
+    "test:hooks": "node hooks.mjs",
+    "test:ptctest": "node ptctest.mjs",
+    "test:multicall": "node multicall.mjs",
+    "test:version": "node versioncheck.mjs",
+    "test:persist": "node persist.mjs",
+    "test:balanced": "node balanced.mjs",
+    "test:autohide": "node autohide.mjs",
+    "test:cookie": "node cookietest.mjs",
+    "test:ui": "node uitest.mjs",
+    "build:client": "node build-client.mjs",
+    "test:diff": "node diffcheck.mjs"
+  }
+}

@@ -1,0 +1,22 @@
+# secrets & local state
+.secrets/
+.env
+.env.*
+*.token
+# build / install artifacts
+node_modules/
+dist/
+staged/
+.work/
+*.tgz
+# real session logs & exports (privacy)
+pm-h0/fixtures/
+会话日志原件/
+交接日志/
+*.zip
+*.jsonl
+# internal handover / process docs
+H0-*.md
+pm-h0/CHANGELOG.md
+# OS
+.DS_Store

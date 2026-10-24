@@ -1,0 +1,21 @@
+# 临时目录（纪律：临时文件落在工作区内的 .work/）
+.work/
+# 依赖
+node_modules/
+# 杂项
+*.log
+.DS_Store
+
+# 本机专用的同步脚本（指向加载侧工作区的绝对路径），不属于插件
+sync-to-staged.sh
+
+# 本地密钥与构建产物
+.secrets/
+.env
+.env.*
+*.token
+github-token
+node_modules/
+dist/
+staged/
+.work/

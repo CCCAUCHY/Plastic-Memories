@@ -1,0 +1,19 @@
+# Plastic Memories (H0) — bundle 级 patch：**只挂一个 UI 宿主行**。
+#
+# 插件本体（工具 + 命令 + 投影）挂在 presets/pm.patch.yml 的 plugins 列表里，
+# 因此只有 PM 会话模式加载它 —— PM 必须是会话内唯一 surface 改写者，
+# 其他模式（ptc 等带自动压缩）连工具 schema 都不该出现。
+#
+# 那这里为什么还有一行？因为 web 客户端**按 Loader 里出现的包**发现 client 半身
+# （dsh-client-modules：扫描宿主 Loader 的 entry，读包 manifest 的 dsh.client）。
+# preset 里的行要等某个 PM 会话挂载后才出现；页面首次加载时可能还没有，
+# 侧边栏入口就注册不上。所以这里留一个**只做两件事**的行：
+#   - 注册世代上下文投影（侧边栏读的数据）；
+#   - 让本包在启动时就出现在 Loader 里 → 浏览器能发现并加载 client.js。
+# 它**不**注册工具、**不**注册命令、**不**改写任何 surface（config.uiHost=true
+# 让 index.js 早退，见 apply()）。
+- insert:
+    - id: plastic-memories-ui
+      name: dsh-plugin-plastic-memories-h0
+      config:
+        uiHost: true
