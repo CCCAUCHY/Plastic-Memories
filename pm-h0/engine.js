@@ -366,6 +366,20 @@ export function safetyZoneState(session) {
   return { locks, stale };
 }
 
+/** 取一条消息的可见文本（用于孤立点/边界文本锚定）。 */
+function messageTextAt(session, seq) {
+  const event = session.eventAt(seq);
+  const message = event?.data?.message ?? event?.data;
+  const blocks = Array.isArray(message?.content) ? message.content : [];
+  return blocks.map((block) => (typeof block?.text === 'string' ? block.text : '')).join(' ').replace(/\s+/g, ' ').trim();
+}
+
+/** 文本锚：前 N / 后 N 字符；过短则整体引用。 */
+function textSnippet(text, size = 16) {
+  if (text.length <= size * 2) return text;
+  return text.slice(0, size) + '…' + text.slice(-size);
+}
+
 /** 当前安全区（只读快照）。 */
 export function lockedSeqs(session) {
   return safetyZoneState(session).locks;
@@ -407,17 +421,43 @@ export function safetyZoneIntervals(session, locks) {
     let after;
     for (let index = left; index >= 0; index -= 1) if (cookieAt.has(index)) { before = { index, number: cookieAt.get(index) }; break; }
     for (let index = right; index < nodes.length; index += 1) if (cookieAt.has(index)) { after = { index, number: cookieAt.get(index) }; break; }
-    if (before !== undefined && after !== undefined) {
-      const leftBracket = before.index === left ? '[' : '(';
-      const rightBracket = after.index === right ? ']' : ')';
-      parts.push(leftBracket + 'cookie ' + String(before.number) + ', cookie ' + String(after.number) + rightBracket);
-    } else if (before !== undefined) {
-      parts.push('cookie ' + String(before.number) + ' 之后到结尾');
-    } else if (after !== undefined) {
-      parts.push('开头到 cookie ' + String(after.number));
-    } else {
-      parts.push('开头到结尾');
+    if (left === right) {
+      // 孤立点：cookie 无法表达单条消息，用文本锚（前/后 N 字符）。
+      const snippet = textSnippet(messageTextAt(session, nodes[left]));
+      const label = snippet.length > 0 ? '孤立消息「' + snippet + '」' : '无文本的孤立消息';
+      if (before !== undefined && after !== undefined) {
+        parts.push('cookie ' + String(before.number) + ' 与 cookie ' + String(after.number) + ' 之间，' + label);
+      } else if (before !== undefined) {
+        parts.push('cookie ' + String(before.number) + ' 之后，' + label);
+      } else if (after !== undefined) {
+        parts.push('cookie ' + String(after.number) + ' 之前，' + label);
+      } else {
+        parts.push(label);
+      }
+      continue;
     }
+    const leftBracket = before !== undefined && before.index === left ? '[' : '(';
+    const rightBracket = after !== undefined && after.index === right ? ']' : ')';
+    let zone;
+    if (before !== undefined && after !== undefined) {
+      zone = leftBracket + 'cookie ' + String(before.number) + ', cookie ' + String(after.number) + rightBracket;
+    } else if (before !== undefined) {
+      zone = 'cookie ' + String(before.number) + ' 之后到结尾';
+    } else if (after !== undefined) {
+      zone = '开头到 cookie ' + String(after.number);
+    } else {
+      zone = '开头到结尾';
+    }
+    // 两端若不是 cookie 边界，用文本锚注明真实起止，避免把中间的未锁定消息也读成锁定。
+    if (leftBracket === '(') {
+      const text = textSnippet(messageTextAt(session, nodes[left]));
+      if (text.length > 0) zone += '；左端「' + text + '」';
+    }
+    if (rightBracket === ')') {
+      const text = textSnippet(messageTextAt(session, nodes[right]));
+      if (text.length > 0) zone += '；右端「' + text + '」';
+    }
+    parts.push(zone);
   }
   return parts.join('；');
 }

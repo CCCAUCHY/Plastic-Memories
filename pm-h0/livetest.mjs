@@ -204,6 +204,7 @@ console.log(NL + '⑥.8 all / prelock / lock_this 与区间描述');
   await new Promise((resolve) => setTimeout(resolve, 0));
   const replacement = s.snapshotEvents().find((event) => event.surfaceOp?.op === 'replace' && event.data?.message?.source?.op === 'stabilize');
   ok(replacement !== undefined && lockedSeqs(s).has(replacement.seq), 'lock_this 把替代文本自身纳入安全区', String(replacement?.seq));
+  ok(safetyZoneIntervals(s).includes('孤立消息'), '孤立锁定点用文本锚描述', safetyZoneIntervals(s).slice(0, 80));
 }
 
 console.log(NL + '⑦ retrospect：context 参数在隐藏命中上扩大输出');
