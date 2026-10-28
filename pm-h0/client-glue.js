@@ -490,12 +490,27 @@ window.__ModuleLoader__.load({
 
     /** 正文前的差异徽标：本代替代消息 = 已塑形（粉）；将被下一代覆盖 = 被塑形（反色）。 */
     /** 正文前的差异徽标：被塑形（反色，跳下一代）排在已塑形（粉，跳上一代）之前。 */
+    /** 安全区徽标：只在最新世代显示，位置排在差异徽标之后。 */
+    function safetyTag(cell, t) {
+      const state = activeState;
+      if (state === undefined || state.data === undefined || state.data === null) return null;
+      const safety = Array.isArray(state.data.safety) ? state.data.safety : [];
+      if (safety.length === 0) return null;
+      if (cell === undefined || cell === null || typeof cell.sourceSeq !== 'number') return null;
+      const current = Number.isFinite(Number(state.data.current)) ? Number(state.data.current) : 0;
+      const gen = effectiveGeneration(state);
+      if (gen !== current) return null;
+      if (!safety.includes(cell.sourceSeq)) return null;
+      return h('span', {
+        className: 'pm-diff-badge pm-safety-badge',
+        title: '该消息位于安全区：不能被 plasticize 改写',
+      }, t === undefined ? '安全区' : t('pm.safeZone'));
+    }
+    /** 正文前的徽标：差异（被塑形/已塑形）在前，安全区在后。 */
     function diffNativeTag(cell, t) {
       if (cell === undefined || cell === null) return null;
-      // 被塑形（跳下一代）在前，已塑形（跳上一代）在后；两者都是隐式唯一配对。
       const marks = diffMarksOf(cell);
-      if (marks.length === 0) return null;
-      return h(React.Fragment, null, ...marks.map((mark, index) => h('button', {
+      const tags = marks.map((mark, index) => h('button', {
         key: mark.kind + String(index),
         type: 'button',
         className: mark.kind === 'reshaping' ? 'pm-diff-badge pm-diff-badge-reshaping' : 'pm-diff-badge pm-diff-badge-reshaped',
@@ -505,7 +520,10 @@ window.__ModuleLoader__.load({
           event.stopPropagation();
           jumpDiff(mark, event.currentTarget);
         },
-      }, mark.kind === 'reshaping' ? (t === undefined ? '被塑形' : t('pm.reshaping')) : (t === undefined ? '已塑形' : t('pm.reshaped')))));
+      }, mark.kind === 'reshaping' ? (t === undefined ? '被塑形' : t('pm.reshaping')) : (t === undefined ? '已塑形' : t('pm.reshaped'))));
+      const safety = safetyTag(cell, t);
+      if (tags.length === 0 && safety === null) return null;
+      return h(React.Fragment, null, ...tags, ...(safety === null ? [] : [safety]));
     }
     const PM_UI_CSS = [
       'div:has(> table[data-scroll-ready="true"]){padding-bottom:calc(var(--dsh-trajectory-bottom-clearance,0px) + 58vh)!important}',
@@ -514,6 +532,7 @@ window.__ModuleLoader__.load({
       '.pm-diff-badge{box-sizing:border-box;flex:none;margin-right:6px;height:19px;padding:0 5px;border:0;border-radius:var(--dsw-radius-xs);font-size:10px;font-weight:650;letter-spacing:.035em;line-height:16px;display:inline-flex;align-items:center;cursor:pointer}',
       '.pm-diff-badge-reshaped{color:#C64F91;background:#FCE7F3}',
       '.pm-diff-badge-reshaping{color:#FCE7F3;background:#C64F91}',
+      '.pm-diff-badge.pm-safety-badge{color:#B42318;background:#FEE4E2;cursor:default}',
       '.pm-reshaped-tag{background:transparent!important;border-color:transparent!important;padding:0!important;height:auto!important;min-width:0!important}',
       '.pm-reshaped-static{color:#C64F91;background:#FCE7F3;border-radius:var(--dsw-radius-xs);display:inline-flex;align-items:center;height:19px;padding:0 5px;font-size:10px;font-weight:650;line-height:16px}',
     ].join(String.fromCharCode(10));

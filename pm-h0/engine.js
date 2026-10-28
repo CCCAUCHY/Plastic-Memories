@@ -634,7 +634,7 @@ function applyDeclarations(session, declarations, open, state, options = {}) {
       const devMessage = {
         id: messageId,
         role: 'developer',
-        content: [{ type: 'text', text: isHole ? ' ' : rawText }],
+        content: isHole ? [] : [{ type: 'text', text: rawText }],
         source,
       };
       const writtenEvent = open !== undefined
@@ -669,7 +669,7 @@ function applyDeclarations(session, declarations, open, state, options = {}) {
           // 确定性 id：同一个 callId + 同一段历史 → 同一个 node id，日志可对账、可重放。
           id: 'pm-auto-hide-' + String(target.callId) + '-' + String(target.shadowed[0]),
           role: 'developer',
-          content: [{ type: 'text', text: ' ' }],
+          content: [],
           source,
         },
       }, {
@@ -950,7 +950,7 @@ export async function flushUserOperations(session, openStep, logger) {
       const isHole = group.text.length === 0;
       const callId = 'pm-user-' + String(session.seq) + '-' + String(projections);
       const source = pmSource({ op: isHole ? 'hide' : 'stabilize', callId, generation, logicalGeneration: base, refs: [...group.seqs] });
-      const message = { id: 'pm-surface-' + callId, role: 'developer', content: [{ type: 'text', text: isHole ? ' ' : group.text }], source };
+      const message = { id: 'pm-surface-' + callId, role: 'developer', content: isHole ? [] : [{ type: 'text', text: group.text }], source };
       const mark = { surfaceOp: { op: 'replace', startSeq: group.seqs[0], endSeq: group.seqs[group.seqs.length - 1] }, sourceEventSeqs: [...group.seqs] };
       if (openStep !== undefined && openStep !== null) session.append('developer/message', { turn: openStep.turn, step: openStep.step, message }, mark);
       else session.append('developer/message', { message }, mark);

@@ -152,11 +152,12 @@ console.log(NL + '⑥ C3 重入 + cookie 幂等（队尾已是 cookie 就不再�
   await fire(agentOf(s));
   ok(s.seq === afterUser + 1, '队尾是普通 user 消息 → 边界补一个 cookie', String(s.seq - afterUser));
   const last = [...s.surface.nodes].at(-1);
-  ok(s.eventAt(last)?.data?.source?.kind === 'pm-cookie', '补上的确实是 cookie');
+  ok((s.eventAt(last)?.data?.message ?? s.eventAt(last)?.data)?.source?.kind === 'pm-cookie', '补上的确实是 cookie');
   const cookieEvent = s.eventAt(last);
-  ok(cookieEvent?.data?.id === 'pm-cookie-' + String(cookieEvent?.data?.source?.id),
+  const devCookie = cookieEvent?.data?.message ?? cookieEvent?.data;
+  ok(devCookie?.id === 'pm-cookie-' + String(devCookie?.source?.id),
     'cookie 的 message id 是确定性的 pm-cookie-<n>', String(cookieEvent?.data?.id));
-  ok(cookieEvent?.data?.content?.[0]?.text === cookieText(cookieEvent?.data?.source?.id),
+  ok(devCookie?.content?.[0]?.text === cookieText(devCookie?.source?.id),
     'cookie 正文是新样式 [Plastic-Memories][cookie][N]', String(cookieEvent?.data?.content?.[0]?.text));
 }
 
@@ -221,7 +222,7 @@ console.log(NL + '⑨ 自动补 cookie 之后，日志仍通过宿主 released-v
   t.append('turn/end', { turn: 2, reason: { kind: 'completed' } });
   await fireTurnStopping(agentOf(t));
   const tailSeq = t.seq - 1;
-  ok(t.eventAt(tailSeq)?.data?.source?.kind === 'pm-cookie', 'turn 结束后补上了 cookie', String(t.eventAt(tailSeq)?.type));
+  ok((t.eventAt(tailSeq)?.data?.message ?? t.eventAt(tailSeq)?.data)?.source?.kind === 'pm-cookie', 'turn 结束后补上了 cookie', String(t.eventAt(tailSeq)?.type));
   ok(check(t) === undefined, 'turn 末补 cookie 之后仍合法', String(check(t)));
 }
 

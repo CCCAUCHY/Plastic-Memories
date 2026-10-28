@@ -151,5 +151,7 @@ export function applyExtraPatches(patched) {
   if (text.split(pmPager).length - 1 === 1) text = text.split(pmPager).join(pmPagerRepl);
   text = text.split('"pm.hidden": "（已隐藏）",').join('"pm.hidden": "（已隐藏）","pm.loadAll": "加载全部","pm.loading": "加载中…",');
   text = text.split('"pm.hidden": "(Hidden)",').join('"pm.hidden": "(Hidden)","pm.loadAll": "Load all","pm.loading": "Loading…",');
+  text = text.split('"pm.hiddenManual": "（主动隐藏）",').join('"pm.hiddenManual": "（主动隐藏）","pm.safeZone": "安全区",');
+  text = text.split('"pm.hiddenManual": "(Manually hidden)",').join('"pm.hiddenManual": "(Manually hidden)","pm.safeZone": "Safety zone",');
   return text;
 }

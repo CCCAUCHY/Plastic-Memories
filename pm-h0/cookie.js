@@ -97,7 +97,9 @@ export function parseCookieText(text) {
  * @returns {boolean} 结果。
  */
 export function isCookie(event) {
-  return event?.type === 'user/message' && event.data?.source?.kind === COOKIE_KIND;
+  if (event?.type !== 'user/message' && event?.type !== 'developer/message') return false;
+  const message = event.type === 'developer/message' ? event.data?.message : event.data;
+  return message?.source?.kind === COOKIE_KIND;
 }
 
 /**
@@ -110,9 +112,10 @@ export function isCookie(event) {
  */
 export function cookieIdOf(event) {
   if (!isCookie(event)) return undefined;
-  const src = event.data.source;
+  const message = event.type === 'developer/message' ? event.data?.message : event.data;
+  const src = message?.source;
   if (typeof src.id === 'number' && Number.isSafeInteger(src.id) && src.id > 0) return src.id;
-  const blocks = event.data.content;
+  const blocks = message?.content;
   if (Array.isArray(blocks)) {
     for (const block of blocks) {
       if (typeof block?.text === 'string') {
@@ -199,10 +202,10 @@ export function maxVisibleCookieId(view) {
  * @param {number} id - cookie 编号（1 起）。
  * @returns {object} user/message 的消息体。
  */
-export function cookieMessage(id) {
+export function cookieMessage(id, role = 'user') {
   return {
     id: 'pm-cookie-' + String(id),
-    role: 'user',
+    role,
     content: [{ type: 'text', text: cookieText(id) }],
     source: { kind: COOKIE_KIND, v: 1, id },
   };

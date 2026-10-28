@@ -16,7 +16,7 @@ import { GENERATIONS_KEY, generationProjection } from './generations.js';
 import { stepGroup, surfaceNodes } from './coords.js';
 import { resolveOps, previewOf, findLastPendingSet, normalizeOp } from './plasticize.js';
 import { retrospect } from './retrospect.js';
-import { COOKIE_KIND, bracketUserMessages, cookieText, nextCookieId, planCookie } from './cookie.js';
+import { COOKIE_KIND, bracketUserMessages, cookieMessage, cookieText, nextCookieId, planCookie } from './cookie.js';
 import { openSetProfile } from './grouping.js';
 import { compileArgsValidator, ToolArgsError } from './schema.js';
 
@@ -229,20 +229,31 @@ export function apply(ctx, config) {
    *
    * cookie 不标记任何东西 —— 它就是流里的一个可见锚点。
    */
-  const insertCookie = (session) => {
+  const insertCookie = (session, payload, role = 'developer') => {
     if (session === undefined || session === null) return 0;
     try {
       const plan = planCookie(session);
       if (plan === undefined) return 0;
       const id = nextCookieId(session);
-      session.append('user/message', {
-        // 确定性 node id（不用随机 UUID）：cookie 的编号本身已经唯一，
-        // 消息 id 跟着它走，日志因此可对账、可重放。
-        id: 'pm-cookie-' + String(id),
-        role: 'user',
-        content: [{ type: 'text', text: cookieText(id) }],
-        source: { kind: COOKIE_KIND, v: 1, id },
-      }, { surfaceOp: 'append' });
+      if (role === 'user') {
+        session.append('user/message', cookieMessage(id), { surfaceOp: 'append' });
+        return 1;
+      }
+      const message = cookieMessage(id, 'developer');
+      let turn = Number.isSafeInteger(payload?.turn) ? payload.turn : undefined;
+      let step = Number.isSafeInteger(payload?.step) ? payload.step : undefined;
+      if (turn === undefined || step === undefined) {
+        const events = session.snapshotEvents();
+        for (let index = events.length - 1; index >= 0; index -= 1) {
+          const event = events[index];
+          if (turn === undefined && event.type === 'turn/start' && Number.isSafeInteger(event.data?.turn)) turn = event.data.turn;
+          if (step === undefined && event.type === 'step/start' && Number.isSafeInteger(event.data?.step)) step = event.data.step;
+          if (turn !== undefined && step !== undefined) break;
+        }
+      }
+      if (!Number.isSafeInteger(turn)) return 0;
+      if (!Number.isSafeInteger(step)) step = 0;
+      session.append('developer/message', { turn, step, message }, { surfaceOp: 'append' });
       return 1;
     } catch (error) {
       ctx.logger?.warn?.('[pm-h0] 插入 cookie 失败（已降级）：' + String(error?.message ?? error));
@@ -254,7 +265,7 @@ export function apply(ctx, config) {
     'agent/request',
     async (payload, next) => {
       await safeFlush(payload?.agent?.session, 'request', payload);
-      insertCookie(payload?.agent?.session);
+      insertCookie(payload?.agent?.session, payload);
       checkSurfaceConsistency(payload?.agent?.session);
       return next();
     },
@@ -264,7 +275,7 @@ export function apply(ctx, config) {
   // turn 末的兜底：只挂 agent/request 会漏掉「模型在本 turn 最后一个动作里调用 PM」。
   ctx.on('agent/turn-stopping', (payload) => {
     void safeFlush(payload?.agent?.session, 'turn-stopping', payload);
-    insertCookie(payload?.agent?.session);
+    insertCookie(payload?.agent?.session, payload, 'user');
     checkSurfaceConsistency(payload?.agent?.session);
   });
 

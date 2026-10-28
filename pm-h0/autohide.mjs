@@ -54,7 +54,7 @@ console.log(NL + '① execute 成功后：成功的 set 步骤组被自动隐藏
   ok(explicitReps(s).length === 1, '显式投影 1 条', String(explicitReps(s).length));
   const autos = autoReps(s);
   const autoMsg = autos[0] === undefined ? undefined : (autos[0].data?.message ?? autos[0].data);
-  ok(autos.length === 1 && (autos[0].type === 'user/message' || autos[0].type === 'developer/message') && String(autoMsg?.content?.[0]?.text ?? '') === ' ', '自动隐藏写的是空格替代', autos[0] === undefined ? '0' : String(autos[0].type) + '|' + String(autoMsg?.content?.[0]?.text ?? ''));
+  ok(autos.length === 1 && autos[0].type === 'developer/message' && Array.isArray(autoMsg?.content) && autoMsg.content.length === 0, '自动隐藏写的是空 developer 消息', autos[0] === undefined ? '0' : String(autos[0].type));
   ok(noteOf(autos[0]) === 'auto-hide:set', '原因标记为 set', String(noteOf(autos[0])));
   ok(autos[0].sourceEventSeqs.includes(setSeq), '遮蔽的正是 set 那一步的调用消息');
   ok(!s.surface.nodes.includes(setSeq), 'set 消息已离开工作面');

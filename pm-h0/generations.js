@@ -31,7 +31,7 @@
 export const GENERATIONS_KEY = 'pmGenerations';
 
 /** 状态版本：字段或 fold 语义变了就 bump（持久化缓存据此丢弃旧行）。 */
-export const GENERATIONS_STATE_VERSION = 2;
+export const GENERATIONS_STATE_VERSION = 3;
 
 /**
  * 鸭子类型的 schema 替身。
@@ -135,7 +135,7 @@ export function initState() {
   // raw  = **未投影时**的原始工作面节点（全部 append 事件，按 seq）；
   // reps = 每次替换的历史：{ gen, shadowed:[被遮 seq], repl: 替代节点 seq }。
   // 客户端据此把每一代拼成「可见行 + 遮罩块」：遮罩里显示替代文本，可逐层展开。
-  return { gen: 0, asOfSeq: -1, seqs: [], meta: {}, gens: [], raw: [], reps: [] };
+  return { gen: 0, asOfSeq: -1, seqs: [], meta: {}, gens: [], raw: [], reps: [], safety: [] };
 }
 
 /**
@@ -145,6 +145,21 @@ export function initState() {
  * @returns {object} 下一状态。
  */
 export function applyEvent(state, event) {
+  if (event?.type === 'plugin:plastic-memories/locks') {
+    const data = event.data ?? {};
+    const set = new Set(Array.isArray(state.safety) ? state.safety : []);
+    let seqs = [];
+    if (Array.isArray(data.seqs)) seqs = data.seqs;
+    else if (Array.isArray(data.add)) seqs = data.add;
+    else if (data.mode === 'all') seqs = state.seqs;
+    const op = data.op === 'unlock' ? 'unlock' : 'lock';
+    for (const seq of seqs) {
+      if (!Number.isSafeInteger(seq)) continue;
+      if (op === 'unlock') set.delete(seq); else set.add(seq);
+    }
+    return { ...state, safety: [...set].sort((left, right) => left - right) };
+  }
+
   const surfaceOp = event?.surfaceOp;
   if (surfaceOp === 'append') {
     if (!MESSAGE_EVENT_TYPES.has(event.type)) return state;
@@ -195,6 +210,7 @@ export function viewOf(state) {
     meta: state.meta,
     raw: state.raw,
     replacements: state.reps,
+    safety: Array.isArray(state.safety) ? state.safety : [],
   };
 }
 
