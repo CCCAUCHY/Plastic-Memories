@@ -1,134 +1,32 @@
-# Agent preset pm：以 PTC 模式为基础，去掉压缩组，并在系统提示词里写入 PM 协议。
+# Agent preset pm：最新 PTC 基线，去掉压缩组，并挂载 Plastic Memories 插件。
 #
 # 与 ptc 的结构差异只有两处：
-#   1. 删除 compaction 组（compaction-basic / command-compact / tool-result-pruner）。
-#      PM 应是会话内唯一的 surface 改写者——压缩插件的范围会吸收 PM 的墓碑与摘要节点，
-#      两者同时挂载会互相破坏（可行性报告 §5.14 与包内 README 的「已知边界」）。
-#   2. persona.suffix 追加 PM 协议正文。persona 是作用域限定的行，挂在 preset 里只影响该会话；
-#      它的 suffix 落在 order 10200（工具目录之后），正是「怎么做事」该在的位置。
+#   1. 删除 compaction 组（PM 是会话内唯一的 surface 改写者，压缩会与它争用同一个 surface）；
+#   2. plugins 里增加 dsh-plugin-plastic-memories-h0（PM 工具）。
 #
-# 注意：PTC 呈现是**按作用域整体选择**的（native | ptc | both，且一个作用域只能选一种），
-# DSH 目前**没有**「把某个工具豁免出折叠」的机制。所以在本 preset 下，plasticize / retrospect
-# 是由模型在 run_code 里通过 tools.* 调用的。若要让它们可以**直接**调用（run_code 只专注工作环境），
-# 把下面的 tool-presentation.mode 从 ptc 改成 both —— 代价是整个工具目录也会原生暴露，
-# PTC 省 prompt 的收益就没有了。
-#
-# PM 插件**只挂在这个 preset 里**，不再挂 profile 级 bundle：
-#   - 其他会话模式（ptc 等）带自动压缩 —— 压缩插件与 PM 会争用同一个 surface，必须在结构上隔离；
-#   - preset 的 plugins 挂载在**会话作用域**（scoped ctx），因此 plasticize / retrospect
-#     只在该模式下的会话里可见（工具注册按作用域隔离：scoped tools shadow globals，
-#     其他会话的 wireSchemas 里根本不会出现它们）。
+# PM 工具的用法说明写在工具自身的 description 里（与 PTC 的 run_code 工具同样式），
+# 因此 persona 不再注入长篇协议，保持与官方模式一致的系统提示词形态。
 - insert:
     - id: preset-pm
       name: '@deepseek-ai/dsh-agent-preset'
       config:
         id: pm
-        # preset 自己的展示名与说明（Config 里 name/description 是可选字段，官方 4 个 preset 都没填，
-        # 所以 UI 里显示的是 fallback）。把版本号写进名字：一眼就能看出加载的是不是新版，
-        # 不用再靠哈希对账。发版时同步改这里、提示词正文与 package.json 的 version，versioncheck.mjs 会守住一致性。
-        name: PM · 可塑记忆 v0.17.1
+        name: PM · 可塑记忆 v0.26.0
         description: >-
-          以 ptc 为基线，去掉压缩组，并把 PM 协议写进系统提示词。
+          以 ptc 为基线，去掉压缩组，并挂载 Plastic Memories 插件。
           模型可以主动改写自己过往的呈现方式：把已完成的工作压成结论、把无关段落隐去，底层轨迹一字不失（retrospect 可事后考古）。
         order: 5
         plugins:
           - id: persona
             name: '@deepseek-ai/dsh-persona'
             config:
-              suffix: |-
-                （PM 可塑记忆 v0.17.1）
-
-                你的上下文是可塑的。会话日志（Trajectory）一字不失；你能看到的是它的一个投影。
-                plasticize 改写的是这个投影——不是删除历史，而是改变它在当前上下文里的呈现方式。
-
-                两个工具：
-                - plasticize {ops, option}  唯一会改变投影的工具。每个 op 用 spans 选中若干区间，
-                  并把**最后一个**区间替换成 new_text（前面的区间全部隐藏 —— 一次调用就能清理不连续的几段）。
-                  option:"set" 只算预览、什么都不写；option:"execute" 落实。想先看看效果再决定，就先 set。
-                  **同一个 op 的 spans 没有方向**：两端自动排序，[3,4] 与 [4,3] 是同一个区间。
-                - retrospect {query, context, limit}  纯读，永不改动。**只查「已经看不见」的原文**
-                  （坐标 self - n）。当前世代 self 的东西你本来就看得见，不在查询范围 ——
-                  所以「要压缩眼前的东西」**不需要先查**，直接调 plasticize。
-                  它的用途是**事后考古**：很久以后真需要某个被隐去的细节时，去日志里翻出来。
-                  返回**完整原文，不截断**。
-
-                  ⚠️ 它**不是暂存区**。不要想「先压掉省上下文，需要时再 retrospect 取回」——
-                  取回的内容会**进入当前世代**，等于把它刚压掉的东西又放回来，那次投影就白做了。
-                  要压就得确认：这段以后**基本不会再需要**。
-
-                ## 怎么指认一段历史：cookie
-
-                你的上下文里会在每个边界后自动出现一行形如
-
-                    [Plastic-Memories][cookie][序号]
-
-                的消息 —— 那是 cookie，**内容无关的坐标**。序号按日志顺序自增，永不重复。
-                它不标记、不描述任何东西：它只是一个你**看得见**的锚点。
-                （只有这种带元数据标记的 user 消息才算 cookie；你在正文里引用这个样式、
-                  或者工具结果里出现同样的文字，都不会被当成锚点。）
-
-                写区间就用这些序号：
-
-                    "3"         仅端点：就是 3 号 cookie 那条消息
-                    "[3,4]"     闭区间：两端都含
-                    "(3,4)"     开区间：两端都不含
-                    "[3,4)"     半开半闭
-                    "(3,4]"     半开半闭
-                    "this"      本次 plasticize 调用所在的 assistant 消息 + 它的全部工具结果
-                    "[3,this]"  可以混用
-
-                - 区间是**数轴上的点集**，没有方向：两端自动排序。
-                - 开括号排除的是「那个端点的整体」；对 this 来说就是**整个 this 组**。
-                - 你看不见的编号（那条 cookie 已被投影遮蔽）会被明确拒绝 —— 用眼前看得见的编号。
-                - 想一次清理不连续的多段：一个 op 里写多个 spans，只有**最靠后**的那个会被 new_text 替换。
-
-                ## 工具块（你不需要操心）
-
-                底层结构里，一次工具调用和它的结果是**两条独立消息**，而且可能并发多个。
-                区间端点若落进这样的块中间，插件会把它滑到块边界 —— 你不可能留下孤儿调用或孤儿结果。
-                代价是：最终压掉的**可能比你字面写的多几条**。这是正常的，也是唯一合法的形态。
-
-                ## 自动隐藏
-
-                execute 成功时，插件会顺带为新世代隐藏两类纯噪音：
-                - 报错的 PM 调用（失败的那一步）
-                - 已经兑现的 plasticize(set) 预览
-
-                这两类不用你操心，也不该由你手写清理。
-                注意：它只会动**纯 PM 步骤** —— 那一步里若还有 bash / write 之类的工作成果，
-                绝不会连带隐藏（宁可留着噪音，也不毁掉你的工作）。
-
-                ## 替代文本就是结果（也是回执）
-
-                投影生效后，原位会出现你写的替代文本。看到它：
-                - 它就是那段工作的结论——直接用它继续，不要重做。
-                - **它同时就是执行回执**：用 `this` 的投影会把**你的调用消息和它的工具结果一起吞掉**，
-                  所以下一轮你看不到那条 tool result，只剩替代文本。**这是成功，不是失败**，
-                  不要再发一次同样的 plasticize 去「确认」。
-                - 不要为了确认再去 retrospect 它；那会让这次投影白做。
-                - 一个新世代若只看到替代文本、没有新任务，就应当结束，不要为了补全上下文再展开。
-
-                ## 工作规则
-
-                - **要不要清理、清理多少，由你决定。** 插件只把声明翻译成投影，不替你判断。
-                - 一个阶段有明确结论时，用 plasticize 把它压成一条结论，而不是留着原文。
-                - 投影发生在**提交边界**：plasticize 返回后，投影在下一次请求组装前生效。
-                - 被遮蔽的原文永远在日志里 —— 但 retrospect **是考古，不是暂存**。
-                  把它当「随时可撤销的暂存」，那次投影就白做了。
-
               prefix: You are a coding agent powered by the {{model}} model.
-          # PM 插件本体：挂在 preset 里 = 只在本模式下加载。
-          # 不要把这一行搬回 bundle 的 cordis.patch.yml —— 那会让所有会话模式都加载它。
-          - id: plastic-memories-h0
-            name: dsh-plugin-plastic-memories-h0
-            config:
-              trace: false
-              probeImports: false
-              autoHide: true
           - id: agent-instructions
             name: '@deepseek-ai/dsh-agent-instructions'
             config:
               maxBytes: 65536
+          - id: time-context
+            name: '@deepseek-ai/dsh-time-context'
           - id: tool-bash
             name: '@deepseek-ai/dsh-tool-bash'
             disabled: !!js process.platform === 'win32'
@@ -143,6 +41,8 @@
               sampleOverCapGlobResults: false
           - id: tool-jobs
             name: '@deepseek-ai/dsh-tool-jobs'
+          - id: tool-schedule
+            name: '@deepseek-ai/dsh-tool-schedule'
           - id: skill-filesystem
             name: '@deepseek-ai/dsh-skill-filesystem'
           - id: tool-skill
@@ -161,7 +61,7 @@
                 name: '@deepseek-ai/dsh-plan-mode'
                 config:
                   section: |
-                    You are in plan mode. Stay in plan mode until exit_plan_mode succeeds or the user switches the session mode. Imperative language to implement changes means plan the implementation, not execute it. A user's conversational agreement — including an answer confirming something you asked — approves nothing and does not end plan mode; fold the confirmed decision into the plan and submit it through exit_plan_mode.
+                    You are in plan mode. Stay in plan mode until the user approves your plan through exit_plan_mode or switches the session mode. Imperative language to implement changes means plan the implementation, not execute it. A user's conversational agreement — including an answer confirming something you asked — approves nothing and does not end plan mode; fold the confirmed decision into the plan and submit it through exit_plan_mode.
 
                     Explore first. Use non-mutating reads, searches, static analysis, and checks to ground the plan in the actual repository. Do not edit or write files, change configuration, run formatters or code generation that rewrites tracked files, commit, or otherwise carry out the plan. Prefer existing functions and patterns over new machinery.
 
@@ -188,29 +88,11 @@
                   provider: spawn
                   toolName: subagent
                   modelSelectionSettings: true
-                  backgroundMode: continuable
               - id: tool-subagent-fork
                 name: '@deepseek-ai/dsh-tool-subagent'
                 config:
                   provider: fork
                   toolName: subagent_fork
-                  backgroundMode: continuable
-              - id: tool-subagent-codex
-                name: '@deepseek-ai/dsh-tool-subagent'
-                disabled: true
-                config:
-                  provider: codex
-                  toolName: subagent_codex
-                  backgroundMode: one-shot
-                  maxDepth: provider-managed
-              - id: tool-subagent-claude-code
-                name: '@deepseek-ai/dsh-tool-subagent'
-                disabled: true
-                config:
-                  provider: claude-code
-                  toolName: subagent_claude_code
-                  backgroundMode: one-shot
-                  maxDepth: provider-managed
               - id: workflow-ptc
                 name: '@deepseek-ai/dsh-workflow-ptc'
                 disabled: true
@@ -219,12 +101,6 @@
               - id: tool-workflow
                 name: '@deepseek-ai/dsh-tool-workflow'
                 disabled: true
-              - id: tool-ralph
-                name: '@deepseek-ai/dsh-tool-ralph'
-                disabled: true
-                config:
-                  subagentProvider: spawn
-                  maxRounds: 64
           - id: tool-ask-user
             name: '@deepseek-ai/dsh-tool-ask-user'
           - id: tool-todo
@@ -236,6 +112,12 @@
             config:
               fetch: true
               searchTimeoutMs: 60000
+          - id: plastic-memories-h0
+            name: dsh-plugin-plastic-memories-h0
+            config:
+              trace: false
+              probeImports: false
+              autoHide: true
           - id: tool-presentation
             name: '@deepseek-ai/dsh-agent-tool-presentation'
             config:
@@ -244,4 +126,7 @@
             name: '@deepseek-ai/dsh-tool-present'
           - id: tool-plugin-manager
             name: '@deepseek-ai/dsh-plugin-manager/tools'
+            disabled: true
+          - id: tool-plugin-market
+            name: '@deepseek-ai/dsh-plugin-market/tools'
             disabled: true

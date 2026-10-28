@@ -30,8 +30,9 @@ const mk = () => {
   return s;
 };
 const reps = (s) => s.snapshotEvents().filter((e) => e.surfaceOp?.op === 'replace');
-const autoReps = (s) => reps(s).filter((e) => (e.data?.message?.source?.note ?? '').startsWith('auto-hide'));
-const explicitReps = (s) => reps(s).filter((e) => (e.data?.message?.source?.note ?? '').startsWith('auto-hide') === false);
+const autoReps = (s) => reps(s).filter((e) => ((e.data?.message?.source ?? e.data?.source)?.note ?? '').startsWith('auto-hide'));
+const explicitReps = (s) => reps(s).filter((e) => ((e.data?.message?.source ?? e.data?.source)?.note ?? '').startsWith('auto-hide') === false);
+const noteOf = (e) => (e.data?.message ?? e.data)?.source?.note;
 const step2 = (s) => { s.append('step/end', { turn: 2, step: 1 }); s.append('step/start', { turn: 2, step: 2 }); };
 const seqOfCall = (s, callId) => s.snapshotEvents()
   .find((e) => e.type === 'assistant/message' && e.data.message.content.some((b) => b.id === callId))?.seq;
@@ -52,8 +53,9 @@ console.log(NL + '① execute 成功后：成功的 set 步骤组被自动隐藏
   ok(r.auto === 1, '自动隐藏了 1 组', JSON.stringify(r));
   ok(explicitReps(s).length === 1, '显式投影 1 条', String(explicitReps(s).length));
   const autos = autoReps(s);
-  ok(autos.length === 1 && autos[0].type === 'developer/message', '自动隐藏写的是纯空洞', String(autos.length));
-  ok(autos[0].data.message.source.note === 'auto-hide:set', '原因标记为 set', String(autos[0].data.message.source.note));
+  const autoMsg = autos[0] === undefined ? undefined : (autos[0].data?.message ?? autos[0].data);
+  ok(autos.length === 1 && (autos[0].type === 'user/message' || autos[0].type === 'developer/message') && String(autoMsg?.content?.[0]?.text ?? '') === ' ', '自动隐藏写的是空格替代', autos[0] === undefined ? '0' : String(autos[0].type) + '|' + String(autoMsg?.content?.[0]?.text ?? ''));
+  ok(noteOf(autos[0]) === 'auto-hide:set', '原因标记为 set', String(noteOf(autos[0])));
   ok(autos[0].sourceEventSeqs.includes(setSeq), '遮蔽的正是 set 那一步的调用消息');
   ok(!s.surface.nodes.includes(setSeq), 'set 消息已离开工作面');
   ok(textOf(s).includes('⟨结论⟩'), '显式投影生效');
@@ -75,7 +77,7 @@ console.log(NL + '② 报错的 PM 步骤组，在下一次成功的 execute 时
   ok(r.applied === 1, '成功的 execute 落地', JSON.stringify(r));
   const autos = autoReps(s);
   ok(autos.length === 1, '自动隐藏了报错的那一组', String(autos.length));
-  ok(autos[0].data.message.source.note === 'auto-hide:error', '原因标记为 error', String(autos[0].data.message.source.note));
+  ok(noteOf(autos[0]) === 'auto-hide:error', '原因标记为 error', String(noteOf(autos[0])));
   ok(autos[0].sourceEventSeqs.includes(badSeq), '遮蔽的正是失败那一步的调用消息');
   ok(!s.surface.nodes.includes(badSeq), '失败消息已离开工作面');
 }
@@ -197,7 +199,7 @@ console.log(NL + '⑦ 待决的 set 预览**不能**被自动隐藏（真实事�
   const r2 = flush(s, { openStep: { turn: 2, step: 3 } }, quiet);
   ok(r2.applied >= 1 && r2.auto === 1, 'execute 兑现了待决 set，并顺手隐藏它', JSON.stringify(r2));
   const autos = autoReps(s);
-  ok(autos.length === 1 && autos[0].data.message.source.note === 'auto-hide:set', '此刻才隐藏该 set 组', String(autos.length));
+  ok(autos.length === 1 && noteOf(autos[0]) === 'auto-hide:set', '此刻才隐藏该 set 组', String(autos.length));
   ok(autos[0].sourceEventSeqs.includes(setSeq), '被隐藏的正是那个 set 调用');
   ok(!s.surface.nodes.includes(setSeq), 'set 组已离开工作面');
   ok(textOf(s).includes('⟨预览⑦⟩'), 'set 的区间也被兑现（替代文本进入工作面）', String(explicitReps(s).length));
@@ -225,7 +227,7 @@ console.log(NL + '⑧ 报错的 PM 步骤组：也要等**下一次成功 execut
   const r2 = flush(s, { openStep: { turn: 2, step: 3 } }, quiet);
   ok(r2.auto === 1, '成功 execute 之后才清理', JSON.stringify(r2));
   const autos = autoReps(s);
-  ok(autos.length === 1 && autos[0].data.message.source.note === 'auto-hide:error', '清理的是报错那一组', String(autos.length));
+  ok(autos.length === 1 && noteOf(autos[0]) === 'auto-hide:error', '清理的是报错那一组', String(autos.length));
   ok(autos[0].sourceEventSeqs.includes(badSeq), '遮蔽的正是报错的调用');
   ok(!s.surface.nodes.includes(badSeq), '报错调用已离开工作面');
 }

@@ -24,6 +24,7 @@
  */
 
 import { derivedMessage, messageText, surfaceNodes } from './coords.js';
+import { logicalGenerations } from './engine.js';
 
 const NL = String.fromCharCode(10);
 
@@ -34,14 +35,36 @@ const NL = String.fromCharCode(10);
  * @param {number} current - 当前世代号。
  * @returns {string} 形如 self - 1；找不到遮蔽者时返回 self - ?。
  */
-function generationLabelOf(session, seq, current) {
+/** 工具结果事件的文本（用于读取 execute 结果里的逻辑世代 marker）。 */
+function eventText(event) {
+  const message = event?.data?.message ?? event?.data;
+  const blocks = Array.isArray(message?.content) ? message.content : [];
+  return blocks.map((block) => (block !== null && typeof block === 'object' && typeof block.text === 'string' ? block.text : '')).join(String.fromCharCode(10));
+}
+
+function generationLabelOf(session, seq, info) {
   for (const event of session.snapshotEvents()) {
     const refs = event.sourceEventSeqs;
     if (!Array.isArray(refs) || !refs.includes(seq)) continue;
     const source = event.type === 'user/message' ? event.data?.source : event.data?.message?.source;
     if (source?.kind !== 'pm-surface') continue;
-    const gen = typeof source.generation === 'number' ? source.generation : 0;
-    return 'self - ' + Math.max(1, current - gen + 1);
+    const physical = info.physicalBySeq.get(event.seq) ?? (typeof source.generation === 'number' ? source.generation : 0);
+    const byCallId = info.byCallId;
+    let logical = typeof source.logicalGeneration === 'number' ? source.logicalGeneration : undefined;
+    if (logical === undefined) {
+      for (const candidate of [source.callId, ...(Array.isArray(source.consumed) ? source.consumed : [])]) {
+        if (typeof candidate === 'string' && byCallId.has(candidate)) { logical = byCallId.get(candidate); break; }
+      }
+    }
+    if (logical === undefined) {
+      // auto-hide 等没有 execute callId 的节点：归到它写入前最近一次成功 execute。
+      let count = 0;
+      for (const entry of info.executes) { if (entry.seq <= event.seq) count = entry.logical; else break; }
+      logical = count;
+    }
+    // self 严格等于当前逻辑世代号；self - k 严格等于命中内容所属的世代号。
+    const offset = Math.max(0, info.total - logical);
+    return 'self - ' + offset + '（逻辑 ' + logical + ' / 物理 ' + physical + '）';
   }
   return 'self - ?';
 }
@@ -61,7 +84,28 @@ export function retrospect(session, args) {
   const nodes = surfaceNodes(session);
   const visible = new Set(nodes);
   const events = session.snapshotEvents();
-  const current = session.surface.replaceGeneration;
+  const info = logicalGenerations(session);
+  info.byCallId = new Map(info.executes.map((entry) => [entry.callId, entry.logical]));
+  info.physicalBySeq = new Map();
+  let physicalCurrent = 0;
+  let logicalFromSource = -1;
+  for (const event of events) {
+    if (event.surfaceOp?.op !== 'replace') continue;
+    physicalCurrent += 1;
+    info.physicalBySeq.set(event.seq, physicalCurrent);
+    const source = event.type === 'user/message' ? event.data?.source : event.data?.message?.source;
+    if (typeof source?.logicalGeneration === 'number') logicalFromSource = Math.max(logicalFromSource, source.logicalGeneration);
+  }
+  // 复用 execute 工具结果里的逻辑世代号（tool result 文本 marker）。
+  let logicalFromResults = -1;
+  for (const event of events) {
+    if (event.type !== 'tool/result') continue;
+    const text = eventText(event);
+    const match = /pm-logical-generation=(\d+)/.exec(text);
+    if (match !== null) logicalFromResults = Math.max(logicalFromResults, Number(match[1]));
+  }
+  const derivedMax = Math.max(logicalFromResults, logicalFromSource);
+  if (derivedMax >= 0) info.total = derivedMax;
   const needle = query.toLowerCase();
 
   // 注意 rows 必须带 i：want 集合与输出循环都按**全局下标**匹配，
@@ -89,7 +133,7 @@ export function retrospect(session, args) {
   const lines = [];
   lines.push('retrospect: ' + hitIndexes.length + ' 条命中（关键词 ' + JSON.stringify(query) +
     '；只查**已隐藏**的原文 —— 当前世代 self 的东西你看得见，不在查询范围）');
-  lines.push('当前世代 self，工作面 ' + nodes.length + ' 条消息，日志 ' + events.length + ' 条事件，世代号 ' + current + '。');
+  lines.push('当前世代 self：逻辑世代 ' + info.total + '（物理世代 ' + physicalCurrent + '，物理仅作参考）；工作面 ' + nodes.length + ' 条消息，日志 ' + events.length + ' 条事件。');
   if (hitIndexes.length === 0) {
     lines.push('');
     lines.push('（没有已隐藏的原文含这个词。如果你要压缩的是**当前看得见**的东西，');
@@ -114,7 +158,7 @@ export function retrospect(session, args) {
     const role = row.message === undefined ? row.event.type : String(row.message.role);
     const where = visible.has(row.event.seq)
       ? 'self（本行是上下文，不是命中）'
-      : generationLabelOf(session, row.event.seq, current);
+      : generationLabelOf(session, row.event.seq, info);
     lines.push((isHit ? '▶ ' : '  ') + '[' + where + '] ' + role + ' / ' + row.event.type);
     lines.push(row.text.length === 0 ? '  （无文本内容）' : row.text);
     lines.push('');

@@ -29,7 +29,7 @@ const mk = () => {
   return s;
 };
 const reps = (s) => s.snapshotEvents().filter((e) => e.surfaceOp?.op === 'replace');
-const holes = (s) => reps(s).filter((e) => e.type === 'developer/message');
+const holes = (s) => reps(s).filter((e) => { const msg = e.data?.message ?? e.data; return (e.type === 'user/message' || e.type === 'developer/message') && msg?.source?.op === 'hide'; });
 const run = (s, callId, args) => {
   plasticizeCall(s, { turn: 2, step: 1 }, callId, args);
   return flush(s, { openStep: { turn: 2, step: 1 } }, quiet);
@@ -58,7 +58,7 @@ console.log(NL + '① 基本投影：开区间 (1,10) 遮蔽掉 system 之外的
   const shadowed = reps(s)[0].sourceEventSeqs;
   ok(shadowed.length === 21, '遮蔽 21 条（2..22）', String(shadowed.length));
   // 节点 id 是**确定性**的（不用随机 UUID）：日志可对账、可重放。
-  ok(reps(s)[0].data.id === 'pm-surface-c1-0', '替换节点 id = pm-surface-<callId>-<序号>', String(reps(s)[0].data.id));
+  ok((reps(s)[0].data.message ?? reps(s)[0].data).id === 'pm-surface-c1-0', '替换节点 id = pm-surface-<callId>-<序号>', String((reps(s)[0].data.message ?? reps(s)[0].data).id));
 }
 
 console.log(NL + '② new_text 为空 = 纯空洞（这是 hide 的表达）');
@@ -67,7 +67,7 @@ console.log(NL + '② new_text 为空 = 纯空洞（这是 hide 的表达）');
   const before = s.deriveMessages().length;
   const r = run(s, 'c2', { ops: [{ spans: ['(1,10)'], new_text: '' }], option: 'execute' });
   ok(r.applied === 1, 'flush 应用 1 条', JSON.stringify(r));
-  ok(holes(s).length === 1, '写下的是 developer/message 空洞', String(holes(s).length));
+  ok(holes(s).length === 1, '写下的是 hide 替代（user/message + 空格）', String(holes(s).length));
   ok(s.deriveMessages().length <= 6, '空洞不产生消息（历史被大量遮蔽）', before + ' -> ' + s.deriveMessages().length);
   const msgs = s.deriveMessages();
   ok(!msgs.some((m) => m.role === 'developer' && m.content.length === 0), '空 content 的 developer 不可见');
@@ -82,8 +82,8 @@ console.log(NL + '③ 一个段落多个区间：前面的全隐藏，替代文�
   });
   ok(r.applied === 1, '一次 flush 处理了这条声明', JSON.stringify(r));
   ok(reps(s).length === 2, '写下 2 条 replace（一段两区间）', String(reps(s).length));
-  ok(holes(s).length === 1, '前面的区间是纯空洞', String(holes(s).length));
-  const texts = reps(s).map((e) => (e.type === 'user/message' ? e.data.content[0].text : ''));
+  ok(holes(s).length === 1, '前面的区间是 hide 替代', String(holes(s).length));
+  const texts = reps(s).map((e) => { const msg = e.data?.message ?? e.data; return msg?.content?.[0]?.text ?? ''; });
   ok(texts.includes('⟨甲⟩'), '替代文本落在最后的区间上');
   ok(textOf(s).includes('⟨甲⟩'), '替代文本进入工作面');
 }
@@ -247,7 +247,7 @@ console.log(NL + '⑪ execute 不带 ops（ops: []）时内容完全来自 set')
   s.append('step/start', { turn: 2, step: 2 });
   plasticizeCall(s, { turn: 2, step: 2 }, 'c11-exec', { ops: [], option: 'execute', also_execute_last_set: true });
   const r = flush(s, { openStep: { turn: 2, step: 2 } }, quiet);
-  const explicit = reps(s).filter((e) => (e.data?.message?.source?.note ?? '').startsWith('auto-hide') === false);
+  const explicit = reps(s).filter((e) => ((e.data?.message?.source ?? e.data?.source)?.note ?? '').startsWith('auto-hide') === false);
   ok(explicit.length === 1, '写下了 1 条显式投影', String(explicit.length) + ' | ' + JSON.stringify(r));
   ok(textOf(s).includes('⟨来自 set⟩'), '用的是 set 的内容');
   ok(explicit[0].sourceEventSeqs[0] === expectedStart, '起点仍是 set 时看到的那一条',

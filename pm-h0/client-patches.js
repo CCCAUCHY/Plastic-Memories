@@ -124,16 +124,32 @@ export function applyExtraPatches(patched) {
   ].join(String.fromCharCode(10));
   text = text.split(markdownAnchor).join(wrapper + markdownAnchor);
   // 9. UI 本地化 + 类型列恢复原生、差异徽标移到正文。
-  text = text.split('"view.trajectory": "世代",').join('"view.trajectory": "世代",' + String.fromCharCode(10) + '\t\t\t"pm.reshaped": "已塑形",' + String.fromCharCode(10) + '\t\t\t"pm.reshaping": "被塑形",' + String.fromCharCode(10) + '\t\t\t"pm.hidden": "（已隐藏）",');
-  text = text.split('"view.trajectory": "Generations",').join('"view.trajectory": "Generations",' + String.fromCharCode(10) + '\t\t\t"pm.reshaped": "Reshaped",' + String.fromCharCode(10) + '\t\t\t"pm.reshaping": "Being reshaped",' + String.fromCharCode(10) + '\t\t\t"pm.hidden": "(Hidden)",');
+  text = text.split('"view.trajectory": "世代",').join('"view.trajectory": "世代",' + String.fromCharCode(10) + '\t\t\t"pm.reshaped": "已塑形",' + String.fromCharCode(10) + '\t\t\t"pm.reshaping": "被塑形",' + String.fromCharCode(10) + '\t\t\t"pm.hidden": "（已隐藏）",' + String.fromCharCode(10) + '\t\t\t"pm.hiddenAuto": "（自动隐藏）",' + String.fromCharCode(10) + '\t\t\t"pm.hiddenManual": "（主动隐藏）",');
+  text = text.split('"view.trajectory": "Generations",').join('"view.trajectory": "Generations",' + String.fromCharCode(10) + '\t\t\t"pm.reshaped": "Reshaped",' + String.fromCharCode(10) + '\t\t\t"pm.reshaping": "Being reshaped",' + String.fromCharCode(10) + '\t\t\t"pm.hidden": "(Hidden)",' + String.fromCharCode(10) + '\t\t\t"pm.hiddenAuto": "(Auto-hidden)",' + String.fromCharCode(10) + '\t\t\t"pm.hiddenManual": "(Manually hidden)",');
   // 类型列恢复原生标签（去掉粉色 class 与标签替换）。
   text = text.split('${globalThis.__PM_UI__ !== void 0 && globalThis.__PM_UI__.isReshapedCell !== void 0 && globalThis.__PM_UI__.isReshapedCell(record.cell, t) ? " pm-reshaped-tag" : ""} ').join('');
   text = text.split('children: globalThis.__PM_UI__ !== void 0 && globalThis.__PM_UI__.reshapeTagLabel !== void 0 && globalThis.__PM_UI__.isReshapedCell !== void 0 && globalThis.__PM_UI__.isReshapedCell(record.cell, t) ? globalThis.__PM_UI__.reshapeTagLabel(record.cell, t) : t(KIND_LABEL_KEY[record.cell.kind])').join('children: t(KIND_LABEL_KEY[record.cell.kind])');
   // 空替代文本：本地化「（已隐藏）」。
-  text = text.split('children: "已隐藏"').join('children: t("pm.hidden")');
+  text = text.split('children: "已隐藏"').join('children: globalThis.__PM_UI__ !== void 0 && globalThis.__PM_UI__.hiddenLabel !== void 0 ? globalThis.__PM_UI__.hiddenLabel(cell, t) : t("pm.hidden")');
   // 正文包装器把 t 传给差异徽标。
   text = text.split('globalThis.__PM_UI__.diffNativeTag(props.cell)').join('globalThis.__PM_UI__.diffNativeTag(props.cell, props.t)');
   // 10. 修复：恢复原生类型标签时少了类名之间的空格，导致彩色药丸样式失效。
   text = text.split('${TrajectoryTable_module_css_default.kindTag}${record.cell.kind === "system"').join('${TrajectoryTable_module_css_default.kindTag} ${record.cell.kind === "system"');
+  // 11. 真实空行：世代表底部追加 20 条空 <tr>，让滚动空间足够（不是 padding）。
+  const spacerAnchor = 'virtualBottom > 0 && (0, react_jsx_runtime.jsx)("tr", {';
+  if (text.split(spacerAnchor).length - 1 !== 1) throw new Error('extra patch: virtual bottom spacer not found');
+  const blanks = '...(Array.from({ length: 20 }, (_, pmIndex) => (0, react_jsx_runtime.jsx)("tr", { key: "pm-blank-" + String(pmIndex), children: (0, react_jsx_runtime.jsx)("td", { colSpan: 2, style: { height: 30 } }) }))), ';
+  text = text.split(spacerAnchor).join(blanks + spacerAnchor);
+  // 14. 布局排序（layoutEntryOrder）也改用官方 surface 顺序。
+  const pmLayoutFind = "return entry.kind === \"system\" && entry.change.kind === \"initial\" ? Number.NEGATIVE_INFINITY : entry.seq;";
+  const pmLayoutRepl = "if (entry.kind === \"system\" && entry.change.kind === \"initial\") return Number.NEGATIVE_INFINITY; const pmLayoutOrder = globalThis.__PM_SEQ_ORDER__; if (pmLayoutOrder !== void 0 && pmLayoutOrder !== null && pmLayoutOrder.has(entry.seq)) return pmLayoutOrder.get(entry.seq); return entry.seq;";
+  if (text.split(pmLayoutFind).length - 1 !== 1) throw new Error('extra patch: layout order not found');
+  text = text.split(pmLayoutFind).join(pmLayoutRepl);
+  // 15. 工具栏加载全部按钮 + 文案。
+  const pmPager = 'globalThis.__PM_UI__ === void 0 || t.__pmEmbedded === true ? null : globalThis.__PM_UI__.pagination(t)';
+  const pmPagerRepl = 'globalThis.__PM_UI__ === void 0 || t.__pmEmbedded === true ? null : (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [globalThis.__PM_UI__.pagination(t), globalThis.__PM_UI__.loadAllButton !== void 0 ? globalThis.__PM_UI__.loadAllButton(t) : null] })';
+  if (text.split(pmPager).length - 1 === 1) text = text.split(pmPager).join(pmPagerRepl);
+  text = text.split('"pm.hidden": "（已隐藏）",').join('"pm.hidden": "（已隐藏）","pm.loadAll": "加载全部","pm.loading": "加载中…",');
+  text = text.split('"pm.hidden": "(Hidden)",').join('"pm.hidden": "(Hidden)","pm.loadAll": "Load all","pm.loading": "Loading…",');
   return text;
 }

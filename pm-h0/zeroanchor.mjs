@@ -47,22 +47,23 @@ console.log(NL + '① cookie 端点没有零点问题：set 与 execute 解析�
   plasticizeCall(s, { turn: 2, step: 2 }, 'za-exec', { ops, option: 'execute', also_execute_last_set: true });
   const r = flush(s, { openStep: { turn: 2, step: 2 } }, quiet);
   ok(r.applied >= 1, 'execute 被处理', JSON.stringify(r));
-  const explicit = reps(s).filter((e) => (e.data?.message?.source?.note ?? '').startsWith('auto-hide') === false);
+  const explicit = reps(s).filter((e) => ((e.data?.message?.source ?? e.data?.source)?.note ?? '').startsWith('auto-hide') === false);
   ok(explicit.length === 1, '**只写一条**显式 replace（不是两条）', String(explicit.length));
   ok(explicit[0].sourceEventSeqs.length === 7, '遮蔽 7 条（cookie1..cookie5 之间）', String(explicit[0].sourceEventSeqs.length));
   const t = textOf(s);
   ok(t.includes('⟨零点测试⟩'), '替代文本进入工作面');
   ok((t.match(/⟨零点测试⟩/g) ?? []).length === 1, '**只出现一次**（没有重复应用）');
   // 去重后的那条投影必须**同时了结 set 与 execute**：否则下个边界会把 execute 再执行一遍。
-  ok(Array.isArray(explicit[0].data?.source?.consumed)
-    && explicit[0].data.source.consumed.includes('za-exec'),
-    '标记里记下了被合并的 execute callId', JSON.stringify(explicit[0].data?.source?.consumed));
+  const zaSource = explicit[0].data?.message?.source ?? explicit[0].data?.source;
+  ok(Array.isArray(zaSource?.consumed)
+    && zaSource.consumed.includes('za-exec'),
+    '标记里记下了被合并的 execute callId', JSON.stringify(zaSource?.consumed));
   const seqBefore = s.seq;
   const repsBefore = reps(s).length;
   flush(s, { openStep: { turn: 2, step: 2 } }, quiet);
   ok(s.seq === seqBefore, '下个边界不再重复执行 execute', String(s.seq - seqBefore));
   ok(reps(s).length === repsBefore, '不新增 replace', repsBefore + ' -> ' + reps(s).length);
-  const explicitAfter = reps(s).filter((e) => (e.data?.message?.source?.note ?? '').startsWith('auto-hide') === false);
+  const explicitAfter = reps(s).filter((e) => ((e.data?.message?.source ?? e.data?.source)?.note ?? '').startsWith('auto-hide') === false);
   ok(explicitAfter.length === 1, '显式投影仍只有 1 条', String(explicitAfter.length));
 }
 
@@ -97,7 +98,7 @@ console.log(NL + '③ execute 用**新内容**时，覆盖 set（不是叠加）
   const t = textOf(s);
   ok(t.includes('⟨新的⟩'), '新内容生效');
   ok(!t.includes('⟨旧的⟩'), '旧内容没有被应用');
-  const explicit = reps(s).filter((e) => (e.data?.message?.source?.note ?? '').startsWith('auto-hide') === false);
+  const explicit = reps(s).filter((e) => ((e.data?.message?.source ?? e.data?.source)?.note ?? '').startsWith('auto-hide') === false);
   ok(explicit.length === 1, '只写一条显式 replace', String(explicit.length));
 }
 

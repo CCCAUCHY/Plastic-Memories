@@ -118,7 +118,7 @@ patched = patched.replace(recordListCall, '$1cell: record.cell, displayText,');
 patched = replaceOnce(patched,
   'function RecordListText({ displayText, toolCallOnly, toolCallText, t }) {',
   `function RecordListText({ displayText, toolCallOnly, toolCallText, t, cell }) {
-			if (displayText === "" && globalThis.__PM_UI__ !== void 0 && globalThis.__PM_UI__.isReshapedCell !== void 0 && globalThis.__PM_UI__.isReshapedCell(cell)) return (0, react_jsx_runtime.jsx)("span", {
+			if (displayText === "" && globalThis.__PM_UI__ !== void 0 && globalThis.__PM_UI__.isHiddenReplacement !== void 0 && globalThis.__PM_UI__.isHiddenReplacement(cell)) return (0, react_jsx_runtime.jsx)("span", {
 				className: TrajectoryTable_module_css_default.toolCallOnly,
 				children: "已隐藏"
 			});`,

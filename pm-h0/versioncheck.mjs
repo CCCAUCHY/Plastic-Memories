@@ -36,14 +36,14 @@ console.log('\n① package.json 与 preset.name 的版本号一致');
   ok(typeof cfg.description === 'string' && cfg.description.length > 20, 'preset.description 非空（UI 里会显示）');
 }
 
-console.log('\n② 提示词正文里的版本号一致');
+console.log('\n② 协议写在工具 description 里，persona 不再注入长篇 PM 协议');
 {
   const persona = cfg.plugins.find((x) => x.id === 'persona');
   ok(persona !== undefined, 'preset 里有 persona 行');
   const suffix = persona?.config?.suffix ?? '';
-  const m = /（PM 可塑记忆 v(\d+\.\d+\.\d+)）/.exec(suffix);
-  ok(m !== null, 'persona.suffix 开头有版本标记', suffix.split(NL)[2] ?? '(空)');
-  ok(m !== null && m[1] === pkg.version, '提示词里的版本 == package.json 的版本', (m ? m[1] : '?') + ' vs ' + pkg.version);
+  ok(typeof suffix === 'string' && suffix.trim() === '', 'persona.suffix 为空（与 PTC 保持一致的系统提示词形态）', String(suffix).slice(0, 24) || '(空)');
+  const pmRow = cfg.plugins.find((x) => x.id === 'plastic-memories-h0');
+  ok(pmRow !== undefined, 'plugins 里有 PM 插件行');
 }
 
 console.log('\n③ preset 结构未退化');
@@ -261,7 +261,8 @@ console.log(NL + '⑨ 客户端半身（侧边栏世代视图）');
     ['定义包装', 'wrapDefinition'],
     ['定义重注册', 'pmDefinitionRegister'],
     ['重注册入口', 'installReregister'],
-    ['已塑形标签', 'pm-reshaped-tag'],
+    ['差异徽标', 'pm-diff-badge'],
+    ['被塑形按钮', 'pm-diff-badge-reshaping'],
     ['折叠面板', 'pm-reshape-panel'],
     ['已塑形识别', 'isReshapedCell'],
     ['已隐藏文本', '已隐藏'],

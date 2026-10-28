@@ -89,34 +89,80 @@ window.__ModuleLoader__.load({
       const replacements = Array.isArray(state.data?.replacements) ? state.data.replacements : [];
       return replacements.some((entry) => entry.repl === seq && entry.gen < expandedGen);
     }
+    /**
+    * 按「当前世代的官方 surface 顺序」重排轨迹行：替代消息出现在被替换区间的位置，
+    * 于是相邻两代的第一个差异点之前前缀完全一致（纯翻页即可对齐）。
+    */
     function applyReshapeRecords(records) {
-      return records;
+      if (!Array.isArray(records)) return records;
+      const state = activeState;
+      if (state === undefined || state.data === undefined || state.data === null) return records;
+      const generations = Array.isArray(state.data.generations) ? state.data.generations : [];
+      const gen = effectiveGeneration(state);
+      const seqs = Array.isArray(generations[gen]?.seqs) ? generations[gen].seqs : [];
+      if (seqs.length === 0) return records;
+      const position = new Map();
+      for (let index = 0; index < seqs.length; index += 1) position.set(seqs[index], index);
+      let last = 0;
+      const decorated = records.map((record, index) => {
+        const seq = record !== undefined && record !== null && record.cell !== undefined && record.cell !== null ? record.cell.sourceSeq : undefined;
+        let pos = position.has(seq) ? position.get(seq) : -1;
+        if (pos < 0) pos = last; else last = pos;
+        return { record, pos, index };
+      });
+      decorated.sort((left, right) => (left.pos - right.pos) || (left.index - right.index));
+      if (typeof console !== 'undefined' && console.info !== undefined) {
+        console.info('[pm-order-debug]', JSON.stringify({
+          gen,
+          seqCount: seqs.length,
+          replacements: Array.isArray(state.data.replacements) ? state.data.replacements.map((entry) => ({ gen: entry.gen, repl: entry.repl, shadowed: entry.shadowed })) : [],
+          rows: records.slice(0, 60).map((record) => ({
+            kind: record?.cell?.kind,
+            seq: record?.cell?.sourceSeq,
+            idx: record?.cell?.index,
+            text: String(record?.cell?.text ?? '').slice(0, 16),
+          })),
+        }));
+      }
+      return decorated.map((entry) => entry.record);
     }
     function applyReshapeVirtualRows(rows) {
       return rows;
     }
-    function diffMarkOf(cell) {
+    function diffMarksOf(cell) {
       const state = activeState;
-      if (state === undefined || state.data === undefined || state.data === null) return null;
-      if (cell === undefined || cell === null || typeof cell.sourceSeq !== 'number') return null;
+      if (state === undefined || state.data === undefined || state.data === null) return [];
+      if (cell === undefined || cell === null || typeof cell.sourceSeq !== 'number') return [];
       const data = state.data;
       const gen = effectiveGeneration(state);
       const replacements = Array.isArray(data.replacements) ? data.replacements : [];
-      if (gen >= 1) {
-        const own = replacements.find((entry) => entry.gen === gen);
-        if (own !== undefined && own.repl === cell.sourceSeq) return { side: 'replacement', target: gen - 1 };
-      }
+      const marks = [];
       const next = replacements.find((entry) => entry.gen === gen + 1);
-      if (next !== undefined && Array.isArray(next.shadowed) && next.shadowed.includes(cell.sourceSeq)) return { side: 'replaced', target: gen + 1 };
-      return null;
+      if (next !== undefined && Array.isArray(next.shadowed) && next.shadowed.includes(cell.sourceSeq)) {
+        marks.push({ kind: 'reshaping', targetGen: next.gen, targetSeq: next.repl });
+      }
+      const own = replacements.find((entry) => entry.repl === cell.sourceSeq && entry.gen === gen);
+      if (own !== undefined) {
+        const first = Array.isArray(own.shadowed) && own.shadowed.length > 0 ? own.shadowed[0] : own.repl;
+        marks.push({ kind: 'reshaped', targetGen: own.gen - 1, targetSeq: first });
+      }
+      return marks;
     }
-    function navigateDiff(mark) {
+    function diffMarkOf(cell) {
+      const marks = diffMarksOf(cell);
+      return marks.length === 0 ? null : marks[0];
+    }
+    /** 记录被点击行在滚动容器里的偏移，翻页后把目标行拉到同一位置。 */
+    /** 相邻两代第一个差异点之前前缀相同：直接翻页，scrollTop 由 setGeneration 保持。 */
+    function jumpDiff(mark, rowElement) {
+      if (mark === null || mark === undefined) return;
       const state = activeState;
-      if (state === undefined || mark === null || mark === undefined) return;
+      if (state === undefined) return;
       const total = generationCount(state.data);
-      if (total === 0) return;
-      const target = mark.target >= total - 1 ? null : mark.target;
-      setGeneration(Math.max(0, target));
+      setGeneration(mark.targetGen >= total - 1 ? null : Math.max(0, mark.targetGen));
+    }
+    function navigateDiff(mark, rowElement) {
+      jumpDiff(mark, rowElement);
     }
     function generationCount(data) {
       return data !== null && typeof data === 'object' && Array.isArray(data.generations) ? data.generations.length : 0;
@@ -239,8 +285,24 @@ window.__ModuleLoader__.load({
       return { gen, entry };
     }
     /** 这条轨迹记录是不是「本代塑形」的替代消息（只有它带折叠按钮）。 */
+    /** 空替代文本的文案：自动隐藏与主动隐藏底层同权，仅便于观察。 */
+    /** 是否是 PM 的隐藏类替代（主动 hide 或 auto-hide）；跨世代都要显示隐藏文案。 */
+    function isHiddenReplacement(cell) {
+      const source = cell?.messageSource ?? cell?.source;
+      if (source === null || source === undefined) return false;
+      if (String(source.note ?? '').startsWith('auto-hide:')) return true;
+      return source.kind === 'pm-surface' && source.op === 'hide';
+    }
+    function hiddenLabel(cell, t) {
+      const source = cell?.messageSource ?? cell?.source;
+      const note = typeof source?.note === 'string' ? source.note : '';
+      const op = typeof source?.op === 'string' ? source.op : '';
+      if (note.startsWith('auto-hide:')) return t === undefined ? '（自动隐藏）' : t('pm.hiddenAuto');
+      if (op === 'hide') return t === undefined ? '（主动隐藏）' : t('pm.hiddenManual');
+      return t === undefined ? '（已隐藏）' : t('pm.hidden');
+    }
     function isReshapedCell(cell, t) {
-      return diffMarkOf(cell) !== null;
+      return diffMarksOf(cell).some((mark) => mark.kind === 'reshaped');
     }
     function coveredNodesOf(cell) {
       const info = reshapeInfoOf(cell);
@@ -427,45 +489,33 @@ window.__ModuleLoader__.load({
     }
 
     /** 正文前的差异徽标：本代替代消息 = 已塑形（粉）；将被下一代覆盖 = 被塑形（反色）。 */
+    /** 正文前的差异徽标：被塑形（反色，跳下一代）排在已塑形（粉，跳上一代）之前。 */
     function diffNativeTag(cell, t) {
       if (cell === undefined || cell === null) return null;
-      const mark = diffMarkOf(cell);
-      if (mark === null) return null;
-      const label = mark.side === 'replacement'
-        ? (t === undefined ? '已塑形' : t('pm.reshaped'))
-        : (t === undefined ? '被塑形' : t('pm.reshaping'));
-      return h('button', {
+      // 被塑形（跳下一代）在前，已塑形（跳上一代）在后；两者都是隐式唯一配对。
+      const marks = diffMarksOf(cell);
+      if (marks.length === 0) return null;
+      return h(React.Fragment, null, ...marks.map((mark, index) => h('button', {
+        key: mark.kind + String(index),
         type: 'button',
-        className: mark.side === 'replacement' ? 'pm-diff-badge pm-diff-badge-reshaped' : 'pm-diff-badge pm-diff-badge-reshaping',
-        title: mark.side === 'replacement' ? '已经塑形的区域：跳到上一世代' : '这里即将被下一世代塑形：跳到下一世代',
+        className: mark.kind === 'reshaping' ? 'pm-diff-badge pm-diff-badge-reshaping' : 'pm-diff-badge pm-diff-badge-reshaped',
+        title: mark.kind === 'reshaping' ? '跳到对应的已塑形消息' : '跳到塑形前的区域',
         onClick: (event) => {
           event.preventDefault();
           event.stopPropagation();
-          navigateDiff(mark);
+          jumpDiff(mark, event.currentTarget);
         },
-      }, label);
+      }, mark.kind === 'reshaping' ? (t === undefined ? '被塑形' : t('pm.reshaping')) : (t === undefined ? '已塑形' : t('pm.reshaped')))));
     }
     const PM_UI_CSS = [
-      '.pm-reshaped-tag{background:transparent!important;border-color:transparent!important;padding:0!important;height:auto!important;min-width:0!important}',
-      '.pm-diff-tag{box-sizing:border-box;margin-right:4px;height:19px;padding:0 5px;color:#C64F91;background:#FCE7F3;border:0;border-radius:var(--dsw-radius-xs);font-size:10px;font-weight:650;line-height:16px;display:inline-flex;align-items:center;cursor:pointer}',
-      '.pm-diff-native{color:inherit}',
-'.pm-diff-badge{box-sizing:border-box;flex:none;margin-right:6px;height:19px;padding:0 5px;border:0;border-radius:var(--dsw-radius-xs);font-size:10px;font-weight:650;letter-spacing:.035em;line-height:16px;display:inline-flex;align-items:center;cursor:pointer}',
+      'div:has(> table[data-scroll-ready="true"]){padding-bottom:calc(var(--dsh-trajectory-bottom-clearance,0px) + 58vh)!important}',
+      '.pm-load-all{box-sizing:border-box;flex:none;margin-right:6px;height:22px;padding:0 8px;border:1px solid var(--dsw-alias-border-l3);border-radius:2px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);font:var(--dsw-font-xxs-12);cursor:pointer}',
+      '.pm-load-all:disabled{opacity:.6;cursor:default}',
+      '.pm-diff-badge{box-sizing:border-box;flex:none;margin-right:6px;height:19px;padding:0 5px;border:0;border-radius:var(--dsw-radius-xs);font-size:10px;font-weight:650;letter-spacing:.035em;line-height:16px;display:inline-flex;align-items:center;cursor:pointer}',
       '.pm-diff-badge-reshaped{color:#C64F91;background:#FCE7F3}',
       '.pm-diff-badge-reshaping{color:#FCE7F3;background:#C64F91}',
-      '.pm-diff-native-tag{box-sizing:border-box;flex:none;margin-right:6px;height:19px;padding:0 5px;border-radius:var(--dsw-radius-xs);font-size:10px;font-weight:650;letter-spacing:.035em;line-height:16px;display:inline-flex;align-items:center}',
-'.pm-diff-native-message{color:#6b5bd2;background:#ece9fb}',
-'.pm-diff-native-tool,.pm-diff-native-subtool{color:var(--dsw-alias-state-warn-label);background:var(--dsw-alias-state-warn-tertiary)}',
-'.pm-diff-native-context{color:color-mix(in srgb, var(--dsw-alias-state-success-primary) 68%, var(--dsw-alias-label-secondary));background:var(--dsw-alias-state-success-tertiary)}',
-'.pm-diff-native-user{color:var(--dsw-alias-state-business-primary);background:var(--dsw-alias-state-business-tertiary)}',
-'.pm-diff-native-system{color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-bg-module-platform)}',
+      '.pm-reshaped-tag{background:transparent!important;border-color:transparent!important;padding:0!important;height:auto!important;min-width:0!important}',
       '.pm-reshaped-static{color:#C64F91;background:#FCE7F3;border-radius:var(--dsw-radius-xs);display:inline-flex;align-items:center;height:19px;padding:0 5px;font-size:10px;font-weight:650;line-height:16px}',
-      '.pm-reshape-panel{position:absolute;top:22px;left:0;z-index:60;box-sizing:border-box;width:min(1100px,88vw);max-height:74vh;overflow:hidden;background:var(--dsw-alias-bg-layer-1);border:.5px solid var(--dsw-alias-border-l2);border-radius:var(--dsw-radius-md);box-shadow:var(--dsw-elevation-panel);padding:6px 0;white-space:normal;text-align:left;cursor:default}',
-      '.pm-reshape-head{padding:2px 10px 6px;color:var(--dsw-alias-label-secondary);font:var(--dsw-font-xxs-12);font-weight:600}',
-      '.pm-reshape-row{display:flex;align-items:baseline;gap:8px;padding:3px 10px;min-width:0}',
-      '.pm-reshape-kind{flex:none;color:var(--dsw-alias-state-business-primary);background:var(--dsw-alias-state-business-tertiary);border-radius:var(--dsw-radius-xs);padding:0 4px;font:10px/16px var(--dsw-font-family);font-weight:650}',
-      '.pm-reshape-text{min-width:0;color:var(--dsw-alias-label-primary);font:var(--dsw-font-xxs-12);white-space:nowrap;text-overflow:ellipsis;overflow:hidden;flex:1}',
-      '.pm-reshape-hidden{color:var(--dsw-alias-label-tertiary)}',
-      '.pm-reshape-pending{padding:16px 14px;font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-secondary)}',
     ].join(String.fromCharCode(10));
     function installPmStyles() {
       if (typeof document === 'undefined' || document.head === null) return;
@@ -517,6 +567,7 @@ window.__ModuleLoader__.load({
       const previousTotal = generationCount(state.data);
       state.data = data;
       activeState = state;
+      refreshSeqOrder();
       const nextTotal = generationCount(data);
       if (nextTotal > previousTotal) {
         // 新一代出现：上一代（此前是 live，不缓存）此刻起成为不可变历史 → 转入缓存。
@@ -570,7 +621,56 @@ window.__ModuleLoader__.load({
       }
       return true;
     }
+    /** 按当前世代的官方 surface 顺序重排快照节点（替代消息回到被替换区间的位置）。 */
+    /** 当前世代官方 surface 顺序：seq → 位置。供 vendored 装配器排序使用。 */
+    function refreshSeqOrder() {
+      const state = activeState;
+      if (state === undefined || state.data === undefined || state.data === null) return;
+      const generations = Array.isArray(state.data.generations) ? state.data.generations : [];
+      const seqs = Array.isArray(generations[effectiveGeneration(state)]?.seqs) ? generations[effectiveGeneration(state)].seqs : [];
+      const order = new Map();
+      for (let index = 0; index < seqs.length; index += 1) order.set(seqs[index], index);
+      globalThis.__PM_SEQ_ORDER__ = order;
+    }
+    function orderSnapshot(snapshot) {
+      if (snapshot === null || snapshot === undefined) return snapshot;
+      const state = activeState;
+      if (state === undefined || state.data === undefined || state.data === null) return snapshot;
+      const generations = Array.isArray(state.data.generations) ? state.data.generations : [];
+      const gen = effectiveGeneration(state);
+      const seqs = Array.isArray(generations[gen]?.seqs) ? generations[gen].seqs : [];
+      if (seqs.length === 0 || !Array.isArray(snapshot.eventNodes)) return snapshot;
+      const position = new Map();
+      for (let index = 0; index < seqs.length; index += 1) position.set(seqs[index], index);
+      let last = 0;
+      const decorated = snapshot.eventNodes.map((node, index) => {
+        let pos = node !== null && node !== undefined && position.has(node.seq) ? position.get(node.seq) : -1;
+        if (pos < 0) pos = last; else last = pos;
+        return { node, pos, index };
+      });
+      decorated.sort((left, right) => (left.pos - right.pos) || (left.index - right.index));
+      return { ...snapshot, eventNodes: decorated.map((entry) => entry.node) };
+    }
     function wrapTargetSource(sessionId, delegate) {
+      const rawDelegate = delegate;
+      // getSnapshot 必须返回稳定引用（useSyncExternalStore 要求），否则会无限重渲染。
+      let lastRaw;
+      let lastOrdered;
+      let lastGen = -1;
+      delegate = {
+        getSnapshot: () => {
+          refreshSeqOrder();
+          const raw = rawDelegate.getSnapshot();
+          const gen = activeState === undefined ? -1 : effectiveGeneration(activeState);
+          if (raw === lastRaw && gen === lastGen) { lastDeliveredSnapshot = lastOrdered; return lastOrdered; }
+          lastRaw = raw;
+          lastGen = gen;
+          lastOrdered = orderSnapshot(raw);
+          lastDeliveredSnapshot = lastOrdered;
+          return lastOrdered;
+        },
+        subscribe: (listener) => rawDelegate.subscribe(listener),
+      };
       lastSourceDelegate = delegate;
       const retry = () => {
         if (typeof setTimeout === 'function') setTimeout(() => notifyAll(), 0);
@@ -642,35 +742,98 @@ window.__ModuleLoader__.load({
       viewContext = context;
     }
     /** 切到某个世代；null 或最新一代 = 跟随最新。 */
-    function setGeneration(gen) {
+    function captureScroll() {
+      if (typeof document === 'undefined') return null;
+      const tables = [...document.querySelectorAll('[data-scroll-ready="true"]')];
+      for (const table of tables) {
+        let pane = table.parentElement;
+        while (pane !== null && pane !== undefined) {
+          const style = typeof getComputedStyle === 'function' ? getComputedStyle(pane) : null;
+          if (style !== null && (style.overflowY === 'auto' || style.overflowY === 'scroll')) return { element: pane, top: pane.scrollTop };
+          pane = pane.parentElement;
+        }
+      }
+      return null;
+    }
+    function restoreScroll(saved) {
+      if (saved === null || saved === undefined || typeof requestAnimationFrame !== 'function') return;
+      const apply = () => { if (saved.element.isConnected) saved.element.scrollTop = saved.top; };
+      requestAnimationFrame(apply);
+      setTimeout(apply, 80);
+    }
+    function setGeneration(gen, anchor) {
       if (activeState === undefined) return;
       if (expandedReshapeSeq !== undefined) {
         expandedReshapeSeq = undefined;
         expandedGen = -1;
         expandedCovered = new Set();
-        expandedHeaderIndex = -1;
         reshapeVersionCounter += 1;
         invalidateFilterCaches();
       }
+      const savedScroll = anchor === undefined || anchor === null ? captureScroll() : null;
       const total = generationCount(activeState.data);
       activeState.gen = gen === null || total === 0 || gen >= total - 1 ? null : Math.max(0, gen);
+      refreshSeqOrder();
       reregister();
       notifyAll();
+      if (anchor !== undefined && anchor !== null) {
+        scheduleAnchorRestore(anchor);
+      } else if (typeof setTimeout === 'function') {
+        setTimeout(() => restoreScroll(savedScroll), 0);
+      }
     }
-
-    // ── 工具栏世代选择（与世代号同步：0 … n）────────────────────────────────
+    /**
+    * 直接按坐标定位：目标 seq 在目标世代 surface 里的序号 × 行高，一次性设置 scrollTop。
+    * 不依赖「找到目标行 DOM」或「与点击位置比较」，避免行 key 不含 seq 时反复重置到固定点。
+    */
+    function scheduleAnchorRestore(anchor) {
+      const findPane = () => {
+        if (anchor.pane !== undefined && anchor.pane !== null && anchor.pane.isConnected) return anchor.pane;
+        const tables = typeof document === 'undefined' ? [] : [...document.querySelectorAll('[data-scroll-ready="true"]')].filter((candidate) => { const rect = candidate.getBoundingClientRect(); return rect.width > 0 && rect.height > 0; });
+        const table = tables.length > 0 ? tables[0] : null;
+        if (table === null || table === undefined) return null;
+        let pane = table.parentElement;
+        while (pane !== null && pane !== undefined) {
+          const style = typeof getComputedStyle === 'function' ? getComputedStyle(pane) : null;
+          if (style !== null && (style.overflowY === 'auto' || style.overflowY === 'scroll')) return pane;
+          pane = pane.parentElement;
+        }
+        return null;
+      };
+      let attempts = 0;
+      const apply = () => {
+        attempts += 1;
+        const pane = findPane();
+        if (pane === null || pane === undefined) {
+          if (attempts < 120 && typeof requestAnimationFrame === 'function') requestAnimationFrame(apply);
+          return;
+        }
+        const state = activeState;
+        const generations = state !== undefined && state.data !== null && state.data !== undefined && Array.isArray(state.data.generations) ? state.data.generations : [];
+        const gen = state === undefined ? 0 : effectiveGeneration(state);
+        const seqs = Array.isArray(generations[gen]?.seqs) ? generations[gen].seqs : [];
+        const index = seqs.indexOf(anchor.seq);
+        if (index < 0) return;
+        const space = 'calc(var(--dsh-trajectory-bottom-clearance, 0px) + 60vh)';
+        if (pane.style.paddingBottom !== space) pane.style.paddingBottom = space;
+        // 行高 30px；tabular header 约 30px，让目标行落在表头下方而不是被遮住。
+        pane.scrollTop = Math.max(0, index * 30 - 30);
+      };
+      if (typeof requestAnimationFrame === 'function') requestAnimationFrame(apply);
+      setTimeout(apply, 120);
+      setTimeout(apply, 350);
+    }
+    let loadAllBusy = false;
+    let lastDeliveredSnapshot;
     const PAGER_CSS = [
       '.pm-pgs{flex:none;display:flex;align-items:center;gap:3px;margin-left:auto;font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-secondary)}',
       '.pm-pgs + *{margin-left:8px!important}',
       '.pm-pgs .pm-pgs-label{padding:0 3px;color:var(--dsw-alias-label-tertiary)}',
-      '.pm-pgs button{box-sizing:border-box;min-width:22px;height:22px;padding:0 6px;border:1px solid var(--dsw-alias-border-l3);',
-      'border-radius:2px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);font:inherit;line-height:20px;cursor:pointer}',
+      '.pm-pgs button{box-sizing:border-box;min-width:22px;height:22px;padding:0 6px;border:1px solid var(--dsw-alias-border-l3);border-radius:2px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);font:inherit;line-height:20px;cursor:pointer}',
       '.pm-pgs button:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}',
-      '.pm-pgs button.pm-pgs-current{background:var(--dsw-alias-state-business-tertiary);border-color:var(--dsw-alias-state-business-primary);',
-      'color:var(--dsw-alias-state-business-primary);font-weight:600}',
+      '.pm-pgs button.pm-pgs-current{background:var(--dsw-alias-state-business-tertiary);border-color:var(--dsw-alias-state-business-primary);color:var(--dsw-alias-state-business-primary);font-weight:600}',
       '.pm-pgs .pm-pgs-gap{color:var(--dsw-alias-label-tertiary);padding:0 2px}',
     ].join(String.fromCharCode(10));
-    /** 世代按钮：与世代号同步（0 起），永远显示首末两代，中间按当前代开窗。 */
     function generationButtons(current, last) {
       const out = [];
       const push = (value) => { if (!out.includes(value)) out.push(value); };
@@ -682,6 +845,58 @@ window.__ModuleLoader__.load({
       if (to < last - 1) out.push('…');
       push(last);
       return out;
+    }
+    function visiblePane() {
+      if (typeof document === 'undefined') return null;
+      for (const table of document.querySelectorAll('[data-scroll-ready="true"]')) {
+        const rect = table.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) continue;
+        let pane = table.parentElement;
+        while (pane !== null && pane !== undefined) {
+          const style = typeof getComputedStyle === 'function' ? getComputedStyle(pane) : null;
+          if (style !== null && (style.overflowY === 'auto' || style.overflowY === 'scroll')) return pane;
+          pane = pane.parentElement;
+        }
+      }
+      return null;
+    }
+    function loadedRowCount() {
+      return lastDeliveredSnapshot !== undefined && Array.isArray(lastDeliveredSnapshot.eventNodes) ? lastDeliveredSnapshot.eventNodes.length : 0;
+    }
+    async function loadAllHistory() {
+      if (loadAllBusy) return;
+      if (viewContext === undefined || viewContext.hooks === undefined || typeof viewContext.hooks.loadOlder !== 'function') return;
+      loadAllBusy = true;
+      notifyAll();
+      let stable = 0;
+      for (let round = 0; round < 300; round += 1) {
+        const pane = visiblePane();
+        const before = loadedRowCount();
+        try { await viewContext.hooks.loadOlder(); } catch { break; }
+        await new Promise((resolve) => setTimeout(resolve, 80));
+        const after = loadedRowCount();
+        if (pane !== null && pane !== undefined && after > before) {
+          pane.scrollTop += (after - before) * 30;
+        }
+        if (after <= before) { stable += 1; if (stable >= 2) break; } else stable = 0;
+      }
+      loadAllBusy = false;
+      notifyAll();
+    }
+    function LoadAllButton({ t }) {
+      const [, setTick] = React.useState(0);
+      React.useEffect(() => {
+        const listener = () => setTick((value) => value + 1);
+        globalListeners.add(listener);
+        return () => globalListeners.delete(listener);
+      }, []);
+      return h('button', {
+        type: 'button',
+        className: 'pm-load-all',
+        disabled: loadAllBusy,
+        title: '加载当前世代全部轨迹',
+        onClick: (event) => { event.preventDefault(); event.stopPropagation(); loadAllHistory(); },
+      }, loadAllBusy ? (t === undefined ? '加载中…' : t('pm.loading')) : (t === undefined ? '加载全部' : t('pm.loadAll')));
     }
     function GenerationPagination({ t }) {
       const [, setTick] = React.useState(0);
@@ -731,10 +946,13 @@ window.__ModuleLoader__.load({
       installOfficialView,
       publishViewContext,
       isReshapedCell,
+      hiddenLabel,
+      isHiddenReplacement,
       diffNativeTag,
       reshapeTagLabel,
       coveredNodesOf,
       pagination: (t) => (t !== undefined && t !== null && t.__pmEmbedded === true ? null : h(GenerationPagination, { t })),
+      loadAllButton: () => null,
     };
     installPmStyles();
     // 必须先放进 global：vendor 模块在 require 时执行，之后 apply/render 都要读它。

@@ -11,14 +11,16 @@
  */
 import { Context } from '/var/data/.npm/_npx/1e7f6d9597241db0/node_modules/@deepseek-ai/cordis/lib/index.js';
 import SessionStore from '/var/data/.npm/_npx/1e7f6d9597241db0/node_modules/@deepseek-ai/dsh-session/lib/index.js';
-import { makeCounter, fixture, cookieSeed, cookieNodes, cookieEvent, textOf, openStep, plasticizeCall } from './testkit.mjs';
+import { makeCounter, fixture, cookieSeed, cookieNodes, cookieEvent, textOf, openStep, plasticizeCall, makeStore } from './testkit.mjs';
 import { pairingMaps, snapshotSurface, stepGroup, indexOfCall, checkBalanced } from './coords.js';
-import { flush } from './engine.js';
+import { appendPluginRecord, snapshotSessionEvent } from '/var/data/.npm/_npx/1e7f6d9597241db0/node_modules/@deepseek-ai/dsh-session/lib/index.js';
+import { flush, stageUserOperation, flushUserOperations, clearStagedOperations, countLogicalGenerations, installPrivateRecordAppender } from './engine.js';
 import { retrospect } from './retrospect.js';
 
 const NL = String.fromCharCode(10);
 const { ok, done } = makeCounter('livetest');
 const quiet = { warn: () => {}, info: () => {} };
+installPrivateRecordAppender(appendPluginRecord);
 
 const FX = 'session-native-multicall.jsonl';
 // 布局：0 system / 1 ck1 / 2 user / 3 ck2 / 4 运行时常量 / 5 ck3 / 6 时间快照 / 7 ck4
@@ -123,8 +125,60 @@ console.log(NL + '⑥ retrospect：能查到已被隐藏的原文');
   const after = retrospect(s, { query: keyword });
   ok(after.includes(keyword), '**被隐藏的原文仍能查到**（原文从未删除）', JSON.stringify(keyword));
   ok(after.includes('self - '), '标签标出了它已被隐藏（self - n）');
+  ok(after.includes('逻辑 ') && after.includes('物理 '), '标签同时给出逻辑世代（坐标）与物理世代（参考）');
 }
 
+console.log(NL + '⑥.5 安全区：lock 后 plasticize 不能命中锁定区间');
+{
+  const s = mk();
+  openStep(s, 99, 1);
+  const staged = stageUserOperation(s, 'lock', '(3,4)');
+  ok(staged.shadowed.length > 0, '登记 lock 区间', String(staged.shadowed.length));
+  await flushUserOperations(s, { turn: 99, step: 1 }, quiet);
+  plasticizeCall(s, { turn: 99, step: 1 }, 'lock-exec', { ops: [{ spans: ['(3,4)'], new_text: '⟨不应命中⟩' }], option: 'execute' });
+  const r = flush(s, { openStep: { turn: 99, step: 1 } }, quiet);
+  ok(r.applied === 0 && r.skipped === 1, '命中安全区的 execute 被拒绝', JSON.stringify(r));
+  const reps = s.snapshotEvents().filter((e) => e.surfaceOp?.op === 'replace');
+  ok(reps.length === 0, '没有写出任何投影', String(reps.length));
+  stageUserOperation(s, 'unlock', '(3,4)');
+  await flushUserOperations(s, { turn: 99, step: 1 }, quiet);
+  const unlocked = flush(s, { openStep: { turn: 99, step: 1 } }, quiet);
+  ok(unlocked.applied === 1, 'unlock 后同一区间可以执行', JSON.stringify(unlocked));
+}
+
+console.log(NL + '⑥.6 安全区持久化：plugin record 重放后仍生效');
+{
+  const s = mk();
+  openStep(s, 99, 1);
+  stageUserOperation(s, 'lock', '(3,4)');
+  await flushUserOperations(s, { turn: 99, step: 1 }, quiet);
+  const snapshots = s.snapshotEvents().map((event) => snapshotSessionEvent(event));
+  const ctx2 = makeStore();
+  const s2 = ctx2.sessions.create('persist-reload', { seed: snapshots });
+  openStep(s2, 99, 1);
+  plasticizeCall(s2, { turn: 99, step: 1 }, 'reload-exec', { ops: [{ spans: ['(3,4)'], new_text: '⟨reload 不应命中⟩' }], option: 'execute' });
+  const r = flush(s2, { openStep: { turn: 99, step: 1 } }, quiet);
+  ok(r.applied === 0 && r.skipped === 1, '重放后锁定仍然生效', JSON.stringify(r));
+}
+
+console.log(NL + '⑥.7 /plasticize 待落盘操作（可交换；发送消息时约化写入）');
+{
+  const s = mk();
+  openStep(s, 99, 1);
+  const staged = stageUserOperation(s, 'project', '(3,4)', '⟨内存投影⟩');
+  ok(staged.pending === 1, '登记投影', String(staged.pending));
+  let overlap;
+  try { stageUserOperation(s, 'project', '(3,4)', 'x'); } catch (error) { overlap = String(error.message); }
+  ok(typeof overlap === 'string' && overlap.includes('重叠'), '区间重叠被拒绝', overlap?.slice(0, 40));
+  const written = await flushUserOperations(s, { turn: 99, step: 1 }, quiet);
+  ok(written.projections === 1, '发送消息时写入投影', JSON.stringify(written));
+  ok(textOf(s).includes('⟨内存投影⟩'), '替代文本进入工作面');
+  ok(countLogicalGenerations(s) === 1, '用户投影产生一个逻辑世代', String(countLogicalGenerations(s)));
+  const s2 = mk();
+  openStep(s2, 99, 1);
+  stageUserOperation(s2, 'project', '(3,4)', '⟨将被清空⟩');
+  ok(clearStagedOperations(s2) === 1, '清空待落盘操作');
+}
 console.log(NL + '⑦ retrospect：context 参数在隐藏命中上扩大输出');
 {
   const s = mk();

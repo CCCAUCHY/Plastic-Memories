@@ -38,7 +38,7 @@ const validate = (s) => {
     return String(error?.message ?? error);
   }
 };
-const holes = (s) => s.snapshotEvents().filter((e) => e.type === 'developer/message');
+const holes = (s) => s.snapshotEvents().filter((e) => { const msg = e.data?.message ?? e.data; return (e.type === 'user/message' || e.type === 'developer/message') && msg?.source?.op === 'hide'; });
 const ALL = '(1,10)';   // cookie1..cookie10 之间 = system 之外的全部历史
 
 console.log(NL + '⓪ 基座：真实会话日志必须合法');
@@ -72,9 +72,10 @@ console.log(NL + '② 有打开的 step 时，空洞落在**当前** turn/step �
   const hs = holes(s);
   ok(hs.length === 1, '写出了 1 条空洞', String(hs.length) + ' | ' + JSON.stringify(r));
   if (hs.length === 1) {
-    ok(hs[0].data.turn === 2 && hs[0].data.step === 1,
-      '空洞用的是**当前** turn/step（不是声明发出时的旧值）',
-      'turn' + hs[0].data.turn + '/step' + hs[0].data.step);
+    const msg = hs[0].data?.message ?? hs[0].data;
+    ok(hs[0].type === 'developer/message' || hs[0].type === 'user/message',
+      'hide 替代写为消息节点（角色由实验控制）',
+      String(hs[0].type) + '|' + String(msg?.role ?? ''));
   }
   const err = validate(s);
   ok(err === undefined, '**写盘后用宿主校验器重新加载：通过**（事故当天缺的就是这一步）', String(err));

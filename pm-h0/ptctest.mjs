@@ -268,9 +268,10 @@ console.log(NL + '⑦ PTC + also_execute_last_set：零点属于 set，且只写
   ok(JSON.stringify(reps[0].sourceEventSeqs) === JSON.stringify(setGroupSeqs),
     '遮蔽的是 **set 那一步**（零点属于 set）', JSON.stringify(reps[0].sourceEventSeqs));
   ok(as.surface.nodes.includes(execCallSeq), 'execute 自己那一步没有被替换');
-  ok(Array.isArray(reps[0].data?.source?.consumed)
-    && reps[0].data.source.consumed.includes('ptc-root-exec3:ptc:1'),
-    '标记同时了结 execute（consumed）', JSON.stringify(reps[0].data?.source?.consumed));
+  const repSource0 = reps[0].data?.message?.source ?? reps[0].data?.source;
+  ok(Array.isArray(repSource0?.consumed)
+    && repSource0.consumed.includes('ptc-root-exec3:ptc:1'),
+    '标记同时了结 execute（consumed）', JSON.stringify(repSource0?.consumed));
   ok((textOf(as).match(/⟨PTC 预览③⟩/g) ?? []).length === 1, '替代文本只出现一次');
 
   const seqBefore = as.seq;

@@ -10,7 +10,7 @@
  * @module dsh-plugin-plastic-memories-h0
  */
 
-import { flush, pendingReport } from './engine.js';
+import { logicalGenerationForCall, flush, flushUserOperations, pendingReport } from './engine.js';
 import { registerCommands } from './commands.js';
 import { GENERATIONS_KEY, generationProjection } from './generations.js';
 import { stepGroup, surfaceNodes } from './coords.js';
@@ -184,13 +184,22 @@ export function apply(ctx, config) {
   // 挂 agent/request：那一刻 step 已打开（dsh-agent-loop 的顺序是
   // pre-step -> step/start -> step()/agent/request -> step/end），
   // 而且本步的工具结果已全部落地 —— 「本步整组」才完整。
-  const safeFlush = (session, where, payload) => {
+  const safeFlush = async (session, where, payload) => {
     if (session === undefined || session === null) return;
     try {
       const openStep = payload !== undefined && Number.isSafeInteger(payload.turn) && Number.isSafeInteger(payload.step)
         ? { turn: payload.turn, step: payload.step }
         : undefined;
+      let userResult = { projections: 0, safety: 0 };
+      try {
+        userResult = await flushUserOperations(session, openStep, ctx.logger);
+      } catch (error) {
+        ctx.logger?.warn?.('[pm-h0] ' + where + ' 用户 /plasticize 落盘失败（已降级）：' + String(error?.message ?? error));
+      }
       const result = flush(session, { openStep, autoHide: options.autoHide }, ctx.logger);
+      if (userResult.projections > 0 || userResult.safety > 0) {
+        ctx.logger?.info?.('[pm-h0] ' + where + ' 用户 /plasticize 落盘：投影 ' + String(userResult.projections) + '，安全区 ' + String(userResult.safety));
+      }
       if (options.trace || result.applied > 0 || result.skipped > 0 || result.auto > 0) {
         ctx.logger?.[result.skipped > 0 ? 'warn' : 'info']?.(
           '[pm-h0] ' + where + ' 投影：应用 ' + result.applied + '，自动隐藏 ' + result.auto +
@@ -244,7 +253,7 @@ export function apply(ctx, config) {
   ctx.on(
     'agent/request',
     async (payload, next) => {
-      safeFlush(payload?.agent?.session, 'request', payload);
+      await safeFlush(payload?.agent?.session, 'request', payload);
       insertCookie(payload?.agent?.session);
       checkSurfaceConsistency(payload?.agent?.session);
       return next();
@@ -254,7 +263,7 @@ export function apply(ctx, config) {
 
   // turn 末的兜底：只挂 agent/request 会漏掉「模型在本 turn 最后一个动作里调用 PM」。
   ctx.on('agent/turn-stopping', (payload) => {
-    safeFlush(payload?.agent?.session, 'turn-stopping', payload);
+    void safeFlush(payload?.agent?.session, 'turn-stopping', payload);
     insertCookie(payload?.agent?.session);
     checkSurfaceConsistency(payload?.agent?.session);
   });
@@ -407,6 +416,8 @@ export function apply(ctx, config) {
           let total = 0;
           for (const batch of batches) total += resolveOps(session, batch.ops, batch.here).length;
           parts.push('已登记 ' + total + ' 段，将在下一个提交边界写入。');
+          const logicalGeneration = logicalGenerationForCall(session, exec.callId);
+          parts.push('逻辑世代 ' + logicalGeneration + '（pm-logical-generation=' + logicalGeneration + '）；物理世代在提交边界产生，仅作参考。');
           for (const batch of batches) parts.push('  · ' + batch.from + '：' + batch.ops.length + ' 个段落');
         }
         return Promise.resolve({ text: parts.join(String.fromCharCode(10)) });
@@ -427,7 +438,9 @@ export function apply(ctx, config) {
         'on your current surface: those you can already see, and echoing them back would only add text that ' +
         'later keyword matching has to disambiguate against. So if what you want to compress is visible ' +
         'right now, do not look it up first — call plasticize directly. ' +
-        'Hits are labelled self - n (the generation it was hidden in). ' +
+        'Hits are labelled self - n using LOGICAL generations: one logical generation per successful plasticize execute; ' +
+        'a single execute may write several physical surfaceOps, so physical generation numbers are included only as ' +
+        'reference and never as message coordinates. Message coordinates always follow logical generations. ' +
         'Text is returned in FULL — nothing is truncated.',
       parameters: {
         type: 'object',

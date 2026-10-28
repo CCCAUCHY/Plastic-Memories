@@ -27,6 +27,7 @@
  * @module dsh-plugin-plastic-memories-h0/engine
  */
 
+import { initState, applyEvent } from './generations.js';
 import { pmSettledCallIds, pmSource } from './markers.js';
 import { previewOf, resolveOps } from './plasticize.js';
 import {
@@ -48,6 +49,23 @@ export const PM_TOOL = 'plasticize';
 /** 被认为是「PM 自己」的工具名集合（自动隐藏只动这些调用组成的步骤组）。 */
 const PM_TOOLS = new Set([PM_TOOL]);
 
+// 插件私有记录：DSH 允许 ignorable plugin record（plugin:<name>/<kind>），
+// 它是给插件存私有数据的官方扩展点；不进入 surface/上下文。
+let pluginRecordAppender;
+let injectedPluginRecordAppender;
+
+/** 测试/宿主注入 appendPluginRecord（避免裸包名解析问题）。 */
+export function installPrivateRecordAppender(append) {
+  injectedPluginRecordAppender = append;
+}
+function appendPluginRecordLazy() {
+  if (pluginRecordAppender === undefined) {
+    pluginRecordAppender = import('@deepseek-ai/dsh-session')
+      .then((module) => (typeof module.appendPluginRecord === 'function' ? module.appendPluginRecord : null))
+      .catch(() => null);
+  }
+  return pluginRecordAppender;
+}
 // ─────────────────────────────────────────────────────────────────────────────
 // 每会话派生缓存（不是事实源；重启后由日志重扫重建）
 // ─────────────────────────────────────────────────────────────────────────────
@@ -250,7 +268,7 @@ function stepHasError(session, declaration, seqs) {
  *   （真实事故：预览被自动隐藏吞掉，模型看不到预览 → 反复重发 set，卡死在第三步）。
  * @returns {Array<{shadowed: number[], reason: string, callId: string}>} 目标。
  */
-function autoHideTargets(session, state, claimed, settledBefore) {
+function autoHideTargets(session, state, claimed, settledBefore, locks) {
   const nodes = surfaceNodes(session);
   const visible = new Set(nodes);
   const out = [];
@@ -265,6 +283,7 @@ function autoHideTargets(session, state, claimed, settledBefore) {
     const key = seqs.join(',');
     if (seen.has(key)) continue;
     if (!seqs.every((seq) => visible.has(seq))) continue;
+    if (locks !== undefined && locks.size > 0 && seqs.some((seq) => locks.has(seq))) continue;
     if (seqs.some((seq) => claimed.has(seq))) continue;
     if (!stepIsPurePm(session, declaration, seqs)) continue;
     const errored = stepHasError(session, declaration, seqs);
@@ -295,8 +314,92 @@ function autoHideTargets(session, state, claimed, settledBefore) {
  * @param {{autoHide?: boolean}} [options] - 开关。
  * @returns {{explicit: number, auto: number, applied: number, failed: Array<object>}} 结果。
  */
+/**
+ * 安全区（/lock、/unlock）—— 纯函数：只从会话日志回放，不保存任何内存状态。
+ *
+ * 私有事件追加在日志里，永不修改；按出现顺序叠加：
+ *   - mode:'range'：携带命令执行时解析出的 seq 列表；
+ *   - mode:'all'：该事件之前、当前世代工作面上的全部节点；
+ *   - mode:'this'：该事件之后的下一条 user 消息（正文随记录一起保存，用于对齐）。
+ * 后来的事件不覆盖前面的，只是继续 add / delete。
+ *
+ * @param {object} session - 目标会话。
+ * @returns {Set<number>} 当前安全区内的消息 seq。
+ */
+export function lockedSeqs(session) {
+  const events = session.snapshotEvents();
+  const locks = new Set();
+  let state = initState();
+  for (let index = 0; index < events.length; index += 1) {
+    const event = events[index];
+    if (typeof event.type !== 'string' || !event.type.startsWith('plugin:plastic-memories/locks')) {
+      state = applyEvent(state, event);
+      continue;
+    }
+    const data = event.data ?? {};
+    const legacy = Array.isArray(data.add) ? data.add : !data.op && Array.isArray(data.locks) ? data.locks : undefined;
+    let seqs = [];
+    let op = 'lock';
+    if (legacy !== undefined) {
+      seqs = legacy;
+    } else {
+      op = data.op === 'unlock' ? 'unlock' : 'lock';
+      if (data.mode === 'range') seqs = Array.isArray(data.seqs) ? data.seqs : [];
+      else if (data.mode === 'all') seqs = [...state.seqs];
+      else if (data.mode === 'this') {
+        const body = typeof data.body === 'string' ? data.body : undefined;
+        for (let next = index + 1; next < events.length; next += 1) {
+          const candidate = events[next];
+          if (candidate.type !== 'user/message' || candidate.data?.source?.kind !== 'user') continue;
+          if (body !== undefined) {
+            const raw = (candidate.data?.content ?? []).map((block) => (typeof block?.text === 'string' ? block.text : '')).join('');
+            if (raw !== body) continue;
+          }
+          if (Number.isSafeInteger(candidate.seq)) seqs = [candidate.seq];
+          break;
+        }
+      }
+    }
+    for (const seq of seqs) {
+      if (!Number.isSafeInteger(seq)) continue;
+      if (op === 'unlock') locks.delete(seq); else locks.add(seq);
+    }
+  }
+  return locks;
+}
+
+/** 解析一个区间为当前工作面上的 seq（不写状态）。 */
+export function resolveLockSeqs(session, interval) {
+  const resolved = resolveOps(session, [{ spans: [interval], new_text: 'lock' }], undefined);
+  return resolved.flatMap((span) => span.shadowed);
+}
+
+/** 追加一条安全区私有事件（append-only；官方 plugin record）。 */
+export async function appendSafetyRecord(session, payload) {
+  const append = await appendPluginRecordLazy();
+  if (typeof append !== 'function') throw new Error('当前宿主不支持 plugin record，无法持久化安全区');
+  append(session, 'plugin:plastic-memories/locks', payload);
+}
+
+/** 检查一组 seq 是否命中安全区。 */
+/** 当前全部安全区的提示（可能过时；只用于诊断）。 */
+function safetyZoneNote(locks) {
+  if (locks === undefined || locks.size === 0) return '';
+  const seqs = [...locks].sort((left, right) => left - right);
+  const shown = seqs.slice(0, 40).join(',');
+  return ' 当前安全区（易过时；后续操作可能改变它）：共 ' + String(seqs.length) + ' 条消息，seq ' + shown + (seqs.length > 40 ? '…' : '') + '。';
+}
+
+function assertNotLocked(locks, shadowed) {
+  if (locks === undefined || locks.size === 0) return;
+  const hit = shadowed.filter((seq) => locks.has(seq));
+  if (hit.length > 0) {
+    throw new Error('区间命中安全区（/lock）：seq ' + hit.slice(0, 8).join(',') + (hit.length > 8 ? '…' : '') + '；请先 /unlock 或换一个区间。' + safetyZoneNote(locks));
+  }
+}
 function applyDeclarations(session, declarations, open, state, options = {}) {
   const nodes = surfaceNodes(session);
+  const locks = lockedSeqs(session);
   const hereOf = (group) => ({ thisSeq: nodes[group.startIndex], thisEndSeq: nodes[group.endIndex] });
 
   // **零点 = 写下这条 ops 的那条 plasticize。**
@@ -333,7 +436,9 @@ function applyDeclarations(session, declarations, open, state, options = {}) {
         const anchorGroup = stepGroup(session, declaration.opsAnchorCallId);
         if (anchorGroup !== undefined && anchorGroup.complete) anchor = hereOf(anchorGroup);
       }
-      planned.push({ declaration, resolved: ops === undefined ? [] : resolveOps(session, ops, anchor), group });
+      const resolved = ops === undefined ? [] : resolveOps(session, ops, anchor);
+      for (const span of resolved) assertNotLocked(locks, span.shadowed);
+      planned.push({ declaration, resolved, group });
     } catch (error) {
       failed.push({ declaration, error });
     }
@@ -384,8 +489,18 @@ function applyDeclarations(session, declarations, open, state, options = {}) {
     options.appliedExecuteSeq ?? -1,
     ...(executedPlannedSeqs.length > 0 ? executedPlannedSeqs : [-1]),
   );
+  // 逻辑世代号：已落地的 execute 数 + 本批 execute 的顺序。
+  const appliedExecutes = countLogicalGenerations(session);
+  let batchExecute = 0;
+  const logicalOf = new Map();
+  for (const entry of planned) {
+    if (entry.declaration.args?.option !== 'execute') continue;
+    batchExecute += 1;
+    logicalOf.set(entry.declaration.callId, appliedExecutes + batchExecute - 1);
+  }
+  const batchLogical = appliedExecutes + batchExecute - 1;
   const autoTargets = options.autoHide === true && (planned.length > 0 || options.appliedBefore === true)
-    ? autoHideTargets(session, state, claimed, settledBefore)
+    ? autoHideTargets(session, state, claimed, settledBefore, locks)
     : [];
 
   // 全部解析完再写：上面所有 resolveOps 都针对同一个（尚未改变）的工作面。
@@ -401,11 +516,15 @@ function applyDeclarations(session, declarations, open, state, options = {}) {
     const generation = session.surface.replaceGeneration + 1;
     for (let k = 0; k < resolved.length; k++) {
       const span = resolved[k];
-      const isHole = String(span.op.new_text ?? '').length === 0;
+      const rawText = String(span.op.new_text ?? '');
+      const isHole = rawText.length === 0;
       if (isHole && open === undefined) throw new Error('没有打开的 step，纯空洞推迟到下一个边界');
+      const consumedLogical = consumed.map((id) => logicalOf.get(id)).find((value) => typeof value === 'number');
+      const logicalGeneration = consumedLogical ?? logicalOf.get(declaration.callId) ?? batchLogical;
       const source = pmSource({
         op: isHole ? 'hide' : 'stabilize',
         callId: declaration.callId,
+        logicalGeneration,
         generation,
         refs: [...span.shadowed],
         ...(consumed.length === 0 ? {} : { consumed }),
@@ -414,12 +533,17 @@ function applyDeclarations(session, declarations, open, state, options = {}) {
       const endSeq = span.shadowed[span.shadowed.length - 1];
       const mark = { surfaceOp: { op: 'replace', startSeq, endSeq }, sourceEventSeqs: [...span.shadowed] };
       const messageId = 'pm-surface-' + String(declaration.callId) + '-' + String(k);
-      if (isHole) {
-        session.append('developer/message',
-          { turn: open.turn, step: open.step, message: { id: messageId, role: 'developer', content: [], source } }, mark);
+      // 控制变量实验：所有替代文本（stabilize 与 hide）都写 developer/message。
+      const devMessage = {
+        id: messageId,
+        role: 'developer',
+        content: [{ type: 'text', text: isHole ? ' ' : rawText }],
+        source,
+      };
+      if (open !== undefined) {
+        session.append('developer/message', { turn: open.turn, step: open.step, message: devMessage }, mark);
       } else {
-        session.append('user/message',
-          { id: messageId, role: 'user', content: [{ type: 'text', text: String(span.op.new_text) }], source }, mark);
+        session.append('developer/message', { message: devMessage }, mark);
       }
       explicit++;
     }
@@ -432,6 +556,7 @@ function applyDeclarations(session, declarations, open, state, options = {}) {
       const generation = session.surface.replaceGeneration + 1;
       const source = pmSource({
         op: 'hide',
+        logicalGeneration: batchLogical,
         generation,
         refs: [...target.shadowed],
         note: 'auto-hide:' + target.reason,
@@ -443,7 +568,7 @@ function applyDeclarations(session, declarations, open, state, options = {}) {
           // 确定性 id：同一个 callId + 同一段历史 → 同一个 node id，日志可对账、可重放。
           id: 'pm-auto-hide-' + String(target.callId) + '-' + String(target.shadowed[0]),
           role: 'developer',
-          content: [],
+          content: [{ type: 'text', text: ' ' }],
           source,
         },
       }, {
@@ -565,6 +690,156 @@ export function flush(session, options, logger) {
  * @param {object} [logger] - 日志器。
  * @returns {{text: string, generation: number, written: number}} 命令回执。
  */
+// ─────────────────────────────────────────────────────────────────────────────
+// /plasticize 命令的待落盘操作（唯一的进程内状态；发送用户消息时约化并写入日志）
+//
+// 设计：lock / unlock / 稳定化(隐藏) 三类操作只要区间互不重叠就是可交换的。
+// 因此不需要有序队列：每次命令只做「与已有待落盘区间是否重叠 / 是否符合安全区约束」的校验，
+// 然后加入集合；发送消息时统一约化（合并同操作连续区间）再落盘。
+// ─────────────────────────────────────────────────────────────────────────────
+
+const PENDING_USER_OPS = new WeakMap();
+
+function pendingOf(session) {
+  let list = PENDING_USER_OPS.get(session);
+  if (list === undefined) { list = []; PENDING_USER_OPS.set(session, list); }
+  return list;
+}
+
+/** 尚未落盘的 /plasticize 操作数。 */
+export function pendingUserOperations(session) {
+  return (PENDING_USER_OPS.get(session) ?? []).length;
+}
+
+/** 清空尚未落盘的操作（诊断/测试用）。 */
+export function clearStagedOperations(session) {
+  const list = PENDING_USER_OPS.get(session) ?? [];
+  PENDING_USER_OPS.delete(session);
+  return list.length;
+}
+
+/**
+ * 登记一条 /plasticize 操作（不写日志）。
+ * @param {object} session - 目标会话。
+ * @param {'lock'|'unlock'|'project'} kind - 操作种类。
+ * @param {string} interval - 区间文本。
+ * @param {string} [newText] - 稳定化替代文本（project 用；空 = 隐藏）。
+ * @returns {{pending:number, shadowed:number[], kind:string}}
+ */
+export function stageUserOperation(session, kind, interval, newText) {
+  if (kind !== 'lock' && kind !== 'unlock' && kind !== 'project') throw new Error('未知操作：' + String(kind));
+  const resolved = resolveOps(session, [{ spans: [interval], new_text: kind === 'project' ? String(newText ?? '') : 'x' }], undefined);
+  const seqs = resolved.flatMap((span) => span.shadowed);
+  if (seqs.length === 0) throw new Error('区间解析后是空的');
+  const list = pendingOf(session);
+  const taken = new Set(list.flatMap((entry) => entry.seqs));
+  if (seqs.some((seq) => taken.has(seq))) {
+    throw new Error('与尚未落盘的 /plasticize 操作区间重叠；三条命令之间区间必须互不重叠。');
+  }
+  const locks = lockedSeqs(session);
+  if (kind === 'lock') {
+    const hit = seqs.filter((seq) => locks.has(seq));
+    if (hit.length > 0) throw new Error('lock 区间包含已在安全区内的消息：seq ' + hit.slice(0, 8).join(',') + '。' + safetyZoneNote(locks));
+  } else if (kind === 'unlock') {
+    const outside = seqs.filter((seq) => !locks.has(seq));
+    if (outside.length > 0) throw new Error('unlock 区间包含不在安全区内的消息：seq ' + outside.slice(0, 8).join(',') + '。' + safetyZoneNote(locks));
+  } else {
+    const hit = seqs.filter((seq) => locks.has(seq));
+    if (hit.length > 0) throw new Error('区间命中安全区：seq ' + hit.slice(0, 8).join(',') + '；请先 /plasticize unlock。' + safetyZoneNote(locks));
+  }
+  list.push({ kind, seqs, text: kind === 'project' ? String(newText ?? '') : '', interval });
+  return { pending: list.length, shadowed: seqs, kind };
+}
+
+async function appendPrivateRecord(session, type, data) {
+  const append = injectedPluginRecordAppender ?? (await appendPluginRecordLazy());
+  if (typeof append !== 'function') throw new Error('当前宿主不支持 plugin record');
+  return append(session, type, data);
+}
+
+/** 判断两组连续 seq 在当前工作面上是否相邻。 */
+function contiguousSeqs(left, right, position) {
+  const leftIndex = position.get(left[left.length - 1]);
+  const rightIndex = position.get(right[0]);
+  return Number.isSafeInteger(leftIndex) && Number.isSafeInteger(rightIndex) && rightIndex === leftIndex + 1;
+}
+
+/**
+ * 发送用户消息时：约化（合并同操作的连续区间）并写入日志。
+ * 安全区操作写成私有记录；若有稳定化/隐藏，写投影后再追加一条逻辑世代私有记录。
+ * @returns {Promise<{projections:number, safety:number}>}
+ */
+export async function flushUserOperations(session, openStep, logger) {
+  const list = PENDING_USER_OPS.get(session);
+  if (list === undefined || list.length === 0) return { projections: 0, safety: 0 };
+  const state = stateOf(session);
+  scanNew(session, state);
+  const base = countLogicalGenerations(session);
+  const locks = lockedSeqs(session);
+  const nodes = session.surface.nodes;
+  const position = new Map();
+  for (let index = 0; index < nodes.length; index += 1) position.set(nodes[index], index);
+  // 约化：按当前工作面位置排序，同操作且相邻的区间合并。
+  const sorted = [...list].sort((left, right) => (position.get(left.seqs[0]) ?? 0) - (position.get(right.seqs[0]) ?? 0));
+  const groups = [];
+  for (const entry of sorted) {
+    const key = entry.kind === 'project' ? 'project\u0000' + entry.text : entry.kind;
+    const last = groups[groups.length - 1];
+    if (last !== undefined && last.key === key && contiguousSeqs(last.seqs, entry.seqs, position)) {
+      last.seqs = [...last.seqs, ...entry.seqs];
+      continue;
+    }
+    groups.push({ kind: entry.kind, key, seqs: [...entry.seqs], text: entry.text, interval: entry.interval });
+  }
+  let safety = 0;
+  for (const group of groups) {
+    if (group.kind !== 'lock' && group.kind !== 'unlock') continue;
+    const visible = new Set(nodes);
+    const stillAllowed = group.kind === 'lock'
+      ? group.seqs.every((seq) => visible.has(seq)) && !group.seqs.some((seq) => locks.has(seq))
+      : group.seqs.every((seq) => visible.has(seq)) && group.seqs.every((seq) => locks.has(seq));
+    if (!stillAllowed) { logger?.warn?.('[pm-h0] 待落盘安全区段已失效，跳过：' + group.interval); continue; }
+    await appendPrivateRecord(session, 'plugin:plastic-memories/locks', { op: group.kind, mode: 'range', seqs: group.seqs });
+    safety += 1;
+  }
+  let projections = 0;
+  for (const group of groups) {
+    if (group.kind !== 'project') continue;
+    const visible = new Set(session.surface.nodes);
+    if (!group.seqs.every((seq) => visible.has(seq)) || group.seqs.some((seq) => locks.has(seq))) {
+      logger?.warn?.('[pm-h0] 待落盘投影段已失效，跳过：' + group.interval);
+      continue;
+    }
+    const generation = session.surface.replaceGeneration + 1;
+    const isHole = group.text.length === 0;
+    const callId = 'pm-user-' + String(session.seq) + '-' + String(projections);
+    const source = pmSource({
+      op: isHole ? 'hide' : 'stabilize',
+      callId,
+      generation,
+      logicalGeneration: base,
+      refs: [...group.seqs],
+    });
+    const message = {
+      id: 'pm-surface-' + callId,
+      role: 'developer',
+      content: [{ type: 'text', text: isHole ? ' ' : group.text }],
+      source,
+    };
+    const mark = { surfaceOp: { op: 'replace', startSeq: group.seqs[0], endSeq: group.seqs[group.seqs.length - 1] }, sourceEventSeqs: [...group.seqs] };
+    if (openStep !== undefined && openStep !== null) {
+      session.append('developer/message', { turn: openStep.turn, step: openStep.step, message }, mark);
+    } else {
+      session.append('developer/message', { message }, mark);
+    }
+    projections += 1;
+  }
+  if (projections > 0) {
+    await appendPrivateRecord(session, 'plugin:plastic-memories/logical', { logical: base, kind: 'user-projection', count: projections });
+  }
+  PENDING_USER_OPS.delete(session);
+  return { projections, safety };
+}
 export function executeUserCommand(session, rawOps, option, logger) {
   if (option !== 'set' && option !== 'execute') {
     throw new Error('option 必须是 "set"（预览）或 "execute"（落实）');
@@ -591,6 +866,8 @@ export function executeUserCommand(session, rawOps, option, logger) {
   // 先扫一遍日志，保证 state 是最新的（命令可能在两次边界之间执行）。
   const state = stateOf(session);
   scanNew(session, state);
+  const locks = lockedSeqs(session);
+  for (const span of resolved) assertNotLocked(locks, span.shadowed);
   const callId = 'pm-user-' + String(session.seq);
   let written = 0;
   let generation = session.surface.replaceGeneration;
@@ -624,4 +901,69 @@ export function pendingReport(session) {
   return state.declarations
     .filter((d) => d.args?.option === 'execute' && !isDone(state, d))
     .map((d) => ({ callId: d.callId, via: d.via, seq: d.seq }));
+}
+// ─────────────────────────────────────────────────────────────────────────────
+// 逻辑世代：一次成功的 execute 操作 = 一个逻辑世代；物理世代可能多个。
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 逻辑世代表（只读推导；不改变投影行为）。
+ *
+ * 物理世代 = 每条 surfaceOp replace（一次 execute 可能写多条）；
+ * 逻辑世代 = 成功的 execute 操作本身（含 also_execute_last_set 消费的 set）。
+ *
+ * @param {object} session - 目标会话。
+ * @returns {{total:number, executes:Array<{callId:string, logical:number, seq:number}>}}
+ */
+/**
+ * 某次 execute 调用应获得的逻辑世代号（工具结果直接返回它，不需要往前数）。
+ * 已落地的 execute 数量 + 本批尚未落地 execute 中的序号。
+ * @param {object} session - 目标会话。
+ * @param {string} callId - 本次调用 id。
+ * @returns {number} 逻辑世代号（1 起）。
+ */
+export function logicalGenerationForCall(session, callId) {
+  const state = stateOf(session);
+  scanNew(session, state);
+  let applied = countLogicalGenerations(session);
+  const pending = [];
+  for (const declaration of state.declarations) {
+    if (declaration.args?.option !== 'execute') continue;
+    if (state.appliedCallIds.has(declaration.callId)) { applied += 1; continue; }
+    if (state.failedCallIds.has(declaration.callId)) continue;
+    pending.push(declaration);
+  }
+  const index = pending.findIndex((declaration) => declaration.callId === callId);
+  // 0 起：前面没有 execute → 0；否则 = 前一个 execute 的结果号 + 1。
+  return applied + (index >= 0 ? index : pending.length);
+}
+
+export function logicalGenerations(session) {
+  const state = stateOf(session);
+  scanNew(session, state);
+  const applied = state.appliedCallIds;
+  const executes = [];
+  for (const declaration of state.declarations) {
+    if (declaration.args?.option !== 'execute') continue;
+    if (!applied.has(declaration.callId)) continue;
+    executes.push({ callId: declaration.callId, logical: executes.length, seq: declaration.seq });
+  }
+  const count = countLogicalGenerations(session);
+  return { total: count === 0 ? 0 : count - 1, count, executes };
+}
+
+/** 已产生的逻辑世代总数（成功的 execute + 用户命令写入的逻辑世代事件）。 */
+export function countLogicalGenerations(session) {
+  const state = stateOf(session);
+  scanNew(session, state);
+  let executes = 0;
+  for (const declaration of state.declarations) {
+    if (declaration.args?.option !== 'execute') continue;
+    if (state.appliedCallIds.has(declaration.callId)) executes += 1;
+  }
+  let privateEvents = 0;
+  for (const event of session.snapshotEvents()) {
+    if (event.type === 'plugin:plastic-memories/logical') privateEvents += 1;
+  }
+  return executes + privateEvents;
 }

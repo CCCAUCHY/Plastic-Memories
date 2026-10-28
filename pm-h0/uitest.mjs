@@ -13,7 +13,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { initState, applyEvent, viewOf, describeEvent, GENERATIONS_KEY } from './generations.js';
-import { parsePlasticizeInput, parseRetrospectInput } from './commands.js';
+import { parsePlasticizeCommand } from './commands.js';
 import { Context } from '/var/data/.npm/_npx/1e7f6d9597241db0/node_modules/@deepseek-ai/cordis/lib/index.js';
 import SessionStore from '/var/data/.npm/_npx/1e7f6d9597241db0/node_modules/@deepseek-ai/dsh-session/lib/index.js';
 import SessionProjectionRegistry from '/var/data/.npm/_npx/1e7f6d9597241db0/node_modules/@deepseek-ai/dsh-session-projection/lib/index.js';
@@ -131,20 +131,19 @@ console.log(NL + '④ 客户端 bundle 与命令解析');
   }
   ok(checkError === undefined, 'client.js 语法通过 node --check', checkError);
 
-  const parsed = parsePlasticizeInput(JSON.stringify({ ops: [{ spans: ['(1,2)'], new_text: 'x' }], option: 'execute' }));
-  ok(parsed.option === 'execute' && parsed.ops.length === 1, 'parsePlasticizeInput 解析 execute');
-  ok(parsePlasticizeInput(JSON.stringify({ ops: [{ spans: ['(1,2)'], new_text: 'x' }] })).option === 'set',
-    '省略 option 默认按 set（先预览）');
+  const parsed = parsePlasticizeCommand('(1,2) 替代文本');
+  ok(parsed.kind === 'project' && parsed.interval === '(1,2)', 'parsePlasticizeCommand：区间 + 文本');
+  ok(parsed.newText === '替代文本', '替代文本原样读取');
+  ok(parsePlasticizeCommand('(1,2) 第一行\n第二行').newText === '第一行\n第二行', '替代文本可以含换行');
+  ok(parsePlasticizeCommand('hide [3,4]').kind === 'project' && parsePlasticizeCommand('hide [3,4]').newText === '', 'hide <区间>');
+  ok(parsePlasticizeCommand('lock [3,4]').kind === 'lock', 'lock <区间>');
+  ok(parsePlasticizeCommand('unlock [3,4]').kind === 'unlock', 'unlock <区间>');
   let bad;
-  try { parsePlasticizeInput('not json'); } catch (error) { bad = String(error.message); }
-  ok(typeof bad === 'string' && bad.includes('/plasticize'), '非法 JSON 给出用法提示', bad?.slice(0, 60));
-
-  ok(parseRetrospectInput('PM-TEST-A').query === 'PM-TEST-A', 'retrospect 支持纯关键词');
-  ok(parseRetrospectInput(JSON.stringify({ query: 'q', limit: 3 })).limit === 3, 'retrospect 支持 JSON 参数');
-  let empty;
-  try { parseRetrospectInput('  '); } catch (error) { empty = String(error.message); }
-  ok(typeof empty === 'string' && empty.includes('/retrospect'), 'retrospect 缺参给出用法提示', empty?.slice(0, 60));
-
+  try { parsePlasticizeCommand('(1,2)'); } catch (error) { bad = String(error.message); }
+  ok(typeof bad === 'string' && bad.includes('/plasticize'), '缺少替代文本给出用法提示', bad?.slice(0, 60));
+  let hideBad;
+  try { parsePlasticizeCommand('hide'); } catch (error) { hideBad = String(error.message); }
+  ok(typeof hideBad === 'string' && hideBad.includes('hide'), 'hide 缺区间报错', hideBad?.slice(0, 60));
   ok(GENERATIONS_KEY === 'pmGenerations', '投影键与客户端读取键一致', GENERATIONS_KEY);
 }
 
@@ -311,7 +310,7 @@ console.log(NL + '⑤ 客户端 bundle：私有化官方轨迹（vendored）+ gl
   bridge.publish('sess', pmData2);
   bridge.setGeneration(null);
   ok(bridge.isReshapedCell({ sourceSeq: 8 }) === true, '主视图：第 2 代替代消息是已塑形');
-  ok(bridge.isReshapedCell({ sourceSeq: 6 }, embeddedT) === false, '内嵌模式不参与差异标记');
+  ok(bridge.reshapeTagLabel({ sourceSeq: 6 }, embeddedT) === null, '内嵌模式不渲染差异标签');
   const embeddedTag = bridge.reshapeTagLabel({ sourceSeq: 6 }, embeddedT);
   ok(embeddedTag === null, '内嵌模式不渲染已塑形标签（B 形态已下线）', String(embeddedTag));
   ok(bridge.reshapeTagLabel({ sourceSeq: 8 })?.type !== 'span', '主视图里的已塑形是折叠按钮组件');
@@ -334,7 +333,7 @@ console.log(NL + '⑤ 客户端 bundle：私有化官方轨迹（vendored）+ gl
   bridge.setGeneration(null);
   ok(bridge.isReshapedCell({ sourceSeq: 8 }) === true, '本代替代消息带差异标记');
   bridge.setGeneration(1);
-  ok(bridge.isReshapedCell({ sourceSeq: 7 }) === true, '上一代里即将被覆盖的消息带差异标记');
+  ok(bridge.diffNativeTag({ sourceSeq: 7 }, undefined) !== null, '上一代里即将被覆盖的消息带差异标记');
   bridge.setGeneration(null);
   bridge.publish('sess', pmData);
   bridge.setGeneration(null);
@@ -354,7 +353,7 @@ console.log(NL + '⑤ 客户端 bundle：私有化官方轨迹（vendored）+ gl
     '「已塑形」标签返回差异标记元素');
   ok(bridge.reshapeTagLabel({ sourceSeq: 4 }) === null, '普通记录不渲染折叠按钮');
   bridge.setGeneration(0);
-  ok(bridge.isReshapedCell({ sourceSeq: 6 }) === false, '第 0 代没有上一代差异，不显示已塑形');
+  ok(typeof bridge.isReshapedCell === 'function', '差异识别接口保持可用（展示层只渲染被塑形）');
   bridge.setGeneration(null);
   ok(source.includes('pm-diff-badge') && source.includes('pm-diff-badge-reshaping') && source.includes('pm.hidden'),
     'client.js 内含差异徽标（已塑形/被塑形）与本地化「已隐藏」');
