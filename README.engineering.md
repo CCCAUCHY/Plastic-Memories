@@ -59,12 +59,9 @@ The installable tarball is committed under dist/ (link/staged installs are local
     dsh plugin --profile <profile> add file:$PWD/dist/dsh-plugin-plastic-memories-h0-0.28.4.tgz
 ## Relationship to DSH's native mechanism: system-prompt updates are also surfaceOp replace
 
-In session 26aaea8e this is directly observable: the initial `system/message` (seq 8) is later replaced by a new `system/message` (seq 279):
+Auto-compaction and system-prompt updates also rewrite the surface through `surfaceOp: replace`. In the generation view their replacement rows therefore show "Reshaped", and the messages they cover show "Being reshaped" — exactly the same visual semantics as PM's plasticize.
 
-    surfaceOp: { op: "replace", startSeq: 8, endSeq: 8 }
-    source.kind: "system-prompt"
-
-PM's generation projection treats **every surfaceOp replace as one physical generation**, so this official system-prompt update also appears in the generation list and is shown as "Reshaped" in the UI. This is not a defect and must not be special-cased:
+PM's generation projection treats **every surfaceOp replace as one physical generation**. This is not a defect and must not be special-cased:
 
 - DSH's native surface mechanism uses `surfaceOp: replace` as the single rewriting primitive; auto-compaction, system-prompt updates and PM's plasticize are merely different callers;
 - PM's tools, safety zones and logical generations are a **proper-subset extension** built on that primitive;

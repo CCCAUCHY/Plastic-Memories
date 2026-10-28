@@ -59,12 +59,9 @@ pm-h0/trajectory-vendor.js 是 DSH @deepseek-ai/dsh-client-ui-trajectory 客户�
     dsh plugin --profile <profile> add file:$PWD/dist/dsh-plugin-plastic-memories-h0-0.28.4.tgz
 ## 与 DSH 原生机制的关系：系统提示词更新也是 surfaceOp replace
 
-在会话 26aaea8e 中可以直接观察到：初始 `system/message`（seq 8）后来被一条新的 `system/message`（seq 279）替换：
+自动压缩与系统提示词更新同样会通过 `surfaceOp: replace` 改写 surface。因此在世代视图中，它们产生的替代行也会显示「已塑形」，被它们覆盖的消息会显示「被塑形」——和 PM 的 plasticize 完全同一套视觉语义。
 
-    surfaceOp: { op: "replace", startSeq: 8, endSeq: 8 }
-    source.kind: "system-prompt"
-
-PM 的世代投影把**每一条 surfaceOp replace 都视为一个物理世代**，因此这次官方系统提示词更新同样出现在世代列表里，并在 UI 中显示「已塑形」。这不是缺陷，也不应特判：
+PM 的世代投影把**每一条 surfaceOp replace 都视为一个物理世代**。这不是缺陷，也不应特判：
 
 - DSH 的原生 surface 机制以 `surfaceOp: replace` 作为统一改写原语；自动压缩、系统提示词更新、PM 的 plasticize 都只是它的不同调用者；
 - PM 的工具、安全区、逻辑世代，都是建立在该原语之上的**真子集扩展**；
