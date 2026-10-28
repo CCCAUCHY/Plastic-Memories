@@ -1,6 +1,6 @@
-# PM 机械测试脚本（v0.26.0）
+# PM 机械测试脚本（v0.27.0）
 
-**前提**：新建会话时选 **PM** 模式；模式名应显示 `PM · 可塑记忆 v0.26.0`。
+**前提**：新建会话时选 **PM** 模式；模式名应显示 `PM · 可塑记忆 v0.27.0`。
 
 > 设计原则：
 > 1. **两轮完成**：第一轮测工具（含主动隐藏），第二轮测合并后的用户命令（安全区 + 用户稳定化）；
@@ -81,8 +81,10 @@
 
     /plasticize <区间> <替代文本>
     /plasticize hide <区间>
-    /plasticize lock <区间>
-    /plasticize unlock <区间>
+    /plasticize lock <区间> | lock all
+    /plasticize unlock <区间> | unlock all
+    /plasticize prelock
+    /plasticize clear
 
 规则：
 
@@ -104,12 +106,14 @@
   - 与上面的 lock 区间不能重叠；
   - 应返回「已登记稳定化/隐藏」。
 
-> 可选语法自检（不影响判定）：
+> 可选语法自检（在**另一个新会话**里单独验证，避免与 2.1 的待落盘操作冲突）：
 >
 >     /plasticize hide [N_H1,N_H2]     → 已登记隐藏
->     /plasticize unlock [N_C1,N_C2]   → 已登记移出安全区
->     /plasticize lock all             → 报错（all 不再是合法区间）
->     /plasticize this                 → 报错（this 语法糖已随合并移除）
+>     /plasticize prelock               → 已登记「下一条用户消息纳入安全区」
+>     /plasticize lock all              → 已登记「当前世代全部纳入安全区」
+>     /plasticize unlock all            → 已登记「当前世代全部移出安全区」
+>     /plasticize clear                 → 清空全部待落盘操作
+>     /plasticize this                  → 报错（this 语法糖已随合并移除）
 
 ## 2.2 再发下面这条用户消息（发送时会先落盘 2.1 的全部操作）
 
@@ -144,6 +148,10 @@
 ## 说明
 
 - `/plasticize` 的替代文本原样读取（可含换行、引号）；空替代文本 = 隐藏（也可用 `hide` 显式表达）；
+- 工具 `/plasticize` 的 op 支持 `lock_this: true`：把替代文本自身纳入安全区（默认 false）。可在第一轮第 5 步附加验证；
+- 安全区报错用**区间**（cookie 锚点）描述，不写“共 N 条消息”；
+- 安全区私有数据以**准确消息 seq** 落盘；回放到当前物理世代不存在的消息时会告警；
+- `prelock` 锁定触发落盘的 user 消息；`lock all` / `unlock all` 覆盖当前世代全部轨迹（与其它待落盘操作互斥）。
 - 用户命令没有「承载步骤」，所以区间不能用 `this`；
 - 安全区完全由日志回放：/plasticize lock/unlock 在发送消息时追加私有记录，之后不再修改；
 - 用户稳定化/隐藏会追加逻辑世代私有记录，之后 plasticize 工具结果与 retrospect 的世代号都会把它计入；

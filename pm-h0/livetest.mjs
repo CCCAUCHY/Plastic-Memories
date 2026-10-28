@@ -14,7 +14,7 @@ import SessionStore from '/var/data/.npm/_npx/1e7f6d9597241db0/node_modules/@dee
 import { makeCounter, fixture, cookieSeed, cookieNodes, cookieEvent, textOf, openStep, plasticizeCall, makeStore } from './testkit.mjs';
 import { pairingMaps, snapshotSurface, stepGroup, indexOfCall, checkBalanced } from './coords.js';
 import { appendPluginRecord, snapshotSessionEvent } from '/var/data/.npm/_npx/1e7f6d9597241db0/node_modules/@deepseek-ai/dsh-session/lib/index.js';
-import { flush, stageUserOperation, flushUserOperations, clearStagedOperations, countLogicalGenerations, installPrivateRecordAppender } from './engine.js';
+import { flush, stageUserOperation, flushUserOperations, clearStagedOperations, countLogicalGenerations, installPrivateRecordAppender, lockedSeqs, safetyZoneIntervals } from './engine.js';
 import { retrospect } from './retrospect.js';
 
 const NL = String.fromCharCode(10);
@@ -132,7 +132,7 @@ console.log(NL + '⑥.5 安全区：lock 后 plasticize 不能命中锁定区间
 {
   const s = mk();
   openStep(s, 99, 1);
-  const staged = stageUserOperation(s, 'lock', '(3,4)');
+  const staged = stageUserOperation(s, { kind: 'lock', mode: 'range', interval: '(3,4)' });
   ok(staged.shadowed.length > 0, '登记 lock 区间', String(staged.shadowed.length));
   await flushUserOperations(s, { turn: 99, step: 1 }, quiet);
   plasticizeCall(s, { turn: 99, step: 1 }, 'lock-exec', { ops: [{ spans: ['(3,4)'], new_text: '⟨不应命中⟩' }], option: 'execute' });
@@ -140,7 +140,7 @@ console.log(NL + '⑥.5 安全区：lock 后 plasticize 不能命中锁定区间
   ok(r.applied === 0 && r.skipped === 1, '命中安全区的 execute 被拒绝', JSON.stringify(r));
   const reps = s.snapshotEvents().filter((e) => e.surfaceOp?.op === 'replace');
   ok(reps.length === 0, '没有写出任何投影', String(reps.length));
-  stageUserOperation(s, 'unlock', '(3,4)');
+  stageUserOperation(s, { kind: 'unlock', mode: 'range', interval: '(3,4)' });
   await flushUserOperations(s, { turn: 99, step: 1 }, quiet);
   const unlocked = flush(s, { openStep: { turn: 99, step: 1 } }, quiet);
   ok(unlocked.applied === 1, 'unlock 后同一区间可以执行', JSON.stringify(unlocked));
@@ -150,7 +150,7 @@ console.log(NL + '⑥.6 安全区持久化：plugin record 重放后仍生效');
 {
   const s = mk();
   openStep(s, 99, 1);
-  stageUserOperation(s, 'lock', '(3,4)');
+  stageUserOperation(s, { kind: 'lock', mode: 'range', interval: '(3,4)' });
   await flushUserOperations(s, { turn: 99, step: 1 }, quiet);
   const snapshots = s.snapshotEvents().map((event) => snapshotSessionEvent(event));
   const ctx2 = makeStore();
@@ -165,10 +165,10 @@ console.log(NL + '⑥.7 /plasticize 待落盘操作（可交换；发送消息�
 {
   const s = mk();
   openStep(s, 99, 1);
-  const staged = stageUserOperation(s, 'project', '(3,4)', '⟨内存投影⟩');
+  const staged = stageUserOperation(s, { kind: 'project', mode: 'range', interval: '(3,4)', newText: '⟨内存投影⟩' });
   ok(staged.pending === 1, '登记投影', String(staged.pending));
   let overlap;
-  try { stageUserOperation(s, 'project', '(3,4)', 'x'); } catch (error) { overlap = String(error.message); }
+  try { stageUserOperation(s, { kind: 'project', mode: 'range', interval: '(3,4)', newText: 'x' }); } catch (error) { overlap = String(error.message); }
   ok(typeof overlap === 'string' && overlap.includes('重叠'), '区间重叠被拒绝', overlap?.slice(0, 40));
   const written = await flushUserOperations(s, { turn: 99, step: 1 }, quiet);
   ok(written.projections === 1, '发送消息时写入投影', JSON.stringify(written));
@@ -176,9 +176,36 @@ console.log(NL + '⑥.7 /plasticize 待落盘操作（可交换；发送消息�
   ok(countLogicalGenerations(s) === 1, '用户投影产生一个逻辑世代', String(countLogicalGenerations(s)));
   const s2 = mk();
   openStep(s2, 99, 1);
-  stageUserOperation(s2, 'project', '(3,4)', '⟨将被清空⟩');
+  stageUserOperation(s2, { kind: 'project', mode: 'range', interval: '(3,4)', newText: '⟨将被清空⟩' });
   ok(clearStagedOperations(s2) === 1, '清空待落盘操作');
 }
+console.log(NL + '⑥.8 all / prelock / lock_this 与区间描述');
+{
+  const s = mk();
+  openStep(s, 99, 1);
+  stageUserOperation(s, { kind: 'lock', mode: 'all' });
+  const allResult = await flushUserOperations(s, { turn: 99, step: 1 }, quiet);
+  ok(allResult.safety === 1 && lockedSeqs(s).size === s.surface.nodes.length, 'lock all 锁定当前全部轨迹', String(lockedSeqs(s).size));
+  ok(safetyZoneIntervals(s).includes('cookie'), '安全区用区间（cookie）描述', safetyZoneIntervals(s).slice(0, 80));
+}
+{
+  const s = mk();
+  openStep(s, 99, 1);
+  stageUserOperation(s, { kind: 'lock', mode: 'prelock' });
+  const userMessage = s.append('user/message', { id: 'prelock-u', role: 'user', content: [{ type: 'text', text: '这条进入安全区' }], source: { kind: 'user' } }, { surfaceOp: 'append' });
+  await flushUserOperations(s, { turn: 99, step: 1 }, quiet);
+  ok(lockedSeqs(s).has(userMessage.seq), 'prelock 锁定触发落盘的用户消息', String(userMessage.seq));
+}
+{
+  const s = mk();
+  openStep(s, 99, 1);
+  plasticizeCall(s, { turn: 99, step: 1 }, 'lock-this-exec', { ops: [{ spans: ['(3,4)'], new_text: '⟨锁住的替代⟩', lock_this: true }], option: 'execute' });
+  flush(s, { openStep: { turn: 99, step: 1 } }, quiet);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const replacement = s.snapshotEvents().find((event) => event.surfaceOp?.op === 'replace' && event.data?.message?.source?.op === 'stabilize');
+  ok(replacement !== undefined && lockedSeqs(s).has(replacement.seq), 'lock_this 把替代文本自身纳入安全区', String(replacement?.seq));
+}
+
 console.log(NL + '⑦ retrospect：context 参数在隐藏命中上扩大输出');
 {
   const s = mk();

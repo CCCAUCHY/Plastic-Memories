@@ -28,6 +28,7 @@
  */
 
 import { initState, applyEvent } from './generations.js';
+import { findOverlap } from './overlap.js';
 import { pmSettledCallIds, pmSource } from './markers.js';
 import { previewOf, resolveOps } from './plasticize.js';
 import {
@@ -315,18 +316,13 @@ function autoHideTargets(session, state, claimed, settledBefore, locks) {
  * @returns {{explicit: number, auto: number, applied: number, failed: Array<object>}} 结果。
  */
 /**
- * 安全区（/lock、/unlock）—— 纯函数：只从会话日志回放，不保存任何内存状态。
- *
- * 私有事件追加在日志里，永不修改；按出现顺序叠加：
- *   - mode:'range'：携带命令执行时解析出的 seq 列表；
- *   - mode:'all'：该事件之前、当前世代工作面上的全部节点；
- *   - mode:'this'：该事件之后的下一条 user 消息（正文随记录一起保存，用于对齐）。
- * 后来的事件不覆盖前面的，只是继续 add / delete。
- *
+ * 安全区回放（纯函数，只读会话日志）。
+ * 私有事件按出现顺序叠加：lock 加、unlock 减；最新记录携带**准确消息 seq**。
+ * 返回 { locks, stale }：stale = 已不在当前物理世代工作面上的锁（提示用）。
  * @param {object} session - 目标会话。
- * @returns {Set<number>} 当前安全区内的消息 seq。
+ * @returns {{locks:Set<number>, stale:number[]}}
  */
-export function lockedSeqs(session) {
+export function safetyZoneState(session) {
   const events = session.snapshotEvents();
   const locks = new Set();
   let state = initState();
@@ -344,7 +340,7 @@ export function lockedSeqs(session) {
       seqs = legacy;
     } else {
       op = data.op === 'unlock' ? 'unlock' : 'lock';
-      if (data.mode === 'range') seqs = Array.isArray(data.seqs) ? data.seqs : [];
+      if (Array.isArray(data.seqs)) seqs = data.seqs;
       else if (data.mode === 'all') seqs = [...state.seqs];
       else if (data.mode === 'this') {
         const body = typeof data.body === 'string' ? data.body : undefined;
@@ -365,9 +361,70 @@ export function lockedSeqs(session) {
       if (op === 'unlock') locks.delete(seq); else locks.add(seq);
     }
   }
-  return locks;
+  const surface = new Set(session.surface.nodes);
+  const stale = [...locks].filter((seq) => !surface.has(seq)).sort((left, right) => left - right);
+  return { locks, stale };
 }
 
+/** 当前安全区（只读快照）。 */
+export function lockedSeqs(session) {
+  return safetyZoneState(session).locks;
+}
+
+/**
+ * 用**区间**描述当前安全区（模型看到的是 token 流，不容易用“消息条数”理解）。
+ * 锚点用可见 cookie 编号；没有 cookie 时退化为“开头/结尾”。
+ * @param {object} session - 目标会话。
+ * @param {Set<number>} [locks] - 已算好的锁集合。
+ * @returns {string} 形如 `(cookie 5, cookie 8)；[cookie 12, cookie 14]`；空安全区返回空串。
+ */
+export function safetyZoneIntervals(session, locks) {
+  const set = locks ?? lockedSeqs(session);
+  if (set.size === 0) return '';
+  const nodes = session.surface.nodes;
+  const cookieAt = new Map();
+  let cookieNumber = 0;
+  for (let index = 0; index < nodes.length; index += 1) {
+    const event = session.eventAt(nodes[index]);
+    const message = event?.data?.message ?? event?.data;
+    if (event?.type !== 'user/message' || message?.source?.kind !== 'pm-cookie') continue;
+    cookieNumber += 1;
+    cookieAt.set(index, cookieNumber);
+  }
+  const runs = [];
+  let start = -1;
+  for (let index = 0; index <= nodes.length; index += 1) {
+    const locked = index < nodes.length && set.has(nodes[index]);
+    if (locked && start < 0) start = index;
+    if (!locked && start >= 0) { runs.push([start, index - 1]); start = -1; }
+  }
+  const parts = [];
+  for (const [left, right] of runs) {
+    let before;
+    let after;
+    for (let index = left; index >= 0; index -= 1) if (cookieAt.has(index)) { before = { index, number: cookieAt.get(index) }; break; }
+    for (let index = right; index < nodes.length; index += 1) if (cookieAt.has(index)) { after = { index, number: cookieAt.get(index) }; break; }
+    if (before !== undefined && after !== undefined) {
+      const leftBracket = before.index === left ? '[' : '(';
+      const rightBracket = after.index === right ? ']' : ')';
+      parts.push(leftBracket + 'cookie ' + String(before.number) + ', cookie ' + String(after.number) + rightBracket);
+    } else if (before !== undefined) {
+      parts.push('cookie ' + String(before.number) + ' 之后到结尾');
+    } else if (after !== undefined) {
+      parts.push('开头到 cookie ' + String(after.number));
+    } else {
+      parts.push('开头到结尾');
+    }
+  }
+  return parts.join('；');
+}
+
+/** 安全区提示（易过时；报错时列表是准确的）。 */
+function safetyZoneNote(session, locks) {
+  const zones = safetyZoneIntervals(session, locks);
+  if (zones.length === 0) return '';
+  return ' 当前安全区（区间，易过时；后续操作可能改变它）：' + zones + '。';
+}
 /** 解析一个区间为当前工作面上的 seq（不写状态）。 */
 export function resolveLockSeqs(session, interval) {
   const resolved = resolveOps(session, [{ spans: [interval], new_text: 'lock' }], undefined);
@@ -381,20 +438,11 @@ export async function appendSafetyRecord(session, payload) {
   append(session, 'plugin:plastic-memories/locks', payload);
 }
 
-/** 检查一组 seq 是否命中安全区。 */
-/** 当前全部安全区的提示（可能过时；只用于诊断）。 */
-function safetyZoneNote(locks) {
-  if (locks === undefined || locks.size === 0) return '';
-  const seqs = [...locks].sort((left, right) => left - right);
-  const shown = seqs.slice(0, 40).join(',');
-  return ' 当前安全区（易过时；后续操作可能改变它）：共 ' + String(seqs.length) + ' 条消息，seq ' + shown + (seqs.length > 40 ? '…' : '') + '。';
-}
-
-function assertNotLocked(locks, shadowed) {
+function assertNotLocked(session, locks, shadowed) {
   if (locks === undefined || locks.size === 0) return;
   const hit = shadowed.filter((seq) => locks.has(seq));
   if (hit.length > 0) {
-    throw new Error('区间命中安全区（/lock）：seq ' + hit.slice(0, 8).join(',') + (hit.length > 8 ? '…' : '') + '；请先 /unlock 或换一个区间。' + safetyZoneNote(locks));
+    throw new Error('区间命中安全区：seq ' + hit.slice(0, 8).join(',') + (hit.length > 8 ? '…' : '') + '；请先 /plasticize unlock 或换一个区间。' + safetyZoneNote(session, locks));
   }
 }
 function applyDeclarations(session, declarations, open, state, options = {}) {
@@ -437,7 +485,7 @@ function applyDeclarations(session, declarations, open, state, options = {}) {
         if (anchorGroup !== undefined && anchorGroup.complete) anchor = hereOf(anchorGroup);
       }
       const resolved = ops === undefined ? [] : resolveOps(session, ops, anchor);
-      for (const span of resolved) assertNotLocked(locks, span.shadowed);
+      for (const span of resolved) assertNotLocked(session, locks, span.shadowed);
       planned.push({ declaration, resolved, group });
     } catch (error) {
       failed.push({ declaration, error });
@@ -460,6 +508,17 @@ function applyDeclarations(session, declarations, open, state, options = {}) {
     if (seen !== undefined) { planned[i].duplicateOf = seen; continue; }
     bySignature.set(sig, i);
   }
+  // 工具路径与 /plasticize 命令共用同一套区间重叠检测（overlap.js）。
+  {
+    const overlapRanges = planned
+      .filter((entry) => entry.duplicateOf === undefined)
+      .flatMap((entry) => entry.resolved.map((span) => ({ seqs: span.shadowed })));
+    const overlap = findOverlap(overlapRanges);
+    if (overlap !== undefined) {
+      throw new Error('本批声明之间区间重叠：有两条声明想遮蔽同一段历史。请分别换算各自的偏移，或合并成一条声明。');
+    }
+  }
+
   const claimed = new Set();
   for (let i = 0; i < planned.length; i++) {
     if (planned[i].duplicateOf !== undefined) continue;
@@ -540,10 +599,14 @@ function applyDeclarations(session, declarations, open, state, options = {}) {
         content: [{ type: 'text', text: isHole ? ' ' : rawText }],
         source,
       };
-      if (open !== undefined) {
-        session.append('developer/message', { turn: open.turn, step: open.step, message: devMessage }, mark);
-      } else {
-        session.append('developer/message', { message: devMessage }, mark);
+      const writtenEvent = open !== undefined
+        ? session.append('developer/message', { turn: open.turn, step: open.step, message: devMessage }, mark)
+        : session.append('developer/message', { message: devMessage }, mark);
+      if (span.op.lock_this === true && writtenEvent !== undefined && Number.isSafeInteger(writtenEvent.seq)) {
+        (injectedPluginRecordAppender !== undefined ? Promise.resolve(injectedPluginRecordAppender) : appendPluginRecordLazy()).then((append) => {
+          if (typeof append !== 'function') return;
+          try { append(session, 'plugin:plastic-memories/locks', { op: 'lock', seqs: [writtenEvent.seq] }); } catch { /* 忽略持久化失败 */ }
+        }).catch(() => {});
       }
       explicit++;
     }
@@ -605,11 +668,18 @@ function findLastPendingSet(declarations, before) {
  * @param {object} [logger] - 日志器。
  * @returns {{applied: number, skipped: number, auto: number, generation: number}} 结果。
  */
+const WARNED_STALE = new WeakSet();
+
 export function flush(session, options, logger) {
   const open = options?.openStep;
   const autoHide = options?.autoHide !== false;
   const state = stateOf(session);
   scanNew(session, state);
+  const zone = safetyZoneState(session);
+  if (zone.stale.length > 0 && !WARNED_STALE.has(session)) {
+    WARNED_STALE.add(session);
+    logger?.warn?.('[pm-h0] 安全区包含不在当前物理世代的消息（seq ' + zone.stale.slice(0, 12).join(',') + (zone.stale.length > 12 ? '…' : '') + '）；可能来自更早的世代。');
+  }
 
   if (state.shapeIssues.size > 0) {
     for (const issue of state.shapeIssues) warnShapeOnce(state, issue, logger);
@@ -706,49 +776,16 @@ function pendingOf(session) {
   return list;
 }
 
-/** 尚未落盘的 /plasticize 操作数。 */
+/** 尚未落盘的 /plasticize 操作数（不含 prelock 的标记也算一条）。 */
 export function pendingUserOperations(session) {
   return (PENDING_USER_OPS.get(session) ?? []).length;
 }
 
-/** 清空尚未落盘的操作（诊断/测试用）。 */
+/** 清空待落盘操作（/plasticize clear）。 */
 export function clearStagedOperations(session) {
   const list = PENDING_USER_OPS.get(session) ?? [];
   PENDING_USER_OPS.delete(session);
   return list.length;
-}
-
-/**
- * 登记一条 /plasticize 操作（不写日志）。
- * @param {object} session - 目标会话。
- * @param {'lock'|'unlock'|'project'} kind - 操作种类。
- * @param {string} interval - 区间文本。
- * @param {string} [newText] - 稳定化替代文本（project 用；空 = 隐藏）。
- * @returns {{pending:number, shadowed:number[], kind:string}}
- */
-export function stageUserOperation(session, kind, interval, newText) {
-  if (kind !== 'lock' && kind !== 'unlock' && kind !== 'project') throw new Error('未知操作：' + String(kind));
-  const resolved = resolveOps(session, [{ spans: [interval], new_text: kind === 'project' ? String(newText ?? '') : 'x' }], undefined);
-  const seqs = resolved.flatMap((span) => span.shadowed);
-  if (seqs.length === 0) throw new Error('区间解析后是空的');
-  const list = pendingOf(session);
-  const taken = new Set(list.flatMap((entry) => entry.seqs));
-  if (seqs.some((seq) => taken.has(seq))) {
-    throw new Error('与尚未落盘的 /plasticize 操作区间重叠；三条命令之间区间必须互不重叠。');
-  }
-  const locks = lockedSeqs(session);
-  if (kind === 'lock') {
-    const hit = seqs.filter((seq) => locks.has(seq));
-    if (hit.length > 0) throw new Error('lock 区间包含已在安全区内的消息：seq ' + hit.slice(0, 8).join(',') + '。' + safetyZoneNote(locks));
-  } else if (kind === 'unlock') {
-    const outside = seqs.filter((seq) => !locks.has(seq));
-    if (outside.length > 0) throw new Error('unlock 区间包含不在安全区内的消息：seq ' + outside.slice(0, 8).join(',') + '。' + safetyZoneNote(locks));
-  } else {
-    const hit = seqs.filter((seq) => locks.has(seq));
-    if (hit.length > 0) throw new Error('区间命中安全区：seq ' + hit.slice(0, 8).join(',') + '；请先 /plasticize unlock。' + safetyZoneNote(locks));
-  }
-  list.push({ kind, seqs, text: kind === 'project' ? String(newText ?? '') : '', interval });
-  return { pending: list.length, shadowed: seqs, kind };
 }
 
 async function appendPrivateRecord(session, type, data) {
@@ -757,7 +794,55 @@ async function appendPrivateRecord(session, type, data) {
   return append(session, type, data);
 }
 
-/** 判断两组连续 seq 在当前工作面上是否相邻。 */
+/**
+ * 登记一条用户 /plasticize 操作（不写日志）。
+ * 三类可交换操作（lock/unlock/稳定化）依靠共享的区间重叠检测做互斥；
+ * all 与 prelock 是特殊模式。
+ * @param {object} session
+ * @param {{kind:'lock'|'unlock'|'project', mode:'range'|'all'|'prelock', interval?:string, newText?:string}} op
+ */
+export function stageUserOperation(session, op) {
+  const kind = op?.kind;
+  const mode = op?.mode ?? 'range';
+  if (kind !== 'lock' && kind !== 'unlock' && kind !== 'project') throw new Error('未知操作：' + String(kind));
+  const list = pendingOf(session);
+  if (mode === 'prelock') {
+    if (kind !== 'lock') throw new Error('prelock 只能用于纳入安全区');
+    if (list.some((entry) => entry.mode === 'prelock')) throw new Error('已经有一条 prelock 待落盘。');
+    list.push({ kind: 'lock', mode: 'prelock', seqs: [], text: '', interval: '', atSeq: session.seq });
+    return { pending: list.length, shadowed: [], kind: 'lock', mode };
+  }
+  if (mode === 'all') {
+    if (kind === 'project') throw new Error('稳定化不支持 all');
+    if (list.some((entry) => entry.mode !== 'prelock')) throw new Error('all 已经覆盖当前全部轨迹，不能再与其它待落盘操作混用。');
+    list.push({ kind, mode: 'all', seqs: [], text: '', interval: '' });
+    return { pending: list.length, shadowed: [], kind, mode };
+  }
+  if (list.some((entry) => entry.mode === 'all')) throw new Error('已有 all 待落盘，不能再追加区间操作。');
+  const resolved = resolveOps(session, [{ spans: [op.interval], new_text: kind === 'project' ? String(op.newText ?? '') : 'x' }], undefined);
+  const seqs = resolved.flatMap((span) => span.shadowed);
+  if (seqs.length === 0) throw new Error('区间解析后是空的');
+  const ranges = list.filter((entry) => entry.mode === 'range').map((entry) => ({ seqs: entry.seqs }));
+  ranges.push({ seqs });
+  const overlap = findOverlap(ranges);
+  if (overlap !== undefined && overlap.second === ranges.length - 1) {
+    throw new Error('与尚未落盘的 /plasticize 操作区间重叠；三类操作的区间必须互不重叠。');
+  }
+  const locks = lockedSeqs(session);
+  if (kind === 'lock') {
+    const hit = seqs.filter((seq) => locks.has(seq));
+    if (hit.length > 0) throw new Error('lock 区间包含已在安全区内的消息。' + safetyZoneNote(session, locks));
+  } else if (kind === 'unlock') {
+    const outside = seqs.filter((seq) => !locks.has(seq));
+    if (outside.length > 0) throw new Error('unlock 区间包含不在安全区内的消息。' + safetyZoneNote(session, locks));
+  } else {
+    const hit = seqs.filter((seq) => locks.has(seq));
+    if (hit.length > 0) throw new Error('区间命中安全区；请先 /plasticize unlock。' + safetyZoneNote(session, locks));
+  }
+  list.push({ kind, mode: 'range', seqs, text: kind === 'project' ? String(op.newText ?? '') : '', interval: String(op.interval) });
+  return { pending: list.length, shadowed: seqs, kind, mode };
+}
+
 function contiguousSeqs(left, right, position) {
   const leftIndex = position.get(left[left.length - 1]);
   const rightIndex = position.get(right[0]);
@@ -765,8 +850,8 @@ function contiguousSeqs(left, right, position) {
 }
 
 /**
- * 发送用户消息时：约化（合并同操作的连续区间）并写入日志。
- * 安全区操作写成私有记录；若有稳定化/隐藏，写投影后再追加一条逻辑世代私有记录。
+ * 发送用户消息时：约化并落盘。
+ * 安全区记录写**准确消息 seq**；有稳定化/隐藏时写投影并追加逻辑世代私有记录。
  * @returns {Promise<{projections:number, safety:number}>}
  */
 export async function flushUserOperations(session, openStep, logger) {
@@ -779,66 +864,80 @@ export async function flushUserOperations(session, openStep, logger) {
   const nodes = session.surface.nodes;
   const position = new Map();
   for (let index = 0; index < nodes.length; index += 1) position.set(nodes[index], index);
-  // 约化：按当前工作面位置排序，同操作且相邻的区间合并。
-  const sorted = [...list].sort((left, right) => (position.get(left.seqs[0]) ?? 0) - (position.get(right.seqs[0]) ?? 0));
-  const groups = [];
-  for (const entry of sorted) {
-    const key = entry.kind === 'project' ? 'project\u0000' + entry.text : entry.kind;
-    const last = groups[groups.length - 1];
-    if (last !== undefined && last.key === key && contiguousSeqs(last.seqs, entry.seqs, position)) {
-      last.seqs = [...last.seqs, ...entry.seqs];
-      continue;
-    }
-    groups.push({ kind: entry.kind, key, seqs: [...entry.seqs], text: entry.text, interval: entry.interval });
-  }
+  const prelock = list.find((entry) => entry.mode === 'prelock');
+  const allOp = list.find((entry) => entry.mode === 'all');
+  const ranges = list.filter((entry) => entry.mode === 'range');
   let safety = 0;
-  for (const group of groups) {
-    if (group.kind !== 'lock' && group.kind !== 'unlock') continue;
-    const visible = new Set(nodes);
-    const stillAllowed = group.kind === 'lock'
-      ? group.seqs.every((seq) => visible.has(seq)) && !group.seqs.some((seq) => locks.has(seq))
-      : group.seqs.every((seq) => visible.has(seq)) && group.seqs.every((seq) => locks.has(seq));
-    if (!stillAllowed) { logger?.warn?.('[pm-h0] 待落盘安全区段已失效，跳过：' + group.interval); continue; }
-    await appendPrivateRecord(session, 'plugin:plastic-memories/locks', { op: group.kind, mode: 'range', seqs: group.seqs });
-    safety += 1;
-  }
-  let projections = 0;
-  for (const group of groups) {
-    if (group.kind !== 'project') continue;
-    const visible = new Set(session.surface.nodes);
-    if (!group.seqs.every((seq) => visible.has(seq)) || group.seqs.some((seq) => locks.has(seq))) {
-      logger?.warn?.('[pm-h0] 待落盘投影段已失效，跳过：' + group.interval);
-      continue;
+  if (allOp !== undefined) {
+    let seqs;
+    if (allOp.kind === 'lock') seqs = nodes.filter((seq) => !locks.has(seq));
+    else seqs = nodes.filter((seq) => locks.has(seq));
+    if (seqs.length > 0) {
+      await appendPrivateRecord(session, 'plugin:plastic-memories/locks', { op: allOp.kind, seqs });
+      safety += 1;
     }
-    const generation = session.surface.replaceGeneration + 1;
-    const isHole = group.text.length === 0;
-    const callId = 'pm-user-' + String(session.seq) + '-' + String(projections);
-    const source = pmSource({
-      op: isHole ? 'hide' : 'stabilize',
-      callId,
-      generation,
-      logicalGeneration: base,
-      refs: [...group.seqs],
-    });
-    const message = {
-      id: 'pm-surface-' + callId,
-      role: 'developer',
-      content: [{ type: 'text', text: isHole ? ' ' : group.text }],
-      source,
-    };
-    const mark = { surfaceOp: { op: 'replace', startSeq: group.seqs[0], endSeq: group.seqs[group.seqs.length - 1] }, sourceEventSeqs: [...group.seqs] };
-    if (openStep !== undefined && openStep !== null) {
-      session.append('developer/message', { turn: openStep.turn, step: openStep.step, message }, mark);
-    } else {
-      session.append('developer/message', { message }, mark);
+  } else {
+    const sorted = [...ranges].sort((left, right) => (position.get(left.seqs[0]) ?? 0) - (position.get(right.seqs[0]) ?? 0));
+    const groups = [];
+    for (const entry of sorted) {
+      const key = entry.kind === 'project' ? 'project\u0000' + entry.text : entry.kind;
+      const last = groups[groups.length - 1];
+      if (last !== undefined && last.key === key && contiguousSeqs(last.seqs, entry.seqs, position)) {
+        last.seqs = [...last.seqs, ...entry.seqs];
+      } else {
+        groups.push({ kind: entry.kind, key, seqs: [...entry.seqs], text: entry.text });
+      }
     }
-    projections += 1;
-  }
-  if (projections > 0) {
-    await appendPrivateRecord(session, 'plugin:plastic-memories/logical', { logical: base, kind: 'user-projection', count: projections });
+    for (const group of groups) {
+      if (group.kind !== 'lock' && group.kind !== 'unlock') continue;
+      const visible = new Set(nodes);
+      const ok = group.kind === 'lock'
+        ? group.seqs.every((seq) => visible.has(seq)) && !group.seqs.some((seq) => locks.has(seq))
+        : group.seqs.every((seq) => visible.has(seq)) && group.seqs.every((seq) => locks.has(seq));
+      if (!ok) { logger?.warn?.('[pm-h0] 待落盘安全区段已失效，跳过'); continue; }
+      await appendPrivateRecord(session, 'plugin:plastic-memories/locks', { op: group.kind, seqs: group.seqs });
+      safety += 1;
+    }
+    let projections = 0;
+    for (const group of groups) {
+      if (group.kind !== 'project') continue;
+      const visible = new Set(session.surface.nodes);
+      if (!group.seqs.every((seq) => visible.has(seq)) || group.seqs.some((seq) => locks.has(seq))) {
+        logger?.warn?.('[pm-h0] 待落盘投影段已失效，跳过');
+        continue;
+      }
+      const generation = session.surface.replaceGeneration + 1;
+      const isHole = group.text.length === 0;
+      const callId = 'pm-user-' + String(session.seq) + '-' + String(projections);
+      const source = pmSource({ op: isHole ? 'hide' : 'stabilize', callId, generation, logicalGeneration: base, refs: [...group.seqs] });
+      const message = { id: 'pm-surface-' + callId, role: 'developer', content: [{ type: 'text', text: isHole ? ' ' : group.text }], source };
+      const mark = { surfaceOp: { op: 'replace', startSeq: group.seqs[0], endSeq: group.seqs[group.seqs.length - 1] }, sourceEventSeqs: [...group.seqs] };
+      if (openStep !== undefined && openStep !== null) session.append('developer/message', { turn: openStep.turn, step: openStep.step, message }, mark);
+      else session.append('developer/message', { message }, mark);
+      projections += 1;
+    }
+    if (projections > 0) {
+      await appendPrivateRecord(session, 'plugin:plastic-memories/logical', { logical: base, kind: 'user-projection', count: projections });
+    }
+    // prelock：把「触发本次落盘的那条用户消息」纳入安全区（准确 seq）。
+    if (prelock !== undefined) {
+      const candidates = session.snapshotEvents().filter((event) => event.type === 'user/message'
+        && event.data?.source?.kind === 'user' && event.seq >= prelock.atSeq);
+      const target = candidates[candidates.length - 1];
+      if (target !== undefined) {
+        await appendPrivateRecord(session, 'plugin:plastic-memories/locks', { op: 'lock', seqs: [target.seq] });
+        safety += 1;
+      } else {
+        logger?.warn?.('[pm-h0] prelock 没有找到触发落盘的用户消息，保留到下次。');
+        PENDING_USER_OPS.set(session, [prelock]);
+        return { projections, safety };
+      }
+    }
+    PENDING_USER_OPS.delete(session);
+    return { projections, safety };
   }
   PENDING_USER_OPS.delete(session);
-  return { projections, safety };
+  return { projections: 0, safety };
 }
 export function executeUserCommand(session, rawOps, option, logger) {
   if (option !== 'set' && option !== 'execute') {
@@ -867,7 +966,7 @@ export function executeUserCommand(session, rawOps, option, logger) {
   const state = stateOf(session);
   scanNew(session, state);
   const locks = lockedSeqs(session);
-  for (const span of resolved) assertNotLocked(locks, span.shadowed);
+  for (const span of resolved) assertNotLocked(session, locks, span.shadowed);
   const callId = 'pm-user-' + String(session.seq);
   let written = 0;
   let generation = session.surface.replaceGeneration;

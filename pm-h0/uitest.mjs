@@ -132,12 +132,15 @@ console.log(NL + '④ 客户端 bundle 与命令解析');
   ok(checkError === undefined, 'client.js 语法通过 node --check', checkError);
 
   const parsed = parsePlasticizeCommand('(1,2) 替代文本');
-  ok(parsed.kind === 'project' && parsed.interval === '(1,2)', 'parsePlasticizeCommand：区间 + 文本');
+  ok(parsed.action === 'stage' && parsed.mode === 'range' && parsed.interval === '(1,2)', 'parsePlasticizeCommand：区间 + 文本');
   ok(parsed.newText === '替代文本', '替代文本原样读取');
   ok(parsePlasticizeCommand('(1,2) 第一行\n第二行').newText === '第一行\n第二行', '替代文本可以含换行');
   ok(parsePlasticizeCommand('hide [3,4]').kind === 'project' && parsePlasticizeCommand('hide [3,4]').newText === '', 'hide <区间>');
   ok(parsePlasticizeCommand('lock [3,4]').kind === 'lock', 'lock <区间>');
   ok(parsePlasticizeCommand('unlock [3,4]').kind === 'unlock', 'unlock <区间>');
+  ok(parsePlasticizeCommand('lock all').mode === 'all' && parsePlasticizeCommand('unlock all').mode === 'all', 'lock/unlock all');
+  ok(parsePlasticizeCommand('prelock').mode === 'prelock', 'prelock');
+  ok(parsePlasticizeCommand('clear').action === 'clear', 'clear');
   let bad;
   try { parsePlasticizeCommand('(1,2)'); } catch (error) { bad = String(error.message); }
   ok(typeof bad === 'string' && bad.includes('/plasticize'), '缺少替代文本给出用法提示', bad?.slice(0, 60));

@@ -358,6 +358,7 @@ export function apply(ctx, config) {
                   description: "One or more spans, each written as a cookie range. Forms: '3' (that cookie alone), '[3,4]' closed, '(3,4)' open, '[3,4)' or '(3,4]' half-open, 'this' (the assistant message that made THIS call plus its tool results). Use cookie numbers you can see in your context. Every span is hidden except the LAST one, which receives new_text.",
                 },
                 new_text: { type: 'string', description: 'The replacement message, placed at the LAST span. Empty string = pure hole (hide). Every earlier span is hidden automatically.' },
+                lock_this: { type: 'boolean', description: 'Default false. If true, lock the replacement message itself into the safety zone (it can never be reshaped afterwards).' },
               },
               required: ['spans'],
             },

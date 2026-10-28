@@ -16,7 +16,7 @@ import { pmSettledCallIds } from './markers.js';
 const NL = String.fromCharCode(10);
 
 /** 段落里允许出现的字段。 */
-const OP_FIELDS = new Set(['spans', 'new_text']);
+const OP_FIELDS = new Set(['spans', 'new_text', 'lock_this']);
 
 /**
  * 校验并归一化一个段落。
@@ -51,7 +51,9 @@ export function normalizeOp(raw, index) {
   }
   const newText = raw.new_text === undefined ? '' : raw.new_text;
   if (typeof newText !== 'string') throw new Error('段落 #' + index + ' 的 new_text 必须是字符串');
-  return { spans: [...raw.spans], new_text: newText };
+  const lockThis = raw.lock_this === undefined ? false : raw.lock_this;
+  if (typeof lockThis !== 'boolean') throw new Error('段落 #' + index + ' 的 lock_this 必须是布尔值');
+  return { spans: [...raw.spans], new_text: newText, lock_this: lockThis };
 }
 
 /** 取消息纯文本。 */
@@ -134,7 +136,7 @@ export function resolveOps(session, rawOps, here) {
         if (!endsAtIncompleteSelf) throw new Error('段落 #' + i + '：' + check.reason);
       }
       for (const q of seqs) consumed.add(q);
-      out.push({ op: { new_text: k === ranges.length - 1 ? op.new_text : '' }, shadowed: seqs });
+      out.push({ op: { new_text: k === ranges.length - 1 ? op.new_text : '', ...(k === ranges.length - 1 && op.lock_this === true ? { lock_this: true } : {}) }, shadowed: seqs });
     }
   }
   // 不变量：合法投影必须「整步闭合」—— 一步 = 一条助手消息 + 它的全部工具结果。
