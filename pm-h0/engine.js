@@ -425,15 +425,10 @@ export function safetyZoneIntervals(session, locks) {
       // 孤立点：cookie 无法表达单条消息，用文本锚（前/后 N 字符）。
       const snippet = textSnippet(messageTextAt(session, nodes[left]));
       const label = snippet.length > 0 ? '孤立消息「' + snippet + '」' : '无文本的孤立消息';
-      if (before !== undefined && after !== undefined) {
-        parts.push('cookie ' + String(before.number) + ' 与 cookie ' + String(after.number) + ' 之间，' + label);
-      } else if (before !== undefined) {
-        parts.push('cookie ' + String(before.number) + ' 之后，' + label);
-      } else if (after !== undefined) {
-        parts.push('cookie ' + String(after.number) + ' 之前，' + label);
-      } else {
-        parts.push(label);
-      }
+      // 孤立点也必须给出最近的前后 cookie 锚点，否则无法与其它空档区分。
+      const beforeLabel = before !== undefined ? 'cookie ' + String(before.number) : '开头';
+      const afterLabel = after !== undefined ? 'cookie ' + String(after.number) : '结尾';
+      parts.push(beforeLabel + ' 与 ' + afterLabel + ' 之间，' + label);
       continue;
     }
     const leftBracket = before !== undefined && before.index === left ? '[' : '(';
