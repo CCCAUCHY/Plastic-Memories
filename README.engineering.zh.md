@@ -38,7 +38,7 @@ DeepSeek Harness（DSH）的实验性插件。可塑记忆研究“可塑上下�
 
     cd pm-h0 && npm test
 
-17 套 / 572 条断言：cookie 夹逼、组合平衡、步骤原子性、官方 fold 差分、官方上下文链、UI 桥接、版本与打包守护。
+17 套 / 597 条断言：cookie 夹逼、组合平衡、步骤原子性、官方 fold 差分、官方上下文链、UI 桥接、版本与打包守护。
 
 ## 官方 bundle 副本
 
@@ -56,4 +56,20 @@ pm-h0/trajectory-vendor.js 是 DSH @deepseek-ai/dsh-client-ui-trajectory 客户�
 ## 预构建安装包
 
 可直接安装的 tgz 已提交在 dist/ 下（link/staged 安装方式属于本地开发，不发布）。
-    dsh plugin --profile <profile> add file:$PWD/dist/dsh-plugin-plastic-memories-h0-0.17.1.tgz
+    dsh plugin --profile <profile> add file:$PWD/dist/dsh-plugin-plastic-memories-h0-0.28.4.tgz
+## 与 DSH 原生机制的关系：系统提示词更新也是 surfaceOp replace
+
+在会话 26aaea8e 中可以直接观察到：初始 `system/message`（seq 8）后来被一条新的 `system/message`（seq 279）替换：
+
+    surfaceOp: { op: "replace", startSeq: 8, endSeq: 8 }
+    source.kind: "system-prompt"
+
+PM 的世代投影把**每一条 surfaceOp replace 都视为一个物理世代**，因此这次官方系统提示词更新同样出现在世代列表里，并在 UI 中显示「已塑形」。这不是缺陷，也不应特判：
+
+- DSH 的原生 surface 机制以 `surfaceOp: replace` 作为统一改写原语；自动压缩、系统提示词更新、PM 的 plasticize 都只是它的不同调用者；
+- PM 的工具、安全区、逻辑世代，都是建立在该原语之上的**真子集扩展**；
+- 我们的物理世代号与 DSH 的 `replaceGeneration` 一一对应，不维护第二套编号；
+- 当 DSH 增加新的 surface 改写来源时，PM 会自动把它呈现为新的“世代”，无需枚举或过滤来源——这是可预见的优雅回退；
+- 展示层沿用 PM 语义（已塑形 / 被塑形），体现语义包容度：任何一次 surface 重写，本质上都是一次“塑形”。
+
+如果未来需要在 UI 上区分 PM 与官方操作，只需在展示层读取替代节点的 `source.kind`（PM 为 `"pm-surface"`）；数据层仍以 `surfaceOp` 为唯一事实。
