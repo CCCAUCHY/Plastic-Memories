@@ -643,7 +643,7 @@ function applyDeclarations(session, declarations, open, state, options = {}) {
       if (span.op.lock_this === true && writtenEvent !== undefined && Number.isSafeInteger(writtenEvent.seq)) {
         (injectedPluginRecordAppender !== undefined ? Promise.resolve(injectedPluginRecordAppender) : appendPluginRecordLazy()).then((append) => {
           if (typeof append !== 'function') return;
-          try { append(session, 'plugin:plastic-memories/locks', { op: 'lock', seqs: [writtenEvent.seq] }); } catch { /* 忽略持久化失败 */ }
+          try { append(session, 'plugin:plastic-memories/locks', { op: 'lock', seqs: [writtenEvent.seq], comment: 'tool:plasticize:lock_this' }); } catch { /* 忽略持久化失败 */ }
         }).catch(() => {});
       }
       explicit++;
@@ -842,18 +842,19 @@ async function appendPrivateRecord(session, type, data) {
 export function stageUserOperation(session, op) {
   const kind = op?.kind;
   const mode = op?.mode ?? 'range';
+  const comment = typeof op?.comment === 'string' ? op.comment : '';
   if (kind !== 'lock' && kind !== 'unlock' && kind !== 'project') throw new Error('未知操作：' + String(kind));
   const list = pendingOf(session);
   if (mode === 'prelock') {
     if (kind !== 'lock') throw new Error('prelock 只能用于纳入安全区');
     if (list.some((entry) => entry.mode === 'prelock')) throw new Error('已经有一条 prelock 待落盘。');
-    list.push({ kind: 'lock', mode: 'prelock', seqs: [], text: '', interval: '', atSeq: session.seq });
+    list.push({ kind: 'lock', mode: 'prelock', seqs: [], text: '', interval: '', atSeq: session.seq, comment });
     return { pending: list.length, shadowed: [], kind: 'lock', mode };
   }
   if (mode === 'all') {
     if (kind === 'project') throw new Error('稳定化不支持 all');
     if (list.some((entry) => entry.mode !== 'prelock')) throw new Error('all 已经覆盖当前全部轨迹，不能再与其它待落盘操作混用。');
-    list.push({ kind, mode: 'all', seqs: [], text: '', interval: '' });
+    list.push({ kind, mode: 'all', seqs: [], text: '', interval: '', comment });
     return { pending: list.length, shadowed: [], kind, mode };
   }
   if (list.some((entry) => entry.mode === 'all')) throw new Error('已有 all 待落盘，不能再追加区间操作。');
@@ -877,7 +878,7 @@ export function stageUserOperation(session, op) {
     const hit = seqs.filter((seq) => locks.has(seq));
     if (hit.length > 0) throw new Error('区间命中安全区；请先 /plasticize unlock。' + safetyZoneNote(session, locks));
   }
-  list.push({ kind, mode: 'range', seqs, text: kind === 'project' ? String(op.newText ?? '') : '', interval: String(op.interval) });
+  list.push({ kind, mode: 'range', seqs, text: kind === 'project' ? String(op.newText ?? '') : '', interval: String(op.interval), comment });
   return { pending: list.length, shadowed: seqs, kind, mode };
 }
 
@@ -911,7 +912,7 @@ export async function flushUserOperations(session, openStep, logger) {
     if (allOp.kind === 'lock') seqs = nodes.filter((seq) => !locks.has(seq));
     else seqs = nodes.filter((seq) => locks.has(seq));
     if (seqs.length > 0) {
-      await appendPrivateRecord(session, 'plugin:plastic-memories/locks', { op: allOp.kind, seqs });
+      await appendPrivateRecord(session, 'plugin:plastic-memories/locks', { op: allOp.kind, seqs, comment: allOp.comment ?? '' });
       safety += 1;
     }
   } else {
@@ -922,8 +923,9 @@ export async function flushUserOperations(session, openStep, logger) {
       const last = groups[groups.length - 1];
       if (last !== undefined && last.key === key && contiguousSeqs(last.seqs, entry.seqs, position)) {
         last.seqs = [...last.seqs, ...entry.seqs];
+        if (entry.comment) last.comments.push(entry.comment);
       } else {
-        groups.push({ kind: entry.kind, key, seqs: [...entry.seqs], text: entry.text });
+        groups.push({ kind: entry.kind, key, seqs: [...entry.seqs], text: entry.text, comments: entry.comment ? [entry.comment] : [] });
       }
     }
     for (const group of groups) {
@@ -933,7 +935,7 @@ export async function flushUserOperations(session, openStep, logger) {
         ? group.seqs.every((seq) => visible.has(seq)) && !group.seqs.some((seq) => locks.has(seq))
         : group.seqs.every((seq) => visible.has(seq)) && group.seqs.every((seq) => locks.has(seq));
       if (!ok) { logger?.warn?.('[pm-h0] 待落盘安全区段已失效，跳过'); continue; }
-      await appendPrivateRecord(session, 'plugin:plastic-memories/locks', { op: group.kind, seqs: group.seqs });
+      await appendPrivateRecord(session, 'plugin:plastic-memories/locks', { op: group.kind, seqs: group.seqs, comment: group.comments.join('\n') });
       safety += 1;
     }
     let projections = 0;
@@ -955,7 +957,7 @@ export async function flushUserOperations(session, openStep, logger) {
       projections += 1;
     }
     if (projections > 0) {
-      await appendPrivateRecord(session, 'plugin:plastic-memories/logical', { logical: base, kind: 'user-projection', count: projections });
+      await appendPrivateRecord(session, 'plugin:plastic-memories/logical', { logical: base, kind: 'user-projection', count: projections, comment: groups.filter((group) => group.kind === 'project').flatMap((group) => group.comments).join('\n') });
     }
     // prelock：把「触发本次落盘的那条用户消息」纳入安全区（准确 seq）。
     if (prelock !== undefined) {
@@ -963,7 +965,7 @@ export async function flushUserOperations(session, openStep, logger) {
         && event.data?.source?.kind === 'user' && event.seq >= prelock.atSeq);
       const target = candidates[candidates.length - 1];
       if (target !== undefined) {
-        await appendPrivateRecord(session, 'plugin:plastic-memories/locks', { op: 'lock', seqs: [target.seq] });
+        await appendPrivateRecord(session, 'plugin:plastic-memories/locks', { op: 'lock', seqs: [target.seq], comment: prelock.comment ?? '' });
         safety += 1;
       } else {
         logger?.warn?.('[pm-h0] prelock 没有找到触发落盘的用户消息，保留到下次。');

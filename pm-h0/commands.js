@@ -67,7 +67,7 @@ export function registerCommands(ctx, logger) {
             const cleared = clearStagedOperations(session);
             return { kind: 'success', text: '已清空 ' + String(cleared) + ' 条待落盘操作。' };
           }
-          const result = stageUserOperation(session, parsed);
+          const result = stageUserOperation(session, { ...parsed, comment: String(rawInput ?? '') });
           const what = parsed.mode === 'all'
             ? (parsed.kind === 'lock' ? '当前世代全部纳入安全区' : '当前世代全部移出安全区')
             : parsed.mode === 'prelock'

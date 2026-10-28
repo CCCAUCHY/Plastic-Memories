@@ -132,9 +132,11 @@ console.log(NL + '⑥.5 安全区：lock 后 plasticize 不能命中锁定区间
 {
   const s = mk();
   openStep(s, 99, 1);
-  const staged = stageUserOperation(s, { kind: 'lock', mode: 'range', interval: '(3,4)' });
+  const staged = stageUserOperation(s, { kind: 'lock', mode: 'range', interval: '(3,4)', comment: '/plasticize lock (3,4)' });
   ok(staged.shadowed.length > 0, '登记 lock 区间', String(staged.shadowed.length));
   await flushUserOperations(s, { turn: 99, step: 1 }, quiet);
+  const lockRecords = s.snapshotEvents().filter((event) => event.type === 'plugin:plastic-memories/locks');
+  ok(lockRecords.some((event) => String(event.data?.comment ?? '').includes('/plasticize lock')), '私有记录保存当时的命令原文');
   plasticizeCall(s, { turn: 99, step: 1 }, 'lock-exec', { ops: [{ spans: ['(3,4)'], new_text: '⟨不应命中⟩' }], option: 'execute' });
   const r = flush(s, { openStep: { turn: 99, step: 1 } }, quiet);
   ok(r.applied === 0 && r.skipped === 1, '命中安全区的 execute 被拒绝', JSON.stringify(r));
