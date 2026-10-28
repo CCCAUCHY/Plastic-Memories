@@ -344,7 +344,11 @@ export function apply(ctx, config) {
         'call turns a preview you agreed with into reality. ' +
 
         'After a successful execute the plugin also hides the PM steps that are pure noise for the new generation: ' +
-        'failed plasticize calls and fulfilled plasticize(set) previews. You do not have to clean those up yourself.',
+        'failed plasticize calls and fulfilled plasticize(set) previews. You do not have to clean those up yourself. ' +
+
+        'ONE PATH IS MEANINGLESS: spans ["this"] together with new_text:"" (hiding your own call group with no ' +
+        'replacement). It swallows this very tool result, so you cannot see the success receipt and will likely ' +
+        'repeat the call. To actively hide a step, hide the target step by its cookie interval instead.',
       parameters: {
         type: 'object',
         properties: {
