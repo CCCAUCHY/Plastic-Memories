@@ -196,21 +196,21 @@ console.log(NL + '⑥ planCookie：队尾规则');
   ok(planCookie(s) === undefined, '队尾已是 cookie → 不补');
 }
 
-console.log(NL + '⑦ bracketUserMessages：用户消息前后各夹一条 cookie');
+console.log(NL + '⑦ bracketUserMessages：只补右端点（左端点由请求边界插入，编号预留防碰撞）');
 {
   const s = ctx.sessions.create('ct-bracket', {});
   const U = (text, kind = 'user') => ({ id: 'u-' + text, role: 'user', content: [{ type: 'text', text }], source: { kind } });
 
   const first = bracketUserMessages(s, [U('第一条')]);
-  ok(first.length === 3, '空工作面：c / user / c', String(first.length));
-  ok(first[1].source.kind === 'user' && first[0].source.kind === COOKIE_KIND && first[2].source.kind === COOKIE_KIND,
-    '顺序 = cookie / 用户 / cookie', JSON.stringify(first.map((m) => m.source.kind)));
-  ok(first[0].source.id === 1 && first[2].source.id === 2, '编号从 1 开始且递增', JSON.stringify([first[0].source.id, first[2].source.id]));
+  ok(first.length === 2, '决策里只有 user + 右端点（左端点由 request 边界插入）', String(first.length));
+  ok(first[0].source.kind === 'user' && first[1].source.kind === COOKIE_KIND,
+    '顺序 = 用户 / cookie', JSON.stringify(first.map((m) => m.source.kind)));
+  ok(first[1].source.id === 2, '右端点预留 request 边界要用的编号（next + 1）', String(first[1].source.id));
 
   for (const message of first) s.append('user/message', message, { surfaceOp: 'append' });
   const second = bracketUserMessages(s, [U('第二条')]);
   ok(second.length === 2 && second[0].source.kind === 'user' && second[1].source.kind === COOKIE_KIND,
-    '队尾已是 cookie → 复用左端点，只补右端点', JSON.stringify(second.map((m) => m.source.kind)));
+    '队尾已是 cookie → request 不插左端点，右端点直接用 next', JSON.stringify(second.map((m) => m.source.kind)));
   ok(second[1].source.id === 3, '编号接着日志最大值', String(second[1].source.id));
 
   ok(bracketUserMessages(s, [U('Current runtime context', 'runtime-context')]) === undefined,
@@ -220,7 +220,7 @@ console.log(NL + '⑦ bracketUserMessages：用户消息前后各夹一条 cooki
 
   const pair = bracketUserMessages(s, [U('A'), U('B')]);
   ok(pair.map((m) => m.source.kind).join(',') === 'user,' + COOKIE_KIND + ',user,' + COOKIE_KIND,
-    '连续两条用户消息 = u,c,u,c（中间那条 cookie 兼作左端点）', JSON.stringify(pair.map((m) => m.source.kind)));
+    '连续两条用户消息 = u,c,u,c', JSON.stringify(pair.map((m) => m.source.kind)));
 }
 
 done();

@@ -17,7 +17,7 @@ import ToolRuntime from '/var/data/.npm/_npx/1e7f6d9597241db0/node_modules/@deep
 import { agentEvents } from '/var/data/.npm/_npx/1e7f6d9597241db0/node_modules/@deepseek-ai/dsh-agent/lib/index.js';
 import { createUserMessage } from '/var/data/.npm/_npx/1e7f6d9597241db0/node_modules/@deepseek-ai/dsh-llm/lib/index.js';
 import { makeCounter, cookieSeed, cookieNodes, textOf, fixture } from './testkit.mjs';
-import { cookieText } from './cookie.js';
+import { cookieText, nextCookieId } from './cookie.js';
 import { KNOWN_SESSION_EVENT_TYPES } from '/var/data/.npm/_npx/1e7f6d9597241db0/node_modules/@deepseek-ai/dsh-session/lib/index.js';
 import { assertReleasedV4Relationships } from '/var/data/.npm/_npx/1e7f6d9597241db0/node_modules/@deepseek-ai/dsh-session-format-v3-to-v4/lib/index.js';
 
@@ -222,8 +222,8 @@ console.log(NL + '⑨ 自动补 cookie 之后，日志仍通过宿主 released-v
   t.append('turn/end', { turn: 2, reason: { kind: 'completed' } });
   await fireTurnStopping(agentOf(t));
   const tailSeq = t.seq - 1;
-  ok((t.eventAt(tailSeq)?.data?.message ?? t.eventAt(tailSeq)?.data)?.source?.kind === 'pm-cookie', 'turn 结束后补上了 cookie', String(t.eventAt(tailSeq)?.type));
-  ok(check(t) === undefined, 'turn 末补 cookie 之后仍合法', String(check(t)));
+  ok(t.eventAt(tailSeq)?.type === 'turn/end', 'turn 末不再补 cookie（由下一次请求边界负责）', String(t.eventAt(tailSeq)?.type));
+  ok(check(t) === undefined, 'turn 结束后仍合法', String(check(t)));
 }
 
 console.log(NL + '⑨b pre-step 真派发：用户消息前后各夹一条 cookie');
@@ -241,20 +241,24 @@ console.log(NL + '⑨b pre-step 真派发：用户消息前后各夹一条 cooki
     { turn: 2, step: 1, signal: new AbortController().signal },
     () => Promise.resolve({ kind: 'enter', messages }),
   );
+  const startId = nextCookieId(s);
   const decision = await firePreStep([U('用户亲口说的')]);
-  ok(decision.kind === 'enter' && decision.messages.length === 3, '用户消息被夹成 3 条', String(decision.messages?.length));
+  ok(decision.kind === 'enter' && decision.messages.length === 2, '决策 = 用户 + 右端点（左端点由 request 边界插入）', String(decision.messages?.length));
   const kinds = decision.messages.map((m) => m?.source?.kind);
-  ok(kinds[0] === 'pm-cookie' && kinds[1] === 'user' && kinds[2] === 'pm-cookie',
-    '顺序 = cookie / 用户 / cookie', JSON.stringify(kinds));
-  const ids = [decision.messages[0].source.id, decision.messages[2].source.id];
-  ok(ids[1] === ids[0] + 1, '两条 cookie 编号连续递增', JSON.stringify(ids));
+  ok(kinds[0] === 'user' && kinds[1] === 'pm-cookie', '顺序 = 用户 / cookie', JSON.stringify(kinds));
+  ok(decision.messages[1].source.id === startId + 1, '右端点预留 request 边界要用的编号', JSON.stringify([startId, decision.messages[1].source.id]));
 
-  // 落盘后必须能通过会话校验，并且模型可见顺序保持。
+  // 真实流程：request 边界先插左端点（developer），再落盘 decision.messages。
+  await fire(agent);
   for (const message of decision.messages) s.append('user/message', message, { surfaceOp: 'append' });
   const tail = s.eventAt(s.surface.nodes[s.surface.nodes.length - 1]);
   ok(tail?.data?.source?.kind === 'pm-cookie', '右端点是 cookie（紧跟用户消息）', String(tail?.type));
+  const bracketed = s.snapshotEvents().filter((event) => (event.data?.message ?? event.data)?.source?.kind === 'pm-cookie');
+  const ids = bracketed.map((event) => (event.data?.message ?? event.data)?.source?.id).filter((id) => Number.isSafeInteger(id));
+  const lastTwo = ids.slice(-2);
+  ok(lastTwo[1] === lastTwo[0] + 1 && new Set(ids).size === ids.length, '左右 cookie 编号连续且无重复', JSON.stringify(lastTwo));
 
-  // 队尾已是 cookie 时，下一条用户消息不再补左端点（避免连续两条 cookie）。
+  // 队尾已是 cookie 时，下一条用户消息只补右端点。
   const again = await firePreStep([U('第二条')]);
   ok(again.messages.length === 2 && again.messages[0].source.kind === 'user',
     '队尾已是 cookie → 只补右端点', JSON.stringify(again.messages?.map((m) => m?.source?.kind)));

@@ -243,21 +243,23 @@ export function bracketUserMessages(session, messages) {
   if (!hasUser) return undefined;
   const nodes = session.surface.nodes;
   const tail = nodes[nodes.length - 1];
-  // 队尾已经是 cookie → 左端点复用它（不要制造连续两条 cookie）。
-  let lastWasCookie = tail !== undefined && isCookie(session.eventAt(tail));
+  const tailIsCookie = tail !== undefined && isCookie(session.eventAt(tail));
+  // 左端点由 agent/request 边界统一插入（developer cookie）；这里只为用户消息
+  // 预留右侧 cookie 的编号：边界会占用 next；若队尾已是 cookie，边界不会再插，
+  // 右端点就用 next 本身。
+  const boundaryWillInsert = !tailIsCookie;
   let next = nextCookieId(session);
+  let reserve = boundaryWillInsert ? 1 : 0;
   const out = [];
   for (const message of messages) {
     const human = message !== null && typeof message === 'object' && message.source?.kind === 'user';
     if (!human) {
       out.push(message);
-      lastWasCookie = false;
       continue;
     }
-    if (!lastWasCookie) out.push(cookieMessage(next++));
     out.push(message);
-    out.push(cookieMessage(next++));
-    lastWasCookie = true;
+    out.push(cookieMessage(next + reserve));
+    reserve += 1;
   }
   return out;
 }

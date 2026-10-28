@@ -275,7 +275,6 @@ export function apply(ctx, config) {
   // turn 末的兜底：只挂 agent/request 会漏掉「模型在本 turn 最后一个动作里调用 PM」。
   ctx.on('agent/turn-stopping', (payload) => {
     void safeFlush(payload?.agent?.session, 'turn-stopping', payload);
-    insertCookie(payload?.agent?.session, payload, 'user');
     checkSurfaceConsistency(payload?.agent?.session);
   });
 
