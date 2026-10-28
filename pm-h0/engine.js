@@ -470,10 +470,8 @@ export function resolveLockSeqs(session, interval) {
 }
 
 /** 追加一条安全区私有事件（append-only；官方 plugin record）。 */
-export async function appendSafetyRecord(session, payload) {
-  const append = await appendPluginRecordLazy();
-  if (typeof append !== 'function') throw new Error('当前宿主不支持 plugin record，无法持久化安全区');
-  append(session, 'plugin:plastic-memories/locks', payload);
+export function appendSafetyRecord(session, payload) {
+  return session.append('plugin:plastic-memories/locks', payload);
 }
 
 function assertNotLocked(session, locks, shadowed) {
@@ -641,10 +639,7 @@ function applyDeclarations(session, declarations, open, state, options = {}) {
         ? session.append('developer/message', { turn: open.turn, step: open.step, message: devMessage }, mark)
         : session.append('developer/message', { message: devMessage }, mark);
       if (span.op.lock_this === true && writtenEvent !== undefined && Number.isSafeInteger(writtenEvent.seq)) {
-        (injectedPluginRecordAppender !== undefined ? Promise.resolve(injectedPluginRecordAppender) : appendPluginRecordLazy()).then((append) => {
-          if (typeof append !== 'function') return;
-          try { append(session, 'plugin:plastic-memories/locks', { op: 'lock', seqs: [writtenEvent.seq], comment: 'tool:plasticize:lock_this' }); } catch { /* 忽略持久化失败 */ }
-        }).catch(() => {});
+        try { session.append('plugin:plastic-memories/locks', { op: 'lock', seqs: [writtenEvent.seq], comment: 'tool:plasticize:lock_this' }); } catch { /* 忽略持久化失败 */ }
       }
       explicit++;
     }
@@ -826,10 +821,9 @@ export function clearStagedOperations(session) {
   return list.length;
 }
 
-async function appendPrivateRecord(session, type, data) {
-  const append = injectedPluginRecordAppender ?? (await appendPluginRecordLazy());
-  if (typeof append !== 'function') throw new Error('当前宿主不支持 plugin record');
-  return append(session, type, data);
+function appendPrivateRecord(session, type, data) {
+  // 直接 append 到日志：非 surface 事件，不进模型上下文；DSH seed/validator 均接受。
+  return session.append(type, data);
 }
 
 /**
