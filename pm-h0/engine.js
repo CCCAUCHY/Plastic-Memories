@@ -383,13 +383,16 @@ export function safetyZoneIntervals(session, locks) {
   if (set.size === 0) return '';
   const nodes = session.surface.nodes;
   const cookieAt = new Map();
-  let cookieNumber = 0;
   for (let index = 0; index < nodes.length; index += 1) {
     const event = session.eventAt(nodes[index]);
     const message = event?.data?.message ?? event?.data;
     if (event?.type !== 'user/message' || message?.source?.kind !== 'pm-cookie') continue;
-    cookieNumber += 1;
-    cookieAt.set(index, cookieNumber);
+    const sourceId = message?.source?.id;
+    const text = (Array.isArray(message?.content) ? message.content : [])
+      .map((block) => (typeof block?.text === 'string' ? block.text : '')).join('');
+    const match = /\[(\d+)\]\s*$/.exec(text);
+    const id = Number.isSafeInteger(sourceId) ? sourceId : match !== null ? Number(match[1]) : undefined;
+    if (id !== undefined) cookieAt.set(index, id);
   }
   const runs = [];
   let start = -1;
