@@ -30,7 +30,7 @@
 import { initState, applyEvent } from './generations.js';
 import { findOverlap } from './overlap.js';
 import { pmSettledCallIds, pmSource } from './markers.js';
-import { previewOf, resolveOps } from './plasticize.js';
+import { resolveOps } from './plasticize.js';
 import {
   SURFACE_TYPES,
   callIdOf,
@@ -972,59 +972,6 @@ export async function flushUserOperations(session, openStep, logger) {
   }
   PENDING_USER_OPS.delete(session);
   return { projections: 0, safety };
-}
-export function executeUserCommand(session, rawOps, option, logger) {
-  if (option !== 'set' && option !== 'execute') {
-    throw new Error('option 必须是 "set"（预览）或 "execute"（落实）');
-  }
-  let resolved;
-  try {
-    resolved = resolveOps(session, rawOps, undefined);
-  } catch (error) {
-    throw new Error(String(error?.message ?? error) +
-      '\n提示：用户命令没有步骤锚点，spans 不能用 "this"；请用 cookie 区间/编号或文本关键字。');
-  }
-  if (option === 'set') {
-    const preview = previewOf(session, resolved, 'pm-command-preview-' + String(session.seq));
-    return {
-      text: '预览（尚未写入）：下一代会是第 ' + String(preview.generation) + ' 代、' +
-        String(preview.messageCount) + ' 条消息。\n' + preview.text,
-      generation: session.surface.replaceGeneration,
-      written: 0,
-    };
-  }
-  if (resolved.some((span) => String(span.op.new_text ?? '').length === 0)) {
-    throw new Error('用户命令不能产生纯空洞（new_text 为空）：纯隐藏请给一个替代文本');
-  }
-  // 先扫一遍日志，保证 state 是最新的（命令可能在两次边界之间执行）。
-  const state = stateOf(session);
-  scanNew(session, state);
-  const locks = lockedSeqs(session);
-  for (const span of resolved) assertNotLocked(session, locks, span.shadowed);
-  const callId = 'pm-user-' + String(session.seq);
-  let written = 0;
-  let generation = session.surface.replaceGeneration;
-  for (const span of resolved) {
-    generation = session.surface.replaceGeneration + 1;
-    const source = pmSource({
-      op: 'stabilize',
-      callId,
-      generation,
-      refs: [...span.shadowed],
-    });
-    session.append('user/message', {
-      id: 'pm-surface-' + callId + '-' + String(written),
-      role: 'user',
-      content: [{ type: 'text', text: String(span.op.new_text) }],
-      source,
-    }, {
-      surfaceOp: { op: 'replace', startSeq: span.shadowed[0], endSeq: span.shadowed[span.shadowed.length - 1] },
-      sourceEventSeqs: [...span.shadowed],
-    });
-    written++;
-  }
-  logger?.info?.('[pm-h0] 用户命令应用 ' + String(written) + ' 段，世代 ' + String(generation));
-  return { text: '已应用 ' + String(written) + ' 段投影，当前第 ' + String(generation) + ' 代。', generation, written };
 }
 
 /** 供 pm_status 用的诊断：列出待办声明。 */
