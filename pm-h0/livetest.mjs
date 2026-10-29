@@ -97,20 +97,7 @@ console.log(NL + '④ this = 本步整组终点：一次吞掉调用消息与它
   ok(textOf(s).includes('⟨自噬⟩'), '替代文本进入工作面');
 }
 
-console.log(NL + '⑤ retrospect：世代坐标 + 完整返回');
-{
-  const s = mk();
-  const out = retrospect(s, { query: 'a' });
-  ok(typeof out === 'string' && out.length > 20, '返回非空文本');
-  ok(out.includes('retrospect:'), '有表头（命中数 / 工作面 / 日志规模）');
-  // 只查**已隐藏**的原文：还在工作面上的东西模型看得见，列出来只会污染它的匹配空间。
-  ok(out.includes('只查'), '表头说明只查已隐藏的');
-  ok(out.includes('self - ') || out.includes('0 条命中'), '命中带世代坐标 self - n（或明说没有隐藏命中）');
-  const sn = snapshotSurface(s);
-  ok(out.includes('工作面 ' + sn.entries.length + ' 条消息'), '工作面规模对得上', String(sn.entries.length));
-}
-
-console.log(NL + '⑥ retrospect：能查到已被隐藏的原文');
+console.log(NL + '⑥ retrospect：只返回历史世代自己的上下文（结构化 JSON）');
 {
   const s = mk();
   openStep(s, 99, 1);
@@ -122,26 +109,33 @@ console.log(NL + '⑥ retrospect：能查到已被隐藏的原文');
   const r = flush(s, { openStep: { turn: 99, step: 1 } }, quiet);
   ok(r.applied === 1, '空洞写入成功', JSON.stringify(r));
   ok(!s.surface.nodes.includes(6), '那条消息已离开工作面');
-  const after = retrospect(s, { query: keyword });
-  ok(after.includes(keyword), '**被隐藏的原文仍能查到**（原文从未删除）', JSON.stringify(keyword));
-  ok(after.includes('self - '), '标签标出了它已被隐藏（self - n）');
-  ok(after.includes('逻辑 ') && after.includes('物理 '), '标签同时给出逻辑世代（坐标）与物理世代（参考）');
-  const structured = JSON.parse(retrospect(s, { generation: 0 }));
-  ok(structured.type === 'pm-retrospect-generation-context' && structured.generation.found, '按逻辑世代号返回该世代上下文（结构化 JSON）', JSON.stringify(structured.generation.logical));
-  ok(structured.count === s.surface.nodes.length, '当前逻辑世代的上下文 = 当前 surface', String(structured.count));
-  ok(!structured.generation.messages.some((message) => String(message.text).includes(keyword)), '该世代上下文不含它隐藏的上一代原文');
-  ok(structured.generation.messages.some((message) => message.kind === 'developer/message' && message.text === ''), '上下文包含本世代写出的空替代消息');
+  const afterFirst = [...s.surface.nodes];
 
-  // 第二代：历史世代应回放到自己的写入点，而不是返回当前 surface。
+  // 当前世代 self=0：不允许查询当前世代。
+  let currentError = null;
+  try { retrospect(s, { generation: 0 }); } catch (error) { currentError = error.message; }
+  ok(typeof currentError === 'string' && currentError.includes('self'), '当前世代 self 拒绝查询', String(currentError).slice(0, 60));
+
+  // 第二代：产生历史世代 0。
   openStep(s, 99, 2);
   plasticizeCall(s, { turn: 99, step: 2 }, 'hide-2', { ops: [{ spans: ['this'], new_text: '⟨第二代⟩' }], option: 'execute' });
   const r2 = flush(s, { openStep: { turn: 99, step: 2 } }, quiet);
   ok(r2.applied === 1, '第二个逻辑世代写入成功', JSON.stringify(r2));
-  const firstContext = JSON.parse(retrospect(s, { generation: 0 }));
-  const currentContext = JSON.parse(retrospect(s, { generation: 1 }));
-  ok(firstContext.generation.asOfSeq < currentContext.generation.asOfSeq, '历史世代回放到该世代自己的写入点');
-  ok(firstContext.count === structured.count, '第一代上下文不会被第二代改写');
-  ok(currentContext.count === s.surface.nodes.length, '当前世代上下文 = 当前 surface', String(currentContext.count));
+
+  const byNumber = JSON.parse(retrospect(s, { generation: 0 }));
+  const byLabel = JSON.parse(retrospect(s, { generation: 'self - 1' }));
+  ok(byNumber.type === 'pm-retrospect-generation-context' && byNumber.generation.found, '按绝对世代号返回历史世代上下文', JSON.stringify(byNumber.generation.logical));
+  ok(byNumber.generation.logical === 0 && byNumber.generation.label === 'self - 1', '绝对编号与 self - N 标签对应', byNumber.generation.label);
+  ok(byNumber.generation.asOfSeq === byLabel.generation.asOfSeq && byNumber.count === byLabel.count, '绝对编号与 self - 1 写法等价');
+  ok(byNumber.count === afterFirst.length, '历史上下文 = 当时写入后的 surface', String(byNumber.count));
+  ok(!byNumber.generation.messages.some((message) => String(message.text).includes(keyword)), '历史世代上下文不含它隐藏的上一代原文');
+  ok(byNumber.generation.messages.some((message) => message.kind === 'developer/message' && message.text === ''), '历史上下文包含该世代写出的空替代消息');
+  let againError = null;
+  try { retrospect(s, { generation: 'self - 0' }); } catch (error) { againError = error.message; }
+  ok(typeof againError === 'string', 'self - 0（当前世代）被拒绝');
+  let futureError = null;
+  try { retrospect(s, { generation: 1 }); } catch (error) { futureError = error.message; }
+  ok(typeof futureError === 'string', '当前/未来世代号被拒绝');
 }
 
 console.log(NL + '⑥.5 安全区：lock 后 plasticize 不能命中锁定区间');
@@ -225,36 +219,6 @@ console.log(NL + '⑥.8 all / prelock / lock_this 与区间描述');
   ok(safetyZoneIntervals(s).includes('孤立消息'), '孤立锁定点用文本锚描述', safetyZoneIntervals(s).slice(0, 80));
 }
 
-console.log(NL + '⑦ retrospect：context 参数在隐藏命中上扩大输出');
-{
-  const s = mk();
-  openStep(s, 99, 1);
-  // 造一段独一无二的历史，再压掉它 —— 之后它才是「可查的隐藏原文」。
-  const before = cookieNodes(s);
-  const leftId = before[before.length - 1].id;
-  s.append('user/message', { id: 'cx-u', role: 'user', content: [{ type: 'text', text: 'CTXUNIQ 这段要被压掉' }], source: { kind: 'user' } }, { surfaceOp: 'append' });
-  // 注意：一步只能有一条 assistant 消息（一个模型请求），所以这段手工历史用 98 步，
-  // 不能和承载 plasticize 的 99 步混在一起。
-  s.append('assistant/message', {
-    turn: 98, step: 1,
-    message: { id: 'cx-a', role: 'assistant', source: { kind: 'model', provider: 'q', model: 'd' },
-      content: [{ type: 'tool-call', id: 'cx-c', name: 'bash', arguments: '{}' }] },
-    stream: [],
-  }, { surfaceOp: 'append' });
-  s.append('tool/result', {
-    turn: 98, step: 1,
-    message: { id: 'cx-t', role: 'tool', toolCallId: 'cx-c', content: [{ type: 'text', text: 'CTXTAIL 结果' }], isError: false, source: { kind: 'tool', callId: 'cx-c' } },
-  }, { surfaceOp: 'append' });
-  s.append('user/message', cookieEvent(leftId + 1).data, { surfaceOp: 'append' });
-  plasticizeCall(s, { turn: 99, step: 1 }, 'cx-hide', { ops: [{ spans: ['(' + leftId + ',' + (leftId + 1) + ')'], new_text: '' }], option: 'execute' });
-  const r = flush(s, { openStep: { turn: 99, step: 1 } }, quiet);
-  ok(r.applied === 1, '压掉成功', JSON.stringify(r));
-  const plain = retrospect(s, { query: 'CTXUNIQ', limit: 1 });
-  const wide = retrospect(s, { query: 'CTXUNIQ', limit: 1, context: 3 });
-  ok(plain.includes('1 条命中'), '查到 1 条隐藏命中', plain.split(NL)[0].slice(0, 50));
-  ok(wide.length >= plain.length, 'context 不会让输出变短', plain.length + ' -> ' + wide.length);
-}
-
 console.log(NL + '⑧ 旧 pm_* 会话仍可读（向后兼容）');
 {
   const ctx = new Context(); new SessionStore(ctx);
@@ -263,8 +227,6 @@ console.log(NL + '⑧ 旧 pm_* 会话仍可读（向后兼容）');
   ok(snap.entries.length > 0, '旧会话能加载（工作面 ' + snap.entries.length + ' 条）');
   const pm = pairingMaps(s);
   ok(pm.malformed === 0, '旧会话的形态自检通过');
-  const out = retrospect(s, { query: 'PM' });
-  ok(typeof out === 'string' && out.length > 0, '对旧会话也能 retrospect');
   const reps = s.snapshotEvents().filter((e) => e.surfaceOp?.op === 'replace');
   ok(reps.length === 2, '旧会话里的 2 条历史投影仍在', String(reps.length));
 }

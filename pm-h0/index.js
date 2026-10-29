@@ -446,37 +446,29 @@ export function apply(ctx, config) {
     tool({
       name: 'retrospect',
       description:
-        'Read material that is NO LONGER in your context — messages hidden by an earlier plasticize. This is a pure read: ' +
-        'it never changes anything. It is archaeology, not a scratch pad: what it returns joins your CURRENT generation, ' +
-        'so use it when you genuinely need an old detail — not as a way to temporarily park something you hid. ' +
-        'Two mutually exclusive modes: (1) generation: pass a LOGICAL generation number (0-based, exactly the number in ' +
-        'the self - n labels). Returns a STRUCTURED JSON object describing that generation CONTEXT — the ' +
-        'surface messages visible at the end of that logical generation — not the material it hid (that belongs to ' +
-        'the previous generation). Ideal for PTC programs that JSON.parse and inspect the context themselves. ' +
-        '(2) query: case-insensitive substring search over hidden originals (legacy text mode). ' +
-        'It deliberately does NOT return anything still on your current surface: those you can already see, and echoing ' +
-        'them back would only add text that later matching has to disambiguate against. If what you want to compress is ' +
-        'visible right now, do not look it up first — call plasticize directly. Logical generations are the message ' +
-        'coordinates; physical generation numbers are reference only. Text is returned in FULL — nothing is truncated.',
+        'Read the CONTEXT of ONE PAST logical generation (~ /plasticize history). It never changes anything. ' +
+        'Pass generation as either an absolute logical generation number (0-based, e.g. 3) or the ' +
+        'label form "self - N" (e.g. "self - 1"). The target MUST be strictly before self: the current ' +
+        'generation is already visible in your input, so querying it is meaningless and rejected. ' +
+        'Returns a STRUCTURED JSON object: current (self coordinates), generation {logical, label, found, ' +
+        'asOfSeq, messages}, and count. messages is that generation\'s surface context (full text, no truncation), ' +
+        'reconstructed by replaying the log to that generation\'s last write; it does NOT include the material that ' +
+        'generation hid (that material belonged to the previous generation). ' +
+        'To read several generations, call this tool once per generation from a PTC program — it deliberately ' +
+        'returns only one generation per call so you can orchestrate/limit the data yourself.',
       parameters: {
         type: 'object',
         properties: {
-          generation: { type: 'integer', description: 'Logical generation number (0-based). Returns structured JSON for that generation; mutually exclusive with query.' },
-          query: { type: 'string', description: 'Keyword to search for (case-insensitive substring in the hidden originals); mutually exclusive with generation.' },
-          context: { type: 'integer', description: 'Query mode only: also return this many messages before AND after each hit (like grep -C). Default 0.' },
-          limit: { type: 'integer', description: 'Query mode only: maximum hits to return. Default 20.' },
+          generation: {
+            oneOf: [{ type: 'integer' }, { type: 'string' }],
+            description: 'Past logical generation: absolute number (e.g. 3) or "self - N" (e.g. "self - 1"). Must be < self.',
+          },
         },
+        required: ['generation'],
       },
       execute(args, exec) {
         const session = sessionOf(exec);
-        const input = args ?? {};
-        if (input.generation === undefined && typeof input.query !== 'string') {
-          throw new Error('retrospect 需要 generation（逻辑世代号）或 query（关键字）之一');
-        }
-        if (input.generation !== undefined && typeof input.query === 'string') {
-          throw new Error('generation 与 query 只能二选一');
-        }
-        return Promise.resolve({ text: retrospect(session, input) });
+        return Promise.resolve({ text: retrospect(session, args ?? {}) });
       },
     }),
   );

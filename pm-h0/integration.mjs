@@ -65,7 +65,7 @@ console.log(NL + '⑤ 非 agent 调用被拒绝');
 {
   const d = defs.get('retrospect');
   let msg = null;
-  try { d.execute({ query: 'x' }, {}); } catch (e) { msg = e.message; }
+  try { d.execute({ generation: 0 }, {}); } catch (e) { msg = e.message; }
   ok(typeof msg === 'string' && msg.includes('agent'), '非 agent 调用抛错', String(msg).slice(0, 60));
 }
 
