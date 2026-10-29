@@ -446,30 +446,36 @@ export function apply(ctx, config) {
     tool({
       name: 'retrospect',
       description:
-        'Search the session trajectory for material that is NO LONGER in your context — messages that were ' +
-        'hidden by an earlier plasticize. This is a pure read: it never changes anything. ' +
-        'It is archaeology, not a scratch pad: what it returns joins your CURRENT generation, so use it when you ' +
-        'genuinely need an old detail — not as a way to temporarily park something you hid. ' +
-        'It deliberately does NOT return anything still ' +
-        'on your current surface: those you can already see, and echoing them back would only add text that ' +
-        'later keyword matching has to disambiguate against. So if what you want to compress is visible ' +
-        'right now, do not look it up first — call plasticize directly. ' +
-        'Hits are labelled self - n using LOGICAL generations: one logical generation per successful plasticize execute; ' +
-        'a single execute may write several physical surfaceOps, so physical generation numbers are included only as ' +
-        'reference and never as message coordinates. Message coordinates always follow logical generations. ' +
-        'Text is returned in FULL — nothing is truncated.',
+        'Read material that is NO LONGER in your context — messages hidden by an earlier plasticize. This is a pure read: ' +
+        'it never changes anything. It is archaeology, not a scratch pad: what it returns joins your CURRENT generation, ' +
+        'so use it when you genuinely need an old detail — not as a way to temporarily park something you hid. ' +
+        'Two mutually exclusive modes: (1) generation: pass a LOGICAL generation number (0-based, exactly the number in ' +
+        'the self - n labels). Returns a STRUCTURED JSON object with that generation\'s replacement messages and the full ' +
+        'originals it hid — no host-side text search, ideal for PTC programs that JSON.parse and filter themselves. ' +
+        '(2) query: case-insensitive substring search over hidden originals (legacy text mode). ' +
+        'It deliberately does NOT return anything still on your current surface: those you can already see, and echoing ' +
+        'them back would only add text that later matching has to disambiguate against. If what you want to compress is ' +
+        'visible right now, do not look it up first — call plasticize directly. Logical generations are the message ' +
+        'coordinates; physical generation numbers are reference only. Text is returned in FULL — nothing is truncated.',
       parameters: {
         type: 'object',
         properties: {
-          query: { type: 'string', description: 'Keyword to search for (case-insensitive substring in the hidden originals).' },
-          context: { type: 'integer', description: 'Also return this many messages before AND after each hit (like grep -C). Default 0.' },
-          limit: { type: 'integer', description: 'Maximum hits to return. Default 20.' },
+          generation: { type: 'integer', description: 'Logical generation number (0-based). Returns structured JSON for that generation; mutually exclusive with query.' },
+          query: { type: 'string', description: 'Keyword to search for (case-insensitive substring in the hidden originals); mutually exclusive with generation.' },
+          context: { type: 'integer', description: 'Query mode only: also return this many messages before AND after each hit (like grep -C). Default 0.' },
+          limit: { type: 'integer', description: 'Query mode only: maximum hits to return. Default 20.' },
         },
-        required: ['query'],
       },
       execute(args, exec) {
         const session = sessionOf(exec);
-        return Promise.resolve({ text: retrospect(session, args ?? {}) });
+        const input = args ?? {};
+        if (input.generation === undefined && typeof input.query !== 'string') {
+          throw new Error('retrospect 需要 generation（逻辑世代号）或 query（关键字）之一');
+        }
+        if (input.generation !== undefined && typeof input.query === 'string') {
+          throw new Error('generation 与 query 只能二选一');
+        }
+        return Promise.resolve({ text: retrospect(session, input) });
       },
     }),
   );

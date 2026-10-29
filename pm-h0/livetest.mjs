@@ -126,6 +126,9 @@ console.log(NL + '⑥ retrospect：能查到已被隐藏的原文');
   ok(after.includes(keyword), '**被隐藏的原文仍能查到**（原文从未删除）', JSON.stringify(keyword));
   ok(after.includes('self - '), '标签标出了它已被隐藏（self - n）');
   ok(after.includes('逻辑 ') && after.includes('物理 '), '标签同时给出逻辑世代（坐标）与物理世代（参考）');
+  const structured = JSON.parse(retrospect(s, { generation: 0 }));
+  ok(structured.type === 'pm-retrospect-generation' && structured.generation.found, '按逻辑世代号返回结构化 JSON', JSON.stringify(structured.generation.logical));
+  ok(structured.generation.messages.some((message) => String(message.text).includes(keyword)), '结构化结果包含该世代隐藏的原文', String(structured.count));
 }
 
 console.log(NL + '⑥.5 安全区：lock 后 plasticize 不能命中锁定区间');

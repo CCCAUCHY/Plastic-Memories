@@ -76,6 +76,7 @@ function generationLabelOf(session, seq, info) {
  * @returns {string} 格式化结果（**完整文本，不截断**）。
  */
 export function retrospect(session, args) {
+  if (args?.generation !== undefined) return retrospectGeneration(session, args.generation);
   const query = typeof args?.query === 'string' ? args.query : '';
   if (query.length === 0) throw new Error('query 不能为空');
   const context = Number.isSafeInteger(args?.context) ? Math.max(0, args.context) : 0;
@@ -165,4 +166,96 @@ export function retrospect(session, args) {
   }
 
   return lines.join(NL);
+}
+
+/**
+ * 按逻辑世代号返回该世代隐藏掉的全部原文（结构化 JSON）。
+ *
+ * PTC 模式下调用方可以在程序里直接 JSON.parse 并过滤，不需要工具端做文本搜索。
+ * @param {object} session - 目标会话。
+ * @param {number} generation - 逻辑世代号（0 起，与 self - k 标签里的「逻辑」一致）。
+ * @returns {string} JSON 文本。
+ */
+export function retrospectGeneration(session, generation) {
+  if (!Number.isSafeInteger(generation) || generation < 0) {
+    throw new Error('generation 必须是非负整数（逻辑世代号）');
+  }
+  const nodes = surfaceNodes(session);
+  const events = session.snapshotEvents();
+  const info = logicalGenerations(session);
+  info.byCallId = new Map(info.executes.map((entry) => [entry.callId, entry.logical]));
+  info.physicalBySeq = new Map();
+  let physicalCurrent = 0;
+  let logicalFromSource = -1;
+  for (const event of events) {
+    if (event.surfaceOp?.op !== 'replace') continue;
+    physicalCurrent += 1;
+    info.physicalBySeq.set(event.seq, physicalCurrent);
+    const source = event.type === 'user/message' ? event.data?.source : event.data?.message?.source;
+    if (typeof source?.logicalGeneration === 'number') logicalFromSource = Math.max(logicalFromSource, source.logicalGeneration);
+  }
+  let logicalFromResults = -1;
+  for (const event of events) {
+    if (event.type !== 'tool/result') continue;
+    const text = eventText(event);
+    const match = /pm-logical-generation=(\d+)/.exec(text);
+    if (match !== null) logicalFromResults = Math.max(logicalFromResults, Number(match[1]));
+  }
+  const derivedMax = Math.max(logicalFromResults, logicalFromSource);
+  if (derivedMax >= 0) info.total = derivedMax;
+
+  const bySeq = new Map(events.map((event) => [event.seq, event]));
+  const replacements = [];
+  const wanted = new Set();
+  for (const event of events) {
+    if (event.surfaceOp?.op !== 'replace') continue;
+    const source = event.type === 'user/message' ? event.data?.source : event.data?.message?.source;
+    let logical = typeof source?.logicalGeneration === 'number' ? source.logicalGeneration : undefined;
+    if (logical === undefined) {
+      for (const candidate of [source?.callId, ...(Array.isArray(source?.consumed) ? source.consumed : [])]) {
+        if (typeof candidate === 'string' && info.byCallId.has(candidate)) { logical = info.byCallId.get(candidate); break; }
+      }
+    }
+    if (logical === undefined) {
+      for (const entry of info.executes) {
+        if (entry.seq <= event.seq) logical = entry.logical; else break;
+      }
+    }
+    if (logical !== generation) continue;
+    const message = derivedMessage(session, event);
+    replacements.push({
+      physical: info.physicalBySeq.get(event.seq) ?? physicalCurrent,
+      role: message === undefined ? event.type : String(message.role),
+      kind: event.type,
+      text: messageText(message),
+    });
+    for (const seq of Array.isArray(event.sourceEventSeqs) ? event.sourceEventSeqs : []) wanted.add(seq);
+  }
+  const messages = [];
+  for (const seq of [...wanted].sort((left, right) => left - right)) {
+    const event = bySeq.get(seq);
+    if (event === undefined) continue;
+    const message = derivedMessage(session, event);
+    messages.push({
+      role: message === undefined ? event.type : String(message.role),
+      kind: event.type,
+      text: messageText(message),
+    });
+  }
+  return JSON.stringify({
+    type: 'pm-retrospect-generation',
+    current: {
+      logical: info.total,
+      physical: physicalCurrent,
+      surfaceMessages: nodes.length,
+      events: events.length,
+    },
+    generation: {
+      logical: generation,
+      found: replacements.length > 0 || messages.length > 0,
+      replacements,
+      messages,
+    },
+    count: messages.length,
+  });
 }
