@@ -23,7 +23,7 @@
  * @module dsh-plugin-plastic-memories-h0/retrospect
  */
 
-import { derivedMessage, messageText, surfaceNodes } from './coords.js';
+import { SURFACE_TYPES, derivedMessage, messageText, surfaceNodes } from './coords.js';
 import { logicalGenerations } from './engine.js';
 
 const NL = String.fromCharCode(10);
@@ -197,42 +197,52 @@ export function retrospectGeneration(session, generation) {
   let logicalFromResults = -1;
   for (const event of events) {
     if (event.type !== 'tool/result') continue;
-    const text = eventText(event);
-    const match = /pm-logical-generation=(\d+)/.exec(text);
+    const match = /pm-logical-generation=(\d+)/.exec(eventText(event));
     if (match !== null) logicalFromResults = Math.max(logicalFromResults, Number(match[1]));
   }
   const derivedMax = Math.max(logicalFromResults, logicalFromSource);
   if (derivedMax >= 0) info.total = derivedMax;
 
   const bySeq = new Map(events.map((event) => [event.seq, event]));
-  const replacements = [];
-  const wanted = new Set();
-  for (const event of events) {
-    if (event.surfaceOp?.op !== 'replace') continue;
+  const logicalOf = (event) => {
+    if (event?.type === 'plugin:plastic-memories/logical' && Number.isSafeInteger(event.data?.logical)) return event.data.logical;
+    if (event?.surfaceOp?.op !== 'replace') return undefined;
     const source = event.type === 'user/message' ? event.data?.source : event.data?.message?.source;
-    let logical = typeof source?.logicalGeneration === 'number' ? source.logicalGeneration : undefined;
-    if (logical === undefined) {
-      for (const candidate of [source?.callId, ...(Array.isArray(source?.consumed) ? source.consumed : [])]) {
-        if (typeof candidate === 'string' && info.byCallId.has(candidate)) { logical = info.byCallId.get(candidate); break; }
-      }
+    if (typeof source?.logicalGeneration === 'number') return source.logicalGeneration;
+    for (const candidate of [source?.callId, ...(Array.isArray(source?.consumed) ? source.consumed : [])]) {
+      if (typeof candidate === 'string' && info.byCallId.has(candidate)) return info.byCallId.get(candidate);
     }
-    if (logical === undefined) {
-      for (const entry of info.executes) {
-        if (entry.seq <= event.seq) logical = entry.logical; else break;
-      }
+    let fallback;
+    for (const entry of info.executes) {
+      if (entry.seq <= event.seq) fallback = entry.logical; else break;
     }
-    if (logical !== generation) continue;
-    const message = derivedMessage(session, event);
-    replacements.push({
-      physical: info.physicalBySeq.get(event.seq) ?? physicalCurrent,
-      role: message === undefined ? event.type : String(message.role),
-      kind: event.type,
-      text: messageText(message),
-    });
-    for (const seq of Array.isArray(event.sourceEventSeqs) ? event.sourceEventSeqs : []) wanted.add(seq);
+    return fallback;
+  };
+
+  const currentLogical = info.total;
+  let contextNodes = [];
+  let asOfSeq = -1;
+  let found = false;
+  if (generation === currentLogical) {
+    // 当前世代：直接返回当前上下文（包含最近追加、尚未进入下一代的普通消息）。
+    contextNodes = [...nodes];
+    asOfSeq = events.length === 0 ? -1 : events[events.length - 1].seq;
+    found = true;
+  } else if (generation < currentLogical) {
+    // 历史世代：回放到该逻辑世代最后一次写入的位置，重建当时的 surface。
+    let cutoff = -1;
+    for (const event of events) {
+      if (logicalOf(event) === generation) cutoff = Math.max(cutoff, event.seq);
+    }
+    if (cutoff >= 0) {
+      contextNodes = replaySurface(events, cutoff);
+      asOfSeq = cutoff;
+      found = true;
+    }
   }
+
   const messages = [];
-  for (const seq of [...wanted].sort((left, right) => left - right)) {
+  for (const seq of contextNodes) {
     const event = bySeq.get(seq);
     if (event === undefined) continue;
     const message = derivedMessage(session, event);
@@ -243,19 +253,43 @@ export function retrospectGeneration(session, generation) {
     });
   }
   return JSON.stringify({
-    type: 'pm-retrospect-generation',
+    type: 'pm-retrospect-generation-context',
     current: {
-      logical: info.total,
+      logical: currentLogical,
       physical: physicalCurrent,
       surfaceMessages: nodes.length,
       events: events.length,
     },
     generation: {
       logical: generation,
-      found: replacements.length > 0 || messages.length > 0,
-      replacements,
+      found,
+      asOfSeq,
       messages,
     },
     count: messages.length,
   });
+}
+
+/** 按日志回放 surface 到 cutoff（含），返回当时的节点 seq 列表。 */
+function replaySurface(events, cutoff) {
+  const list = [];
+  for (const event of events) {
+    if (event.seq > cutoff) break;
+    if (!SURFACE_TYPES.has(event.type)) continue;
+    const op = event.surfaceOp;
+    if (op === 'append' || op?.op === 'append') {
+      list.push(event.seq);
+      continue;
+    }
+    if (op?.op !== 'replace') continue;
+    let start = list.indexOf(op.startSeq);
+    let end = list.indexOf(op.endSeq);
+    if (start < 0 || end < start) {
+      const refs = Array.isArray(event.sourceEventSeqs) ? event.sourceEventSeqs : [];
+      start = list.indexOf(refs[0]);
+      end = start < 0 ? -1 : start + refs.length - 1;
+    }
+    if (start >= 0 && end >= start) list.splice(start, end - start + 1, event.seq);
+  }
+  return list;
 }

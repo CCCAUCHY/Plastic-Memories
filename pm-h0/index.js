@@ -450,8 +450,9 @@ export function apply(ctx, config) {
         'it never changes anything. It is archaeology, not a scratch pad: what it returns joins your CURRENT generation, ' +
         'so use it when you genuinely need an old detail — not as a way to temporarily park something you hid. ' +
         'Two mutually exclusive modes: (1) generation: pass a LOGICAL generation number (0-based, exactly the number in ' +
-        'the self - n labels). Returns a STRUCTURED JSON object with that generation\'s replacement messages and the full ' +
-        'originals it hid — no host-side text search, ideal for PTC programs that JSON.parse and filter themselves. ' +
+        'the self - n labels). Returns a STRUCTURED JSON object describing that generation CONTEXT — the ' +
+        'surface messages visible at the end of that logical generation — not the material it hid (that belongs to ' +
+        'the previous generation). Ideal for PTC programs that JSON.parse and inspect the context themselves. ' +
         '(2) query: case-insensitive substring search over hidden originals (legacy text mode). ' +
         'It deliberately does NOT return anything still on your current surface: those you can already see, and echoing ' +
         'them back would only add text that later matching has to disambiguate against. If what you want to compress is ' +

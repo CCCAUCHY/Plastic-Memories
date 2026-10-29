@@ -127,8 +127,21 @@ console.log(NL + '⑥ retrospect：能查到已被隐藏的原文');
   ok(after.includes('self - '), '标签标出了它已被隐藏（self - n）');
   ok(after.includes('逻辑 ') && after.includes('物理 '), '标签同时给出逻辑世代（坐标）与物理世代（参考）');
   const structured = JSON.parse(retrospect(s, { generation: 0 }));
-  ok(structured.type === 'pm-retrospect-generation' && structured.generation.found, '按逻辑世代号返回结构化 JSON', JSON.stringify(structured.generation.logical));
-  ok(structured.generation.messages.some((message) => String(message.text).includes(keyword)), '结构化结果包含该世代隐藏的原文', String(structured.count));
+  ok(structured.type === 'pm-retrospect-generation-context' && structured.generation.found, '按逻辑世代号返回该世代上下文（结构化 JSON）', JSON.stringify(structured.generation.logical));
+  ok(structured.count === s.surface.nodes.length, '当前逻辑世代的上下文 = 当前 surface', String(structured.count));
+  ok(!structured.generation.messages.some((message) => String(message.text).includes(keyword)), '该世代上下文不含它隐藏的上一代原文');
+  ok(structured.generation.messages.some((message) => message.kind === 'developer/message' && message.text === ''), '上下文包含本世代写出的空替代消息');
+
+  // 第二代：历史世代应回放到自己的写入点，而不是返回当前 surface。
+  openStep(s, 99, 2);
+  plasticizeCall(s, { turn: 99, step: 2 }, 'hide-2', { ops: [{ spans: ['this'], new_text: '⟨第二代⟩' }], option: 'execute' });
+  const r2 = flush(s, { openStep: { turn: 99, step: 2 } }, quiet);
+  ok(r2.applied === 1, '第二个逻辑世代写入成功', JSON.stringify(r2));
+  const firstContext = JSON.parse(retrospect(s, { generation: 0 }));
+  const currentContext = JSON.parse(retrospect(s, { generation: 1 }));
+  ok(firstContext.generation.asOfSeq < currentContext.generation.asOfSeq, '历史世代回放到该世代自己的写入点');
+  ok(firstContext.count === structured.count, '第一代上下文不会被第二代改写');
+  ok(currentContext.count === s.surface.nodes.length, '当前世代上下文 = 当前 surface', String(currentContext.count));
 }
 
 console.log(NL + '⑥.5 安全区：lock 后 plasticize 不能命中锁定区间');
