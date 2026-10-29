@@ -135,7 +135,27 @@ export function retrospectGeneration(session, generation) {
       text: messageText(message),
     });
   }
-  return JSON.stringify({ logical: target, count: messages.length, messages });
+  return JSON.stringify({ logical: target, count: messages.length, messages, letter: lettersUpTo(events, cutoff) });
+}
+
+/** 从 plasticize 的 tool/call 参数里收集截至 cutoff 的 letter（无任何额外写入）。 */
+function lettersUpTo(events, cutoff) {
+  const out = [];
+  for (const event of events) {
+    if (event.seq > cutoff) break;
+    if (event.type !== 'tool/call' || event.data?.name !== 'plasticize') continue;
+    const raw = event.data?.arguments;
+    let parsed = raw;
+    if (typeof raw === 'string') {
+      try { parsed = JSON.parse(raw); } catch { continue; }
+    }
+    const letter = parsed?.letter;
+    const list = Array.isArray(letter) ? letter : [letter];
+    for (const entry of list) {
+      if (typeof entry === 'string' && entry.trim().length > 0) out.push(entry);
+    }
+  }
+  return out;
 }
 
 /** 按日志回放 surface 到 cutoff（含），返回当时的节点 seq 列表。 */
