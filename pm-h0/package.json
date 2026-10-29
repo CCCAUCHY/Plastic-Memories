@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-plastic-memories-h0",
-  "version": "0.30.1",
+  "version": "0.30.2",
   "description": "Plastic Memories — H0 route: plastic memory projection over DSH surfaceOp",
   "type": "module",
   "main": "index.js",

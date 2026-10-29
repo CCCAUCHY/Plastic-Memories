@@ -450,7 +450,7 @@ export function apply(ctx, config) {
         'Pass generation as either an absolute logical generation number (0-based, e.g. 3) or the ' +
         'label form "self - N" (e.g. "self - 1"). The target MUST be strictly before self: the current ' +
         'generation is already visible in your input, so querying it is meaningless and rejected. ' +
-        'Returns a compact STRUCTURED JSON object: {logical, messages, count}. messages is that generation\'s ' +
+        'Returns a compact STRUCTURED JSON object: {logical, messages, count}; each message is {role, text}. messages is that generation\'s ' +
         'surface context (full text, no truncation), ' +
         'reconstructed by replaying the log to that generation\'s last write; it does NOT include the material that ' +
         'generation hid (that material belonged to the previous generation). ' +

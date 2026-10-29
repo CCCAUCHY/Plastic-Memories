@@ -14,6 +14,16 @@
 import { SURFACE_TYPES, derivedMessage, messageText } from './coords.js';
 import { logicalGenerations } from './engine.js';
 
+/** 事件类型到角色名的兜底映射（正常消息直接读 message.role）。 */
+const ROLE_BY_TYPE = Object.freeze({
+  'user/message': 'user',
+  'developer/message': 'developer',
+  'assistant/message': 'assistant',
+  'system/message': 'system',
+  'tool/result': 'tool',
+});
+
+
 /** 工具结果事件的文本（用于读取 execute 结果里的逻辑世代 marker）。 */
 function eventText(event) {
   const message = event?.data?.message ?? event?.data;
@@ -121,8 +131,7 @@ export function retrospectGeneration(session, generation) {
     if (event === undefined) continue;
     const message = derivedMessage(session, event);
     messages.push({
-      role: message === undefined ? event.type : String(message.role),
-      kind: event.type,
+      role: message !== undefined && typeof message.role === 'string' ? String(message.role) : (ROLE_BY_TYPE[event.type] ?? String(event.type)),
       text: messageText(message),
     });
   }
