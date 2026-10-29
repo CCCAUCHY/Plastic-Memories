@@ -11,7 +11,7 @@
  * @module dsh-plugin-plastic-memories-h0/retrospect
  */
 
-import { SURFACE_TYPES, derivedMessage, messageText, surfaceNodes } from './coords.js';
+import { SURFACE_TYPES, derivedMessage, messageText } from './coords.js';
 import { logicalGenerations } from './engine.js';
 
 /** 工具结果事件的文本（用于读取 execute 结果里的逻辑世代 marker）。 */
@@ -72,17 +72,12 @@ export function retrospect(session, args) {
  * @returns {string} JSON 文本。
  */
 export function retrospectGeneration(session, generation) {
-  const nodes = surfaceNodes(session);
   const events = session.snapshotEvents();
   const info = logicalGenerations(session);
   info.byCallId = new Map(info.executes.map((entry) => [entry.callId, entry.logical]));
-  info.physicalBySeq = new Map();
-  let physicalCurrent = 0;
   let logicalFromSource = -1;
   for (const event of events) {
     if (event.surfaceOp?.op !== 'replace') continue;
-    physicalCurrent += 1;
-    info.physicalBySeq.set(event.seq, physicalCurrent);
     const source = event.type === 'user/message' ? event.data?.source : event.data?.message?.source;
     if (typeof source?.logicalGeneration === 'number') logicalFromSource = Math.max(logicalFromSource, source.logicalGeneration);
   }
@@ -96,7 +91,6 @@ export function retrospectGeneration(session, generation) {
   if (derivedMax >= 0) info.total = derivedMax;
   const self = info.total;
   const target = normalizeGeneration(generation, self);
-  const currentLogical = self;
 
   const bySeq = new Map(events.map((event) => [event.seq, event]));
   const logicalOf = (event) => {
@@ -114,20 +108,13 @@ export function retrospectGeneration(session, generation) {
     return fallback;
   };
 
-  let contextNodes = [];
-  let asOfSeq = -1;
-  let found = false;
   // 只查历史世代；normalizeGeneration 已拒绝当前/未来世代。
   let cutoff = -1;
   for (const event of events) {
     if (logicalOf(event) === target) cutoff = Math.max(cutoff, event.seq);
   }
-  if (cutoff >= 0) {
-    contextNodes = replaySurface(events, cutoff);
-    asOfSeq = cutoff;
-    found = true;
-  }
-
+  if (cutoff < 0) throw new Error('找不到逻辑世代 ' + String(target) + ' 的上下文（日志中没有该世代的写入记录）');
+  const contextNodes = replaySurface(events, cutoff);
   const messages = [];
   for (const seq of contextNodes) {
     const event = bySeq.get(seq);
@@ -139,23 +126,7 @@ export function retrospectGeneration(session, generation) {
       text: messageText(message),
     });
   }
-  return JSON.stringify({
-    type: 'pm-retrospect-generation-context',
-    current: {
-      logical: currentLogical,
-      physical: physicalCurrent,
-      surfaceMessages: nodes.length,
-      events: events.length,
-    },
-    generation: {
-      logical: target,
-      label: 'self - ' + String(self - target),
-      found,
-      asOfSeq,
-      messages,
-    },
-    count: messages.length,
-  });
+  return JSON.stringify({ logical: target, count: messages.length, messages });
 }
 
 /** 按日志回放 surface 到 cutoff（含），返回当时的节点 seq 列表。 */

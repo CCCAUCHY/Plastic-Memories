@@ -124,12 +124,11 @@ console.log(NL + '⑥ retrospect：只返回历史世代自己的上下文（结
 
   const byNumber = JSON.parse(retrospect(s, { generation: 0 }));
   const byLabel = JSON.parse(retrospect(s, { generation: 'self - 1' }));
-  ok(byNumber.type === 'pm-retrospect-generation-context' && byNumber.generation.found, '按绝对世代号返回历史世代上下文', JSON.stringify(byNumber.generation.logical));
-  ok(byNumber.generation.logical === 0 && byNumber.generation.label === 'self - 1', '绝对编号与 self - N 标签对应', byNumber.generation.label);
-  ok(byNumber.generation.asOfSeq === byLabel.generation.asOfSeq && byNumber.count === byLabel.count, '绝对编号与 self - 1 写法等价');
+  ok(byNumber.logical === 0, '返回 logical（历史世代号）', String(byNumber.logical));
+  ok(JSON.stringify(byNumber) === JSON.stringify(byLabel), '绝对编号与 self - 1 写法返回完全一致');
   ok(byNumber.count === afterFirst.length, '历史上下文 = 当时写入后的 surface', String(byNumber.count));
-  ok(!byNumber.generation.messages.some((message) => String(message.text).includes(keyword)), '历史世代上下文不含它隐藏的上一代原文');
-  ok(byNumber.generation.messages.some((message) => message.kind === 'developer/message' && message.text === ''), '历史上下文包含该世代写出的空替代消息');
+  ok(!byNumber.messages.some((message) => String(message.text).includes(keyword)), '历史世代上下文不含它隐藏的上一代原文');
+  ok(byNumber.messages.some((message) => message.kind === 'developer/message' && message.text === ''), '历史上下文包含该世代写出的空替代消息');
   let againError = null;
   try { retrospect(s, { generation: 'self - 0' }); } catch (error) { againError = error.message; }
   ok(typeof againError === 'string', 'self - 0（当前世代）被拒绝');
