@@ -23,6 +23,65 @@ function insertBeforeLine(lines, includes, newLines) {
  */
 export function applyExtraPatches(patched) {
   const lines = patched.split(String.fromCharCode(10));
+  const pmLocaleZh = {
+    'pm.reshaped': '已塑形',
+    'pm.reshaping': '被塑形',
+    'pm.hidden': '（已隐藏）',
+    'pm.hiddenAuto': '（自动隐藏）',
+    'pm.hiddenManual': '（主动隐藏）',
+    'pm.safeZone': '安全区',
+    'pm.safetyTitle': '该消息位于安全区：不能被 plasticize 改写',
+    'pm.loadAll': '加载全部',
+    'pm.loading': '加载中…',
+    'pm.loadAllTitle': '加载当前世代全部轨迹',
+    'pm.jumpReshaped': '跳到对应的已塑形消息',
+    'pm.jumpReshaping': '跳到塑形前的区域',
+    'pm.typeReshaped': '已经塑形的区域：跳到上一世代',
+    'pm.typeReshaping': '这里即将被下一世代塑形：跳到下一世代',
+    'pm.expandReshape': '展开塑形前的轨迹',
+    'pm.collapseReshape': '收起塑形前的轨迹',
+    'pm.coveredHead': '本代塑形覆盖了上一代 {count} 条消息（快照装配中）',
+    'pm.pendingSnapshot': '上一世代快照装配中…',
+    'pm.roleUser': '用户',
+    'pm.roleAssistant': '助手',
+    'pm.roleDeveloper': '上下文',
+    'pm.roleTool': '工具',
+    'pm.roleSystem': '系统',
+    'pm.pagerLabel': '世代',
+    'pm.pagerTitle': '第 {n} 代',
+  };
+  const pmLocaleEn = {
+    'pm.reshaped': 'Reshaped',
+    'pm.reshaping': 'Being reshaped',
+    'pm.hidden': '(Hidden)',
+    'pm.hiddenAuto': '(Auto-hidden)',
+    'pm.hiddenManual': '(Manually hidden)',
+    'pm.safeZone': 'Safety zone',
+    'pm.safetyTitle': 'This message is in the safety zone and cannot be reshaped by plasticize',
+    'pm.loadAll': 'Load all',
+    'pm.loading': 'Loading…',
+    'pm.loadAllTitle': 'Load all trajectory rows in the current generation',
+    'pm.jumpReshaped': 'Jump to the corresponding reshaped message',
+    'pm.jumpReshaping': 'Jump to the pre-reshaping range',
+    'pm.typeReshaped': 'Reshaped area: jump to the previous generation',
+    'pm.typeReshaping': 'This area will be reshaped by the next generation: jump to it',
+    'pm.expandReshape': 'Expand pre-reshaping trajectory',
+    'pm.collapseReshape': 'Collapse pre-reshaping trajectory',
+    'pm.coveredHead': 'This generation reshapes {count} messages from the previous generation (snapshot loading)',
+    'pm.pendingSnapshot': 'Assembling the previous-generation snapshot…',
+    'pm.roleUser': 'User',
+    'pm.roleAssistant': 'Assistant',
+    'pm.roleDeveloper': 'Context',
+    'pm.roleTool': 'Tool',
+    'pm.roleSystem': 'System',
+    'pm.pagerLabel': 'Generations',
+    'pm.pagerTitle': 'Generation {n}',
+  };
+  const insertPmLocale = (text, anchor, dict) => {
+    const inserted = Object.entries(dict).map(([key, value]) => String.fromCharCode(10) + '\t\t\t' + JSON.stringify(key) + ': ' + JSON.stringify(value) + ',').join('');
+    return text.split(anchor).join(anchor + inserted);
+  };
+
 
   // 1. trajectorySource：包一层按世代快照的缓存（bridge.wrapTargetSource）。
   const sourceIndex = lines.findIndex((line) => line.includes('getSnapshot: () => target.getSnapshot() ?? EMPTY_TRAJECTORY_SNAPSHOT,'));
@@ -124,8 +183,8 @@ export function applyExtraPatches(patched) {
   ].join(String.fromCharCode(10));
   text = text.split(markdownAnchor).join(wrapper + markdownAnchor);
   // 9. UI 本地化 + 类型列恢复原生、差异徽标移到正文。
-  text = text.split('"view.trajectory": "世代",').join('"view.trajectory": "世代",' + String.fromCharCode(10) + '\t\t\t"pm.reshaped": "已塑形",' + String.fromCharCode(10) + '\t\t\t"pm.reshaping": "被塑形",' + String.fromCharCode(10) + '\t\t\t"pm.hidden": "（已隐藏）",' + String.fromCharCode(10) + '\t\t\t"pm.hiddenAuto": "（自动隐藏）",' + String.fromCharCode(10) + '\t\t\t"pm.hiddenManual": "（主动隐藏）",');
-  text = text.split('"view.trajectory": "Generations",').join('"view.trajectory": "Generations",' + String.fromCharCode(10) + '\t\t\t"pm.reshaped": "Reshaped",' + String.fromCharCode(10) + '\t\t\t"pm.reshaping": "Being reshaped",' + String.fromCharCode(10) + '\t\t\t"pm.hidden": "(Hidden)",' + String.fromCharCode(10) + '\t\t\t"pm.hiddenAuto": "(Auto-hidden)",' + String.fromCharCode(10) + '\t\t\t"pm.hiddenManual": "(Manually hidden)",');
+  text = insertPmLocale(text, '"view.trajectory": "世代",', pmLocaleZh);
+  text = insertPmLocale(text, '"view.trajectory": "Generations",', pmLocaleEn);
   // 类型列恢复原生标签（去掉粉色 class 与标签替换）。
   text = text.split('${globalThis.__PM_UI__ !== void 0 && globalThis.__PM_UI__.isReshapedCell !== void 0 && globalThis.__PM_UI__.isReshapedCell(record.cell, t) ? " pm-reshaped-tag" : ""} ').join('');
   text = text.split('children: globalThis.__PM_UI__ !== void 0 && globalThis.__PM_UI__.reshapeTagLabel !== void 0 && globalThis.__PM_UI__.isReshapedCell !== void 0 && globalThis.__PM_UI__.isReshapedCell(record.cell, t) ? globalThis.__PM_UI__.reshapeTagLabel(record.cell, t) : t(KIND_LABEL_KEY[record.cell.kind])').join('children: t(KIND_LABEL_KEY[record.cell.kind])');
@@ -149,9 +208,5 @@ export function applyExtraPatches(patched) {
   const pmPager = 'globalThis.__PM_UI__ === void 0 || t.__pmEmbedded === true ? null : globalThis.__PM_UI__.pagination(t)';
   const pmPagerRepl = 'globalThis.__PM_UI__ === void 0 || t.__pmEmbedded === true ? null : (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [globalThis.__PM_UI__.pagination(t), globalThis.__PM_UI__.loadAllButton !== void 0 ? globalThis.__PM_UI__.loadAllButton(t) : null] })';
   if (text.split(pmPager).length - 1 === 1) text = text.split(pmPager).join(pmPagerRepl);
-  text = text.split('"pm.hidden": "（已隐藏）",').join('"pm.hidden": "（已隐藏）","pm.loadAll": "加载全部","pm.loading": "加载中…",');
-  text = text.split('"pm.hidden": "(Hidden)",').join('"pm.hidden": "(Hidden)","pm.loadAll": "Load all","pm.loading": "Loading…",');
-  text = text.split('"pm.hiddenManual": "（主动隐藏）",').join('"pm.hiddenManual": "（主动隐藏）","pm.safeZone": "安全区",');
-  text = text.split('"pm.hiddenManual": "(Manually hidden)",').join('"pm.hiddenManual": "(Manually hidden)","pm.safeZone": "Safety zone",');
   return text;
 }

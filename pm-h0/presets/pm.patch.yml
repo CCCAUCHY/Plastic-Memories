@@ -1,17 +1,16 @@
-# Agent preset pm：最新 PTC 基线，去掉压缩组，并挂载 Plastic Memories 插件。
+# Agent preset pm：由 rebuild-from-dsh.mjs 从当前 DSH 的 PTC 基线生成。
 #
 # 与 ptc 的结构差异只有两处：
 #   1. 删除 compaction 组（PM 是会话内唯一的 surface 改写者，压缩会与它争用同一个 surface）；
 #   2. plugins 里增加 dsh-plugin-plastic-memories-h0（PM 工具）。
 #
-# PM 工具的用法说明写在工具自身的 description 里（与 PTC 的 run_code 工具同样式），
-# 因此 persona 不再注入长篇协议，保持与官方模式一致的系统提示词形态。
+# 修改基线后请运行：node rebuild-from-dsh.mjs
 - insert:
     - id: preset-pm
       name: '@deepseek-ai/dsh-agent-preset'
       config:
         id: pm
-        name: PM · 可塑记忆 v0.37.0
+        name: PM · 可塑记忆 v0.38.0
         description: >-
           以 ptc 为基线，去掉压缩组，并挂载 Plastic Memories 插件。
           模型可以主动改写自己过往的呈现方式：把已完成的工作压成结论、把无关段落隐去，底层轨迹一字不失（retrospect 可事后考古）。

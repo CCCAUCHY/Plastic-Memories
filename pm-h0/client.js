@@ -40,9 +40,29 @@ window.__ModuleLoader__.load({
 			"view.trajectory": "世代",
 			"pm.reshaped": "已塑形",
 			"pm.reshaping": "被塑形",
-			"pm.hidden": "（已隐藏）","pm.loadAll": "加载全部","pm.loading": "加载中…",
+			"pm.hidden": "（已隐藏）",
 			"pm.hiddenAuto": "（自动隐藏）",
-			"pm.hiddenManual": "（主动隐藏）","pm.safeZone": "安全区",
+			"pm.hiddenManual": "（主动隐藏）",
+			"pm.safeZone": "安全区",
+			"pm.safetyTitle": "该消息位于安全区：不能被 plasticize 改写",
+			"pm.loadAll": "加载全部",
+			"pm.loading": "加载中…",
+			"pm.loadAllTitle": "加载当前世代全部轨迹",
+			"pm.jumpReshaped": "跳到对应的已塑形消息",
+			"pm.jumpReshaping": "跳到塑形前的区域",
+			"pm.typeReshaped": "已经塑形的区域：跳到上一世代",
+			"pm.typeReshaping": "这里即将被下一世代塑形：跳到下一世代",
+			"pm.expandReshape": "展开塑形前的轨迹",
+			"pm.collapseReshape": "收起塑形前的轨迹",
+			"pm.coveredHead": "本代塑形覆盖了上一代 {count} 条消息（快照装配中）",
+			"pm.pendingSnapshot": "上一世代快照装配中…",
+			"pm.roleUser": "用户",
+			"pm.roleAssistant": "助手",
+			"pm.roleDeveloper": "上下文",
+			"pm.roleTool": "工具",
+			"pm.roleSystem": "系统",
+			"pm.pagerLabel": "世代",
+			"pm.pagerTitle": "第 {n} 代",
 			"toolbar.aria": "轨迹工具栏",
 			"toolbar.duration": "时长",
 			"toolbar.useActualDuration": "使用实际时长",
@@ -240,9 +260,29 @@ window.__ModuleLoader__.load({
 			"view.trajectory": "Generations",
 			"pm.reshaped": "Reshaped",
 			"pm.reshaping": "Being reshaped",
-			"pm.hidden": "(Hidden)","pm.loadAll": "Load all","pm.loading": "Loading…",
+			"pm.hidden": "(Hidden)",
 			"pm.hiddenAuto": "(Auto-hidden)",
-			"pm.hiddenManual": "(Manually hidden)","pm.safeZone": "Safety zone",
+			"pm.hiddenManual": "(Manually hidden)",
+			"pm.safeZone": "Safety zone",
+			"pm.safetyTitle": "This message is in the safety zone and cannot be reshaped by plasticize",
+			"pm.loadAll": "Load all",
+			"pm.loading": "Loading…",
+			"pm.loadAllTitle": "Load all trajectory rows in the current generation",
+			"pm.jumpReshaped": "Jump to the corresponding reshaped message",
+			"pm.jumpReshaping": "Jump to the pre-reshaping range",
+			"pm.typeReshaped": "Reshaped area: jump to the previous generation",
+			"pm.typeReshaping": "This area will be reshaped by the next generation: jump to it",
+			"pm.expandReshape": "Expand pre-reshaping trajectory",
+			"pm.collapseReshape": "Collapse pre-reshaping trajectory",
+			"pm.coveredHead": "This generation reshapes {count} messages from the previous generation (snapshot loading)",
+			"pm.pendingSnapshot": "Assembling the previous-generation snapshot…",
+			"pm.roleUser": "User",
+			"pm.roleAssistant": "Assistant",
+			"pm.roleDeveloper": "Context",
+			"pm.roleTool": "Tool",
+			"pm.roleSystem": "System",
+			"pm.pagerLabel": "Generations",
+			"pm.pagerTitle": "Generation {n}",
 			"toolbar.aria": "Trajectory toolbar",
 			"toolbar.duration": "Duration",
 			"toolbar.useActualDuration": "Use actual duration",
@@ -8318,13 +8358,14 @@ window.__ModuleLoader__.load({
   factory: (require) => {
     const React = require('react');
     const h = React.createElement;
+    function pmUiText(t, key, fallback) { return t === undefined || t === null ? fallback : t(key); }
+    function liveUiT() { return viewContext === undefined || viewContext === null ? undefined : viewContext.t; }
 
     // ── 世代选择 bridge ─────────────────────────────────────────────────────
     // 事实源链：会话日志 → host 投影（官方 fold，diffcheck 逐代校验）→ 可见 seq 字典。
     // 这里不再过滤「官方轨迹快照」，而是把字典交给官方装配器：事件定义在 match 阶段
     // 跳过不属于当前世代的事件，切世代时重注册定义、触发官方装配器重建快照 ——
     // 于是轨迹 = 官方代码对「该世代真实日志」的装配结果，不存在第二套转换算法。
-    const KIND_LABELS = { system: '系统', user: '用户', context: '上下文', compacted: '已压缩', message: '助手', tool: '工具', subtool: '子工具' };
     const states = new Map();
     const globalListeners = new Set();
     let activeState;
@@ -8586,7 +8627,7 @@ window.__ModuleLoader__.load({
     // 相邻两代的差异由「上一代真实上下文」定义：本代的 replace 事件覆盖了上一代
     // 哪些 seq（host 投影的 replacements[].shadowed），被覆盖节点正文在 meta 里。
     // 这里只做展示，不重写官方装配。
-    const ROLE_LABELS = { user: '用户', assistant: '助手', tool: '工具', system: '系统', developer: '上下文' };
+    const ROLE_KEYS = { user: 'pm.roleUser', assistant: 'pm.roleAssistant', tool: 'pm.roleTool', system: 'pm.roleSystem', developer: 'pm.roleDeveloper' };
     function reshapeInfoOf(cell, t) {
       const state = activeState;
       if (state === undefined || state.data === undefined || state.data === null) return null;
@@ -8612,9 +8653,9 @@ window.__ModuleLoader__.load({
       const source = cell?.messageSource ?? cell?.source;
       const note = typeof source?.note === 'string' ? source.note : '';
       const op = typeof source?.op === 'string' ? source.op : '';
-      if (note.startsWith('auto-hide:')) return t === undefined ? '（自动隐藏）' : t('pm.hiddenAuto');
-      if (op === 'hide') return t === undefined ? '（主动隐藏）' : t('pm.hiddenManual');
-      return t === undefined ? '（已隐藏）' : t('pm.hidden');
+      if (note.startsWith('auto-hide:')) return pmUiText(t, 'pm.hiddenAuto', '(Auto-hidden)');
+      if (op === 'hide') return pmUiText(t, 'pm.hiddenManual', '(Manually hidden)');
+      return pmUiText(t, 'pm.hidden', '(Hidden)');
     }
     function isReshapedCell(cell, t) {
       return diffMarksOf(cell).some((mark) => mark.kind === 'reshaped');
@@ -8627,11 +8668,12 @@ window.__ModuleLoader__.load({
         .sort((left, right) => left - right)
         .map((seq) => ({ seq, info: meta[String(seq)] ?? { seq, role: 'unknown' } }));
     }
-    function coveredKindLabel(info) {
-      if (info.projected === true) return '已塑形';
-      if (typeof info.role === 'string' && ROLE_LABELS[info.role] !== undefined) return ROLE_LABELS[info.role];
-      if (info.type === 'tool/result') return '工具';
-      return '上下文';
+    function coveredKindLabel(info, t) {
+      if (info.projected === true) return pmUiText(t, 'pm.reshaped', 'Reshaped');
+      const key = typeof info.role === 'string' ? ROLE_KEYS[info.role] : undefined;
+      if (key !== undefined) return pmUiText(t, key, String(info.role));
+      if (info.type === 'tool/result') return pmUiText(t, 'pm.roleTool', 'Tool');
+      return pmUiText(t, 'pm.roleDeveloper', 'Context');
     }
     function coveredText(info) {
       if (typeof info.text === 'string' && info.text.length > 0) return info.text;
@@ -8651,27 +8693,32 @@ window.__ModuleLoader__.load({
         return () => globalListeners.delete(listener);
       }, []);
       const expanded = expandedReshapeSeq !== undefined && cell !== undefined && cell !== null && cell.sourceSeq === expandedReshapeSeq;
+      const t = liveUiT();
       return h('button', {
         type: 'button',
         className: 'pm-reshaped-button',
-        title: expanded ? '收起塑形前的轨迹' : '展开塑形前的轨迹',
+        title: pmUiText(t, expanded ? 'pm.collapseReshape' : 'pm.expandReshape', expanded ? 'Collapse pre-reshaping trajectory' : 'Expand pre-reshaping trajectory'),
         onClick: (event) => {
           event.preventDefault();
           event.stopPropagation();
           toggleReshape(cell.sourceSeq, cell.index);
         },
-      }, expanded ? '已塑形 ▾' : '已塑形');
+      }, expanded ? pmUiText(t, 'pm.reshaped', 'Reshaped') + ' ▾' : pmUiText(t, 'pm.reshaped', 'Reshaped'));
     }
     /** 展开区里上一层被覆盖节点的兜底摘要（上一代快照还没缓存时用）。 */
     function CoveredSummary({ cell }) {
       const rows = coveredNodesOf(cell);
+      const t = liveUiT();
+      const head = t === undefined || t === null
+        ? 'This generation reshapes ' + String(rows.length) + ' messages from the previous generation (snapshot loading)'
+        : t('pm.coveredHead', { count: rows.length });
       return h('div', { className: 'pm-reshape-fallback' }, [
-        h('div', { key: 'head', className: 'pm-reshape-head' }, '本代塑形覆盖了上一代 ' + String(rows.length) + ' 条消息（快照装配中）'),
+        h('div', { key: 'head', className: 'pm-reshape-head' }, head),
         ...rows.map(({ seq, info }) => {
           const text = coveredText(info);
           return h('div', { key: 'row-' + String(seq), className: 'pm-reshape-row' }, [
-            h('span', { key: 'kind', className: info.projected === true ? 'pm-reshape-kind pm-reshape-kind-projected' : 'pm-reshape-kind' }, coveredKindLabel(info)),
-            h('span', { key: 'text', className: text.length === 0 ? 'pm-reshape-text pm-reshape-hidden' : 'pm-reshape-text', title: text }, text.length === 0 ? '已隐藏' : text),
+            h('span', { key: 'kind', className: info.projected === true ? 'pm-reshape-kind pm-reshape-kind-projected' : 'pm-reshape-kind' }, coveredKindLabel(info, t)),
+            h('span', { key: 'text', className: text.length === 0 ? 'pm-reshape-text pm-reshape-hidden' : 'pm-reshape-text', title: text }, text.length === 0 ? pmUiText(t, 'pm.hidden', '(Hidden)') : text),
           ]);
         }),
       ]);
@@ -8756,7 +8803,7 @@ window.__ModuleLoader__.load({
         if (snapshot !== undefined) scrollToCovered(ref.current, snapshot, info.entry.shadowed);
       }, [snapshot, info]);
       if (officialView === undefined || viewContext === undefined) return h(CoveredSummary, { cell });
-      if (snapshot === undefined) return h('div', { className: 'pm-reshape-pending' }, '上一世代快照装配中…');
+      if (snapshot === undefined) return h('div', { className: 'pm-reshape-pending' }, pmUiText(viewContext === undefined ? undefined : viewContext.t, 'pm.pendingSnapshot', 'Assembling the previous-generation snapshot…'));
       const embeddedT = (key, vars) => viewContext.t(key, vars);
       embeddedT.__pmEmbedded = true;
       const hook = (selector) => {
@@ -8794,13 +8841,13 @@ window.__ModuleLoader__.load({
       return h('button', {
         type: 'button',
         className: 'pm-diff-tag',
-        title: mark.side === 'replacement' ? '已经塑形的区域：跳到上一世代' : '这里即将被下一世代塑形：跳到下一世代',
+        title: pmUiText(t, mark.side === 'replacement' ? 'pm.typeReshaped' : 'pm.typeReshaping', mark.side === 'replacement' ? 'Reshaped area: jump to the previous generation' : 'This area will be reshaped by the next generation: jump to it'),
         onClick: (event) => {
           event.preventDefault();
           event.stopPropagation();
           navigateDiff(mark);
         },
-      }, '已塑形');
+      }, pmUiText(t, 'pm.reshaped', 'Reshaped'));
     }
 
     /** 正文前的差异徽标：本代替代消息 = 已塑形（粉）；将被下一代覆盖 = 被塑形（反色）。 */
@@ -8818,8 +8865,8 @@ window.__ModuleLoader__.load({
       if (!safety.includes(cell.sourceSeq)) return null;
       return h('span', {
         className: 'pm-diff-badge pm-safety-badge',
-        title: '该消息位于安全区：不能被 plasticize 改写',
-      }, t === undefined ? '安全区' : t('pm.safeZone'));
+        title: pmUiText(t, 'pm.safetyTitle', 'This message is in the safety zone and cannot be reshaped by plasticize'),
+      }, pmUiText(t, 'pm.safeZone', 'Safety zone'));
     }
     /** 正文前的徽标：差异（被塑形/已塑形）在前，安全区在后。 */
     function diffNativeTag(cell, t) {
@@ -8829,13 +8876,13 @@ window.__ModuleLoader__.load({
         key: mark.kind + String(index),
         type: 'button',
         className: mark.kind === 'reshaping' ? 'pm-diff-badge pm-diff-badge-reshaping' : 'pm-diff-badge pm-diff-badge-reshaped',
-        title: mark.kind === 'reshaping' ? '跳到对应的已塑形消息' : '跳到塑形前的区域',
+        title: mark.kind === 'reshaping' ? pmUiText(t, 'pm.jumpReshaping', 'Jump to the pre-reshaping range') : pmUiText(t, 'pm.jumpReshaped', 'Jump to the corresponding reshaped message'),
         onClick: (event) => {
           event.preventDefault();
           event.stopPropagation();
           jumpDiff(mark, event.currentTarget);
         },
-      }, mark.kind === 'reshaping' ? (t === undefined ? '被塑形' : t('pm.reshaping')) : (t === undefined ? '已塑形' : t('pm.reshaped'))));
+      }, mark.kind === 'reshaping' ? pmUiText(t, 'pm.reshaping', 'Being reshaped') : pmUiText(t, 'pm.reshaped', 'Reshaped')));
       const safety = safetyTag(cell, t);
       if (tags.length === 0 && safety === null) return null;
       return h(React.Fragment, null, ...tags, ...(safety === null ? [] : [safety]));
@@ -9228,9 +9275,9 @@ window.__ModuleLoader__.load({
         type: 'button',
         className: 'pm-load-all',
         disabled: loadAllBusy,
-        title: '加载当前世代全部轨迹',
+        title: pmUiText(t, 'pm.loadAllTitle', 'Load all trajectory rows in the current generation'),
         onClick: (event) => { event.preventDefault(); event.stopPropagation(); loadAllHistory(); },
-      }, loadAllBusy ? (t === undefined ? '加载中…' : t('pm.loading')) : (t === undefined ? '加载全部' : t('pm.loadAll')));
+      }, pmUiText(t, loadAllBusy ? 'pm.loading' : 'pm.loadAll', loadAllBusy ? 'Loading…' : 'Load all'));
     }
     function GenerationPagination({ t }) {
       const [, setTick] = React.useState(0);
@@ -9244,7 +9291,7 @@ window.__ModuleLoader__.load({
       if (state === undefined || total < 2) return null;
       const current = effectiveGeneration(state);
       const last = total - 1;
-      const items = [h('span', { key: 'label', className: 'pm-pgs-label' }, '世代')];
+      const items = [h('span', { key: 'label', className: 'pm-pgs-label' }, pmUiText(t, 'pm.pagerLabel', 'Generations'))];
       for (const [index, item] of generationButtons(current, last).entries()) {
         if (item === '…') {
           items.push(h('span', { key: 'gap' + String(index), className: 'pm-pgs-gap' }, '…'));
@@ -9257,7 +9304,7 @@ window.__ModuleLoader__.load({
           type: 'button',
           className: isCurrent ? 'pm-pgs-current' : '',
           'aria-current': isCurrent ? 'true' : undefined,
-          title: '第 ' + String(gen) + ' 代',
+          title: pmUiText(t, 'pm.pagerTitle', 'Generation') + ' ' + String(gen),
           onClick: () => setGeneration(gen === last ? null : gen),
         }, String(gen)));
       }

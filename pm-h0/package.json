@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-plastic-memories-h0",
-  "version": "0.37.0",
+  "version": "0.38.0",
   "description": "Plastic Memories — H0 route: plastic memory projection over DSH surfaceOp",
   "type": "module",
   "main": "index.js",
@@ -75,6 +75,8 @@
     "test:cookie": "node cookietest.mjs",
     "test:ui": "node uitest.mjs",
     "build:client": "node build-client.mjs",
+    "rebuild:dsh": "node rebuild-from-dsh.mjs",
+    "check:dsh": "node rebuild-from-dsh.mjs --check",
     "test:diff": "node diffcheck.mjs"
   }
 }
