@@ -10,7 +10,7 @@
  * @module dsh-plugin-plastic-memories-h0
  */
 
-import { assertSinglePendingExecute, logicalGenerationForCall, flush, flushUserOperations, pendingReport } from './engine.js';
+import { assertSinglePendingPlasticize, logicalGenerationForCall, flush, flushUserOperations, pendingReport } from './engine.js';
 import { registerCommands } from './commands.js';
 import { GENERATIONS_KEY, generationProjection } from './generations.js';
 import { stepGroup, surfaceNodes } from './coords.js';
@@ -360,7 +360,7 @@ export function apply(ctx, config) {
         "An assistant message and its tool results form one unit. A span that cuts through such a unit is widened to the unit boundary, so no orphan call or result is left; the replaced range may therefore be larger than the span you named.",
         "OPS. Each op has spans and new_text. Every span is hidden except the last by position, which is replaced by new_text. An empty new_text is a pure hole (hide). One op may cover several disjoint ranges.",
         "TYPES. An op may include types=[...] (user, developer, assistant, error, letter) to restrict matching inside the span. user and developer match one message; assistant, error and letter match the whole unit (assistant message plus its tool results). Cookie messages never match, even as user or developer. Matched units are hidden; the last matched unit is replaced by new_text. If types is omitted, every message in the interval matches, cookies included.",
-        "MODES. option:\"set\" previews and writes nothing. option:\"execute\" commits at the next submission boundary. Only ONE execute is allowed per submission boundary: do not issue two execute calls before the next boundary. also_execute_last_set is optional: when an execute call sets it true, the most recent unexecuted set is committed as well. A set result states whether this condition applies.",
+        "MODES. option:\"set\" previews and writes nothing. option:\"execute\" commits at the next submission boundary. Only ONE plasticize call is allowed per run_code program (or per assistant message); set and execute count the same. Do not issue two plasticize calls before the next boundary. also_execute_last_set is optional: when an execute call sets it true, the most recent unexecuted set is committed as well. A set result states whether this condition applies.",
         "lock_this:true locks the replacement message itself into the safety zone; default false.",
         "SAFETY ZONE. Locked messages cannot be reshaped. A span that intersects the safety zone fails and reports the locked region as cookie intervals; the user can unlock it with /plasticize unlock.",
         "AUTO-HIDE. After a successful execute, whole units (assistant message plus all its tool results) that contain a failed call to any Plastic Memories tool (plasticize, retrospect, letter) or a fulfilled plasticize(set) preview are auto-hidden. Other tools mixed into the same unit are hidden with it.",
@@ -418,7 +418,7 @@ export function apply(ctx, config) {
         if (option === 'set' && args?.also_execute_last_set === true) {
           throw new Error('also_execute_last_set is only valid with option:"execute"');
         }
-        if (option === 'execute') assertSinglePendingExecute(session, exec.callId);
+        assertSinglePendingPlasticize(session, exec.callId);
 
         // 「本步整组」：容纳本次调用的 assistant 消息 … 它的全部工具结果。
         const group = stepGroupFor(session, exec);

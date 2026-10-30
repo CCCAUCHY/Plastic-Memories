@@ -14,7 +14,7 @@ import SessionStore from '/var/data/.npm/_npx/1e7f6d9597241db0/node_modules/@dee
 import { makeCounter, fixture, cookieSeed, cookieNodes, cookieEvent, textOf, openStep, plasticizeCall, makeStore } from './testkit.mjs';
 import { pairingMaps, snapshotSurface, stepGroup, indexOfCall, checkBalanced } from './coords.js';
 import { appendPluginRecord, snapshotSessionEvent } from '/var/data/.npm/_npx/1e7f6d9597241db0/node_modules/@deepseek-ai/dsh-session/lib/index.js';
-import { flush, stageUserOperation, flushUserOperations, clearStagedOperations, countLogicalGenerations, assertSinglePendingExecute, installPrivateRecordAppender, lockedSeqs, safetyZoneIntervals } from './engine.js';
+import { flush, stageUserOperation, flushUserOperations, clearStagedOperations, countLogicalGenerations, assertSinglePendingPlasticize, installPrivateRecordAppender, lockedSeqs, safetyZoneIntervals } from './engine.js';
 import { initState, applyEvent, viewOf } from './generations.js';
 import { retrospect } from './retrospect.js';
 
@@ -244,15 +244,24 @@ console.log(NL + '⑥.10 逻辑世代标记：同号物理世代成组，第一�
   ok(countLogicalGenerations(s) === 2, '逻辑世代数递增到 2', String(countLogicalGenerations(s)));
 }
 
-console.log(NL + '⑥.11 一个提交边界只允许一条 execute');
+console.log(NL + '⑥.11 同一 run_code/助手消息只允许一条 plasticize');
 {
   const s = mk();
   openStep(s, 99, 1);
-  plasticizeCall(s, { turn: 99, step: 1 }, 'one-1', { ops: [{ spans: ['(3,4)'], new_text: '⟨ONE-A⟩' }], option: 'execute' });
-  plasticizeCall(s, { turn: 99, step: 1 }, 'one-2', { ops: [{ spans: ['(5,6)'], new_text: '⟨ONE-B⟩' }], option: 'execute' });
+  s.append('assistant/message', {
+    turn: 99, step: 1,
+    message: {
+      id: 'am-two-pm', role: 'assistant', source: { kind: 'model', provider: 'q', model: 'd' },
+      content: [
+        { type: 'tool-call', id: 'one-1', name: 'plasticize', arguments: JSON.stringify({ ops: [{ spans: ['(3,4)'], new_text: '⟨ONE-A⟩' }], option: 'execute' }) },
+        { type: 'tool-call', id: 'one-2', name: 'plasticize', arguments: JSON.stringify({ ops: [{ spans: ['(5,6)'], new_text: '⟨ONE-B⟩' }], option: 'execute' }) },
+      ],
+    },
+    stream: [],
+  }, { surfaceOp: 'append' });
   let guard = null;
-  try { assertSinglePendingExecute(s, 'one-2'); } catch (error) { guard = error.message; }
-  ok(typeof guard === 'string' && guard.includes('only one execute'), '第二条 execute 在工具边界被拒绝', String(guard).slice(0, 60));
+  try { assertSinglePendingPlasticize(s, 'one-2'); } catch (error) { guard = error.message; }
+  ok(typeof guard === 'string' && guard.includes('only one plasticize'), '同一条助手消息里的第二条 plasticize 被拒绝', String(guard).slice(0, 60));
   const r = flush(s, { openStep: { turn: 99, step: 1 } }, quiet);
   ok(r.applied === 0 && r.skipped === 2 && s.snapshotEvents().filter((e) => e.surfaceOp?.op === 'replace').length === 0, 'flush 侧同样拒绝，不写任何投影', JSON.stringify(r));
 }

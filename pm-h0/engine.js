@@ -178,21 +178,25 @@ function scanNew(session, state) {
 }
 
 /**
- * 一个提交边界只允许一条 execute：两个 execute 连续落盘会违反
- * “同一 execute 内区间不重叠则操作可交换”的原则。
+ * 同一个 run_code program（PTC）或同一条 assistant 消息（native）只允许一条 plasticize：
+ * set 和 execute 都算。多条会迫使模型心算两次变换之间的有状态关系，违反可交换原则。
  * @param {object} session - 目标会话。
- * @param {string} currentCallId - 当前 execute 的 callId（不计入待决）。
+ * @param {string} currentCallId - 当前 plasticize 的 callId。
  */
-export function assertSinglePendingExecute(session, currentCallId) {
+export function assertSinglePendingPlasticize(session, currentCallId) {
   const state = stateOf(session);
   scanNew(session, state);
+  const current = state.declarations.find((declaration) => declaration.callId === currentCallId);
+  if (current === undefined) return;
+  const keyOf = (declaration) => declaration.via === 'ptc' ? 'ptc:' + declaration.ownerCallId : 'seq:' + declaration.seq;
+  const currentKey = keyOf(current);
   const pending = state.declarations.filter((declaration) =>
     declaration.callId !== currentCallId &&
-    declaration.args?.option === 'execute' &&
     !state.appliedCallIds.has(declaration.callId) &&
-    !state.failedCallIds.has(declaration.callId));
+    !state.failedCallIds.has(declaration.callId) &&
+    keyOf(declaration) === currentKey);
   if (pending.length > 0) {
-    throw new Error('only one execute is allowed per submission boundary; execute one logical generation per boundary');
+    throw new Error('only one plasticize call is allowed per run_code program (or per assistant message); set and execute count the same');
   }
 }
 
@@ -593,8 +597,18 @@ function applyDeclarations(session, declarations, open, state, options = {}) {
     }
   }
 
-  if (planned.filter((entry) => entry.duplicateOf === undefined && entry.declaration.args?.option === 'execute').length > 1) {
-    throw new Error('only one execute is allowed per submission boundary; consecutive executes would violate operation commutativity');
+  {
+    const groups = new Map();
+    for (const entry of planned) {
+      const declaration = entry.declaration;
+      const key = declaration.via === 'ptc' ? 'ptc:' + declaration.ownerCallId : 'seq:' + declaration.seq;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(declaration.callId);
+    }
+    const multiple = [...groups.values()].find((calls) => calls.length > 1);
+    if (multiple !== undefined) {
+      throw new Error('only one plasticize call is allowed per run_code program (or per assistant message); set and execute count the same');
+    }
   }
   const claimed = new Set();
   for (let i = 0; i < planned.length; i++) {
