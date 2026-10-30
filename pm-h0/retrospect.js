@@ -85,20 +85,6 @@ export function retrospectGeneration(session, generation) {
   const events = session.snapshotEvents();
   const info = logicalGenerations(session);
   info.byCallId = new Map(info.executes.map((entry) => [entry.callId, entry.logical]));
-  let logicalFromSource = -1;
-  for (const event of events) {
-    if (event.surfaceOp?.op !== 'replace') continue;
-    const source = event.type === 'user/message' ? event.data?.source : event.data?.message?.source;
-    if (typeof source?.logicalGeneration === 'number') logicalFromSource = Math.max(logicalFromSource, source.logicalGeneration);
-  }
-  let logicalFromResults = -1;
-  for (const event of events) {
-    if (event.type !== 'tool/result') continue;
-    const match = /pm-logical-generation=(\d+)/.exec(eventText(event));
-    if (match !== null) logicalFromResults = Math.max(logicalFromResults, Number(match[1]));
-  }
-  const derivedMax = Math.max(logicalFromResults, logicalFromSource);
-  if (derivedMax >= 0) info.total = derivedMax;
   const self = info.total;
   const target = normalizeGeneration(generation, self);
 

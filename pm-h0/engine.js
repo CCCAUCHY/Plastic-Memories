@@ -1077,7 +1077,9 @@ export function logicalGenerations(session) {
     executes.push({ callId: declaration.callId, logical: executes.length, seq: declaration.seq });
   }
   const count = countLogicalGenerations(session);
-  return { total: count === 0 ? 0 : count - 1, count, executes };
+  // current logical generation = number of frozen logical generations.
+  // After the first execute freezes generation 0, continued reasoning is generation 1.
+  return { total: count, count, executes };
 }
 
 /** 已产生的逻辑世代总数（成功的 execute + 用户命令写入的逻辑世代事件）。 */

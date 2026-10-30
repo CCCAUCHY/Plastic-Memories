@@ -454,7 +454,7 @@ export function apply(ctx, config) {
           for (const batch of batches) total += resolveOps(session, batch.ops, batch.here).length;
           parts.push('Registered ' + total + ' segment(s); they will be written at the next submission boundary.');
           const logicalGeneration = logicalGenerationForCall(session, exec.callId);
-          parts.push('Logical generation ' + logicalGeneration + ' (pm-logical-generation=' + logicalGeneration + '); the physical generation is produced at the boundary and is reference only.');
+          parts.push('Logical generation ' + logicalGeneration + ' (pm-logical-generation=' + logicalGeneration + ').');
           for (const batch of batches) parts.push('  · ' + batch.from + ': ' + batch.ops.length + ' segment(s)');
         }
         return Promise.resolve({ text: parts.join(String.fromCharCode(10)) });
@@ -469,6 +469,7 @@ export function apply(ctx, config) {
       description: [
         "Read the context of one PAST logical generation. Pure read.",
         "Pass an absolute 0-based logical generation number or \"self - N\" (for example \"self - 1\", where self is the current logical generation number). The target must be less than self; the current generation is already visible and is rejected.",
+        "A successful execute freezes logical generation N and returns N; continued reasoning belongs to generation N + 1, so generation N is immediately queryable with self - 1.",
         "Returns compact JSON: {logical, messages, count, letter}. Each message is {role, text, time}; each letter is {index, text, time}. index is the message position inside that generation when the letter was written. time is the log epoch-millisecond timestamp, useful for staleness checks.",
         "messages are that generation's surface context, replayed to that generation's last write. The material that generation hid belonged to the previous generation and is not included; read the previous generation to see it. Call once per generation; use a run_code program to iterate over several generations.",
       ].join(String.fromCharCode(10) + String.fromCharCode(10)),

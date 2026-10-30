@@ -113,10 +113,12 @@ console.log(NL + '⑥ retrospect：只返回历史世代自己的上下文（结
   ok(r.applied === 1, '空洞写入成功', JSON.stringify(r));
   ok(!s.surface.nodes.includes(6), '那条消息已离开工作面');
   const afterFirst = [...s.surface.nodes];
+  const firstFrozen = JSON.parse(retrospect(s, { generation: 0 }));
+  ok(firstFrozen.logical === 0 && firstFrozen.count === afterFirst.length, '第一次 execute 冻结后，逻辑世代 0 立刻可查', JSON.stringify({ logical: firstFrozen.logical, count: firstFrozen.count }));
 
-  // 当前世代 self=0：不允许查询当前世代。
+  // 第一次 execute 冻结逻辑世代 0，继续推理进入 self=1；当前世代 self 不允许查询。
   let currentError = null;
-  try { retrospect(s, { generation: 0 }); } catch (error) { currentError = error.message; }
+  try { retrospect(s, { generation: 1 }); } catch (error) { currentError = error.message; }
   ok(typeof currentError === 'string' && currentError.includes('self'), '当前世代 self 拒绝查询', String(currentError).slice(0, 60));
 
   // 第二代：先在第 0 代生命周期内留一条 letter（独立 step），再执行 execute。
@@ -129,9 +131,9 @@ console.log(NL + '⑥ retrospect：只返回历史世代自己的上下文（结
   ok(r2.applied === 1, '第二个逻辑世代写入成功', JSON.stringify(r2));
 
   const byNumber = JSON.parse(retrospect(s, { generation: 0 }));
-  const byLabel = JSON.parse(retrospect(s, { generation: 'self - 1' }));
+  const byLabel = JSON.parse(retrospect(s, { generation: 'self - 2' }));
   ok(byNumber.logical === 0, '返回 logical（历史世代号）', String(byNumber.logical));
-  ok(JSON.stringify(byNumber) === JSON.stringify(byLabel), '绝对编号与 self - 1 写法返回完全一致');
+  ok(JSON.stringify(byNumber) === JSON.stringify(byLabel), '绝对编号与 self - 2 写法返回完全一致');
   ok(byNumber.count === afterFirst.length, '历史上下文 = 当时写入后的 surface', String(byNumber.count));
   ok(!byNumber.messages.some((message) => String(message.text).includes(keyword)), '历史世代上下文不含它隐藏的上一代原文');
   ok(byNumber.messages.some((message) => message.role === 'developer' && message.text === ''), '历史上下文包含该世代写出的空替代消息');
@@ -157,7 +159,7 @@ console.log(NL + '⑥ retrospect：只返回历史世代自己的上下文（结
   try { retrospect(s, { generation: 'self - 0' }); } catch (error) { againError = error.message; }
   ok(typeof againError === 'string', 'self - 0（当前世代）被拒绝');
   let futureError = null;
-  try { retrospect(s, { generation: 2 }); } catch (error) { futureError = error.message; }
+  try { retrospect(s, { generation: 3 }); } catch (error) { futureError = error.message; }
   ok(typeof futureError === 'string', '当前/未来世代号被拒绝');
 }
 
