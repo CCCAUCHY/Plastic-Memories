@@ -144,7 +144,7 @@ console.log(NL + '④ 工具执行期：this 组还没落地时，execute 不能
     res = await tool.execute(args, { agent: { session: ts }, callId: sub, name: 'plasticize', arguments: args, signal: new AbortController().signal });
   } catch (e) { err = e; }
   ok(err === undefined, '工具执行期不报错（this 组不完整是常态）', String(err?.message).slice(0, 90));
-  ok(typeof res?.text === 'string' && res.text.includes('已登记'), '回执正常返回「已登记」', String(res?.text).slice(0, 60));
+  ok(typeof res?.text === 'string' && res.text.includes('Registered'), '回执正常返回「已登记」', String(res?.text).slice(0, 60));
 
   // 结果补齐后，边界上按完整的 this 组落地。
   ts.append('tool/ptc-dispatch', { rootCallId: root, parentCallId: root, subCallId: sub, name: 'plasticize', arguments: args, isError: false, content: [{ type: 'text', text: '已登记' }] });
@@ -217,7 +217,7 @@ console.log(NL + '⑥b set 预览：this 组不完整时也能算预览（且不
     res = await tool.execute(args, { agent: { session: ts }, callId: sub, name: 'plasticize', arguments: args, signal: new AbortController().signal });
   } catch (e) { err = e; }
   ok(err === undefined, 'set 预览不报错', String(err?.message).slice(0, 90));
-  ok(typeof res?.text === 'string' && res.text.includes('已登记（未执行）'), '返回了预览', String(res?.text).slice(0, 50));
+  ok(typeof res?.text === 'string' && res.text.includes('Preview only'), '返回了预览', String(res?.text).slice(0, 50));
   ok(res?.text.includes('⟨预览用⟩'), '预览里含替代文本');
   ok(ts.seq === seqBefore, 'set 不写日志', String(ts.seq - seqBefore));
   const reps = ts.snapshotEvents().filter((e) => e.surfaceOp?.op === 'replace');

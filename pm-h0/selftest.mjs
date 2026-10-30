@@ -114,10 +114,10 @@ console.log(NL + '⑤ 校验：错误必须点名说清楚');
   const s = mk();
   const here = hereOf(s);
   const msg = (fn) => { try { fn(); return ''; } catch (e) { return e.message; } };
-  ok(msg(() => resolveOps(s, [{ spans: ['3'], new_text: 'x', text_start: ['a'] }], here)).includes('未知字段'),
+  ok(msg(() => resolveOps(s, [{ spans: ['3'], new_text: 'x', text_start: ['a'] }], here)).includes('unknown field'),
     '未知字段被拒绝');
-  ok(msg(() => resolveOps(s, [{ spans: [] }], here)).includes('非空数组'), '空 spans 被拒绝');
-  ok(msg(() => resolveOps(s, [{ spans: [3] }], here)).includes('必须是字符串'), '非字符串区间被拒绝');
+  ok(msg(() => resolveOps(s, [{ spans: [] }], here)).includes('non-empty array'), '空 spans 被拒绝');
+  ok(msg(() => resolveOps(s, [{ spans: [3] }], here)).includes('must be strings'), '非字符串区间被拒绝');
   ok(msg(() => resolveOps(s, [{ spans: ['99'] }], here)).includes('找不到 99 号 cookie'), '不存在的 cookie 编号被点名');
   ok(msg(() => resolveOps(s, [{ spans: ['(3,3)'] }], here)).includes('空的'), '空区间被拒绝');
   ok(msg(() => resolveOps(s, [{ spans: ['[3,4'] }], here)).includes('没有闭合'), '括号不闭合被拒绝');

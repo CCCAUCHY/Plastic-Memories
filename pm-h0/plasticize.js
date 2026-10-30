@@ -35,32 +35,32 @@ const TYPE_NAMES = new Set(['user', 'developer', 'assistant', 'error', 'letter']
  */
 export function normalizeOp(raw, index) {
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
-    throw new Error('段落 #' + index + ' 必须是对象');
+    throw new Error('op #' + index + ' must be an object');
   }
   for (const key of Object.keys(raw)) {
     if (!OP_FIELDS.has(key)) {
-      throw new Error('段落 #' + index + ' 有未知字段 ' + JSON.stringify(key) + '；允许：' + [...OP_FIELDS].join(', '));
+      throw new Error('op #' + index + ' has unknown field ' + JSON.stringify(key) + '; allowed: ' + [...OP_FIELDS].join(', '));
     }
   }
-  if (!Object.hasOwn(raw, 'spans')) throw new Error('段落 #' + index + ' 缺 spans');
+  if (!Object.hasOwn(raw, 'spans')) throw new Error('op #' + index + ' is missing spans');
   if (!Array.isArray(raw.spans) || raw.spans.length === 0) {
-    throw new Error('段落 #' + index + ' 的 spans 必须是非空数组');
+    throw new Error('op #' + index + ' spans must be a non-empty array');
   }
   for (const one of raw.spans) {
     if (typeof one !== 'string') {
-      throw new Error('段落 #' + index + ' 的 spans 里每一项都必须是字符串（区间文本），收到 ' + JSON.stringify(one));
+      throw new Error('op #' + index + ' spans entries must be strings (span text), got ' + JSON.stringify(one));
     }
   }
   const newText = raw.new_text === undefined ? '' : raw.new_text;
-  if (typeof newText !== 'string') throw new Error('段落 #' + index + ' 的 new_text 必须是字符串');
+  if (typeof newText !== 'string') throw new Error('op #' + index + ' new_text must be a string');
   const lockThis = raw.lock_this === undefined ? false : raw.lock_this;
-  if (typeof lockThis !== 'boolean') throw new Error('段落 #' + index + ' 的 lock_this 必须是布尔值');
+  if (typeof lockThis !== 'boolean') throw new Error('op #' + index + ' lock_this must be a boolean');
   const rawTypes = raw.types === undefined ? [] : raw.types;
-  if (!Array.isArray(rawTypes)) throw new Error('段落 #' + index + ' 的 types 必须是数组');
+  if (!Array.isArray(rawTypes)) throw new Error('op #' + index + ' types must be an array');
   const types = [...new Set(rawTypes)];
   for (const type of types) {
     if (typeof type !== 'string' || !TYPE_NAMES.has(type)) {
-      throw new Error('段落 #' + index + ' 的 types 含未知类型 ' + JSON.stringify(type) + '；允许：' + [...TYPE_NAMES].join(', '));
+      throw new Error('op #' + index + ' types contains unknown type ' + JSON.stringify(type) + '; allowed: ' + [...TYPE_NAMES].join(', '));
     }
   }
   return { spans: [...raw.spans], new_text: newText, lock_this: lockThis, types };

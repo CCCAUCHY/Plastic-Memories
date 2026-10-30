@@ -46,7 +46,7 @@ function check(schema, value, path, out) {
   if (schema === null || typeof schema !== 'object') return;
 
   if (typeof schema.type === 'string' && TYPES.has(schema.type) && !matchesType(value, schema.type)) {
-    out.push(path + ': 期望 ' + schema.type + '，收到 ' + kindOf(value));
+    out.push(path + ': expected ' + schema.type + ', got ' + kindOf(value));
     return;
   }
   // oneOf：DSH 的 ParameterPropertySpec 就是 ValueSchemaSpec，原生支持 oneOf，
@@ -57,18 +57,18 @@ function check(schema, value, path, out) {
       check(candidate, value, path, probe);
       return probe.length === 0;
     });
-    if (branch === undefined) out.push(path + ': 不匹配任何一个允许的形态（' + JSON.stringify(value) + '）');
+    if (branch === undefined) out.push(path + ': does not match any allowed shape (' + JSON.stringify(value) + ')');
     return;
   }
   if (Array.isArray(schema.enum) && !schema.enum.some((candidate) => Object.is(candidate, value))) {
-    out.push(path + ': 必须是 ' + schema.enum.map((v) => JSON.stringify(v)).join(' | ') + ' 之一，收到 ' + JSON.stringify(value));
+    out.push(path + ': expected one of ' + schema.enum.map((v) => JSON.stringify(v)).join(' | ') + ', got ' + JSON.stringify(value));
     return;
   }
   if (typeof schema.minimum === 'number' && typeof value === 'number' && value < schema.minimum) {
-    out.push(path + ': 必须 >= ' + schema.minimum + '，收到 ' + value);
+    out.push(path + ': must be >= ' + schema.minimum + ', got ' + value);
   }
   if (typeof schema.maximum === 'number' && typeof value === 'number' && value > schema.maximum) {
-    out.push(path + ': 必须 <= ' + schema.maximum + '，收到 ' + value);
+    out.push(path + ': must be <= ' + schema.maximum + ', got ' + value);
   }
 
   if (Array.isArray(value)) {
@@ -81,14 +81,14 @@ function check(schema, value, path, out) {
   if (typeof value === 'object' && value !== null) {
     const properties = schema.properties !== null && typeof schema.properties === 'object' ? schema.properties : {};
     for (const name of schema.required ?? []) {
-      if (!Object.hasOwn(value, name)) out.push(path + ': 缺少必需字段 ' + JSON.stringify(name));
+      if (!Object.hasOwn(value, name)) out.push(path + ': missing required field ' + JSON.stringify(name));
     }
     for (const [name, child] of Object.entries(properties)) {
       if (Object.hasOwn(value, name)) check(child, value[name], path === '' ? name : path + '.' + name, out);
     }
     if (schema.additionalProperties === false) {
       for (const name of Object.keys(value)) {
-        if (!Object.hasOwn(properties, name)) out.push(path + ': 未知字段 ' + JSON.stringify(name));
+        if (!Object.hasOwn(properties, name)) out.push(path + ': unknown field ' + JSON.stringify(name));
       }
     }
   }

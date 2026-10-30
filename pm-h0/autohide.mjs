@@ -151,6 +151,40 @@ console.log(NL + '③b 混合的报错 PM 步骤也会整体隐藏');
   ok(!textOf(s).includes('任务成果'), '同一步里 bash 的成果也随整组隐藏');
 }
 
+console.log(NL + '③c 失败的 retrospect / letter 混合单元也会被自动隐藏');
+{
+  const s = mk();
+  const unit = (step, id, name, resultText) => {
+    s.append('assistant/message', {
+      turn: 2, step,
+      message: {
+        id: 'am-' + id, role: 'assistant', source: { kind: 'model', provider: 'q', model: 'd' },
+        content: [
+          { type: 'tool-call', id: id, name, arguments: '{}' },
+          { type: 'tool-call', id: id + '-bash', name: 'bash', arguments: '{}' },
+        ],
+      },
+      stream: [],
+    }, { surfaceOp: 'append' });
+    s.append('tool/call', { turn: 2, step, callId: id, name, arguments: '{}' });
+    s.append('tool/call', { turn: 2, step, callId: id + '-bash', name: 'bash', arguments: '{}' });
+    s.append('tool/result', { turn: 2, step, message: { id: 'tr-' + id, role: 'tool', toolCallId: id,
+      content: [{ type: 'text', text: resultText }], isError: true, source: { kind: 'tool', callId: id } } }, { surfaceOp: 'append' });
+    s.append('tool/result', { turn: 2, step, message: { id: 'tr-' + id + '-bash', role: 'tool', toolCallId: id + '-bash',
+      content: [{ type: 'text', text: 'TASK-' + id }], isError: false, source: { kind: 'tool', callId: id + '-bash' } } }, { surfaceOp: 'append' });
+  };
+  unit(1, 'bad-retro', 'retrospect', 'Error: retrospect failed');
+  unit(2, 'bad-letter', 'letter', 'Error: letter failed');
+  flush(s, { openStep: { turn: 2, step: 2 } }, quiet);
+  step2(s);
+  plasticizeCall(s, { turn: 2, step: 2 }, 'ah-exec4', { ops: [{ spans: ['(5,6)'], new_text: '⟨结论3⟩' }], option: 'execute' });
+  const r = flush(s, { openStep: { turn: 2, step: 2 } }, quiet);
+  ok(r.applied === 1, 'execute 落地（retrospect/letter 报错组）', JSON.stringify(r));
+  const autos = autoReps(s);
+  ok(autos.length === 2, '两个报错单元都被自动隐藏', String(autos.length));
+  ok(!textOf(s).includes('TASK-bad-retro') && !textOf(s).includes('TASK-bad-letter'), '同单元的 bash 成果一并隐藏');
+}
+
 console.log(NL + '④ autoHide:false 时完全不隐藏');
 {
   const s = mk();

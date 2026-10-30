@@ -21,8 +21,8 @@
  *   1. 报错的 PM 工具步骤组（失败调用只会污染下一个世代）
  *   2. 成功的 plasticize(set) 步骤组（预览已经兑现，留着只会让模型以为还没执行）
  *
- * 两条都只动**纯 PM 步骤组**（那一步里除了 PM 调用没有别的工具），
- * 绝不会连带藏掉同一步里别的工具的成果。
+ * 两条都按整个步骤单元处理：只要单元内含失败 PM 调用或已兑现 set，
+ * 整组（assistant 消息 + 全部工具结果）都会被隐藏，包括混入的其他工具。
  *
  * @module dsh-plugin-plastic-memories-h0/engine
  */
@@ -46,6 +46,9 @@ import {
 
 /** 会产生新世代的工具名。目前只有一个。 */
 export const PM_TOOL = 'plasticize';
+
+/** 所有 PM 工具名（自动隐藏会清理它们的报错单元）。 */
+const PM_TOOL_NAMES = new Set(['plasticize', 'retrospect', 'letter']);
 
 /** 被认为是「PM 自己」的工具名集合（自动隐藏只动这些调用组成的步骤组）。 */
 
@@ -265,6 +268,51 @@ function autoHideTargets(session, state, claimed, settledBefore, locks) {
     if (!errored && option !== 'set') continue;
     seen.add(key);
     out.push({ shadowed: seqs, reason: errored ? 'error' : 'set', callId: declaration.callId });
+    for (const seq of seqs) claimed.add(seq);
+  }
+  // 通用报错单元：所有 PM 工具（含 PTC 内层调用）的失败结果。
+  // 失败调用和成功的 set 一样，等待下一次成功 execute 一起清理。
+  const callNames = new Map();
+  const roots = new Map();
+  const failures = [];
+  for (const event of session.snapshotEvents()) {
+    if (event.type === 'assistant/message' && Array.isArray(event.data?.message?.content)) {
+      for (const block of event.data.message.content) {
+        if (block?.type === 'tool-call') callNames.set(block.callId ?? block.id, block.name);
+      }
+    } else if (event.type === 'tool/call') {
+      if (typeof event.data?.callId === 'string' && typeof event.data?.name === 'string') callNames.set(event.data.callId, event.data.name);
+    } else if (event.type === 'tool/ptc-dispatch-start') {
+      if (typeof event.data?.subCallId === 'string') {
+        if (typeof event.data?.name === 'string') callNames.set(event.data.subCallId, event.data.name);
+        if (typeof event.data?.rootCallId === 'string') roots.set(event.data.subCallId, event.data.rootCallId);
+      }
+    } else if (event.type === 'tool/result' && event.data?.message?.isError === true) {
+      const callId = resultCallIdOf(event.data.message);
+      if (typeof callId === 'string') failures.push({ callId, seq: event.seq });
+    } else if (event.type === 'tool/ptc-dispatch' && event.data?.isError === true) {
+      if (typeof event.data?.subCallId === 'string') {
+        if (typeof event.data?.name === 'string') callNames.set(event.data.subCallId, event.data.name);
+        failures.push({ callId: event.data.subCallId, seq: event.seq });
+      }
+    }
+  }
+  for (const failure of failures) {
+    const name = callNames.get(failure.callId);
+    if (!PM_TOOL_NAMES.has(name)) continue;
+    if (failure.seq > settledBefore) continue;
+    const owner = roots.get(failure.callId) ?? splitCallId(failure.callId).ownerCallId;
+    const group = stepGroup(session, owner);
+    if (group === undefined || group.complete !== true) continue;
+    const seqs = nodes.slice(group.startIndex, group.endIndex + 1);
+    if (seqs.length === 0) continue;
+    const key = seqs.join(',');
+    if (seen.has(key)) continue;
+    if (!seqs.every((seq) => visible.has(seq))) continue;
+    if (locks !== undefined && locks.size > 0 && seqs.some((seq) => locks.has(seq))) continue;
+    if (seqs.some((seq) => claimed.has(seq))) continue;
+    seen.add(key);
+    out.push({ shadowed: seqs, reason: 'error', callId: failure.callId });
     for (const seq of seqs) claimed.add(seq);
   }
   return out;

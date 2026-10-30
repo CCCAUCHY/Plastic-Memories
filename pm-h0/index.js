@@ -98,7 +98,7 @@ function tool(spec) {
 function sessionOf(exec) {
   const session = exec?.agent?.session;
   if (session === undefined || session === null) {
-    throw new Error('本工具需要一个属于某个 agent 的会话（exec.agent.session 不可用）');
+    throw new Error('this tool requires an agent session (exec.agent.session is unavailable)');
   }
   return session;
 }
@@ -153,6 +153,22 @@ export function apply(ctx, config) {
     projectionService = service;
   });
   registerCommands(ctx, ctx.logger);
+
+  // 极短的 PM 总纲（仿照 PTC_ONLY 那种 brief instruction 的密度）。
+  const pmGuide = 'Plastic Memories tools are available in this session: plasticize reshapes how your own past appears, ' +
+    'retrospect reads one past logical generation, and letter leaves a note for future generations. They operate on the ' +
+    'session surface; the trajectory itself is never deleted.';
+  try {
+    const systemPrompt = ctx.get('systemPrompt');
+    if (systemPrompt !== undefined && systemPrompt !== null && typeof systemPrompt.section === 'function') {
+      const order = typeof systemPrompt.getSectionOrder === 'function'
+        ? systemPrompt.getSectionOrder('PTC_ONLY') + 10
+        : 810;
+      ctx.effect(() => systemPrompt.section({ name: 'plastic-memories:guide', order, text: pmGuide }));
+    }
+  } catch {
+    // 没有 systemPrompt 服务时静默跳过；工具描述本身仍完整。
+  }
 
   /**
    * 运行期一致性自检：我们的世代投影状态（可见 seq / 世代号）必须与**官方 surface**
@@ -338,49 +354,18 @@ export function apply(ctx, config) {
   ctx.tools.register(
     tool({
       name: 'plasticize',
-      description:
-        'Rewrite how your own past appears in this context — the ONLY tool that changes the surface and starts a new ' +
-        'generation. The trajectory itself is never deleted: hidden material stays in the session log, and retrospect ' +
-        'can dig it up later. That is archaeology, NOT a scratch pad — do not hide something intending to pull it ' +
-        'back, because what retrospect returns joins your CURRENT generation and undoes the projection. ' +
-
-        'HOW TO NAME A SPAN. Your context contains cookie lines of the form ' +
-        '"[Plastic-Memories][cookie][N]" — they are inserted automatically at every boundary, and N is a stable ' +
-        'address. Spans are written with those numbers: ' +
-        '"3" = that cookie message alone; "[3,4]" = both ends included; "(3,4)" = both ends excluded; ' +
-        '"[3,4)" or "(3,4]" = one side; "this" = the assistant message that made THIS call plus all of its ' +
-        'tool results. Mixing is allowed: "[3,this]". ' +
-        'The two ends have NO direction — the plugin sorts them; an interval is a set of points. ' +
-        '"this" is an atomic unit: it always means the whole group. ' +
-        'A number that is no longer visible (its cookie was hidden) is rejected with a clear error — use the ' +
-        'numbers you can see right now. ' +
-
-        'TOOL BLOCKS ARE HANDLED FOR YOU: a tool call and its results are separate messages; a boundary that lands ' +
-        'inside such a block is widened to the block edge, so you can never leave an orphan call or orphan result. ' +
-        'The span that actually gets replaced may therefore include a few more messages than you literally named. ' +
-
-        'Each entry in ops has spans (one or more span strings) and new_text. All spans in one entry are hidden ' +
-        'EXCEPT the last one by position, which receives new_text — that is how you hide several disjoint stretches ' +
-        'in one operation. new_text:"" is a pure hole (that is how you express hide). ' +
-
-        'option "set" only computes and shows a preview of the next generation and writes NOTHING: look at it, then ' +
-        'either rewrite your ops from scratch (not incrementally) or commit. option "execute" commits at the next ' +
-        'submission boundary; with also_execute_last_set:true it also commits the most recent unexecuted set, so one ' +
-        'call turns a preview you agreed with into reality. ' +
-
-        'After a successful execute the plugin auto-hides WHOLE UNITS (the assistant message AND all its tool results) ' +
-        'that contain a failed plasticize call or a fulfilled plasticize(set) preview — including unrelated tools mixed into ' +
-        'the same unit. Therefore do NOT mix shaping work with task/tool work in the same assistant message/step: keep ' +
-        'plasticize and task calls in separate units. ' +
-
-        'TYPE FILTER: an op may include types=[...] (user, developer, assistant, error, letter). It narrows the resolved span to matching messages only: ' +
-        'user/developer match that single message, while assistant/error/letter match the whole unit (assistant message + all its tool results) so no orphan is left. ' +
-        'Cookie messages are never matched, even by user/developer. Matched units are hidden; the LAST matched unit receives new_text. ' +
-
-        'ONE OPERATION IS POINTLESS: spans ["this"] with new_text:"" as the ENTIRE operation. It hides only ' +
-        'this call and its result with no replacement, so the net effect equals never making the call at all ' +
-        '(and you cannot even see the receipt). Hiding this TOGETHER with other spans is fine and often useful. ' +
-        'To actively hide a target step, hide that step by its cookie interval instead.',
+      description: [
+        "Reshape how your own past appears in this context. This is the only tool that changes the surface and starts a new logical generation. The trajectory is never deleted: hidden material remains in the session log and can be inspected with retrospect. Treat this as editing the context, not as a scratch pad.",
+        "SPANS. Cookie lines look like \"[xx% of context used][Plastic-Memories][cookie][N]\"; the percentage is a live context watermark. Use those numbers: \"3\" (one point), \"[3,4]\" (closed), \"(3,4)\" (open), \"[3,4)\" or \"(3,4]\" (one side excluded), or \"this\" (the assistant message that made this call plus all its tool results). Mixed forms such as \"[3,this]\" are allowed. Endpoints are unordered. Numbers that are no longer visible are rejected.",
+        "An assistant message and its tool results form one unit. A span that cuts through such a unit is widened to the unit boundary, so no orphan call or result is left; the replaced range may therefore be larger than the span you named.",
+        "OPS. Each op has spans and new_text. Every span is hidden except the last by position, which is replaced by new_text. An empty new_text is a pure hole (hide). One op may cover several disjoint ranges.",
+        "TYPES. An op may include types=[...] (user, developer, assistant, error, letter) to restrict matching inside the span. user and developer match one message; assistant, error and letter match the whole unit (assistant message plus its tool results). Cookie messages never match, even as user or developer. Matched units are hidden; the last matched unit is replaced by new_text. If types is omitted, every message in the interval matches, cookies included.",
+        "MODES. option:\"set\" previews and writes nothing. option:\"execute\" commits at the next submission boundary. also_execute_last_set is optional: when an execute call sets it true, the most recent unexecuted set is committed as well. A set result states whether this condition applies.",
+        "lock_this:true locks the replacement message itself into the safety zone; default false.",
+        "SAFETY ZONE. Locked messages cannot be reshaped. A span that intersects the safety zone fails and reports the locked region as cookie intervals; the user can unlock it with /plasticize unlock.",
+        "AUTO-HIDE. After a successful execute, whole units (assistant message plus all its tool results) that contain a failed call to any Plastic Memories tool (plasticize, retrospect, letter) or a fulfilled plasticize(set) preview are auto-hidden. Other tools mixed into the same unit are hidden with it.",
+        "WEAK OPERATION. spans [\"this\"] with an empty new_text as the ENTIRE operation hides only this call and its result; its net effect equals not making the call. A long run of cookie messages can indicate that this has happened repeatedly. Hiding this together with other spans is useful; to hide a target step, use its cookie interval.",
+      ].join(String.fromCharCode(10) + String.fromCharCode(10)),
       parameters: {
         type: 'object',
         properties: {
@@ -401,14 +386,14 @@ export function apply(ctx, config) {
                 spans: {
                   type: 'array',
                   items: { type: 'string' },
-                  description: "One or more spans, each written as a cookie range. Forms: '3' (that cookie alone), '[3,4]' closed, '(3,4)' open, '[3,4)' or '(3,4]' half-open, 'this' (the assistant message that made THIS call plus its tool results). Use cookie numbers you can see in your context. Every span is hidden except the LAST one, which receives new_text.",
+                  description: "Cookie ranges. Forms: '3' (one point), '[3,4]' closed, '(3,4)' open, '[3,4)' or '(3,4]' half-open, 'this' (the assistant message that made this call plus its tool results). A span cutting an assistant-message-plus-tool-results unit is widened to the unit boundary. Every span is hidden except the last, which is replaced by new_text.",
                 },
-                new_text: { type: 'string', description: 'The replacement message, placed at the LAST span. Empty string = pure hole (hide). Every earlier span is hidden automatically.' },
+                new_text: { type: 'string', description: 'Placed at the LAST span: the replacement message. Empty string = pure hole (hide). Earlier spans are hidden automatically.' },
                 lock_this: { type: 'boolean', description: 'Default false. If true, lock the replacement message itself into the safety zone (it can never be reshaped afterwards).' },
                 types: {
                   type: 'array',
                   items: { type: 'string', enum: ['user', 'developer', 'assistant', 'error', 'letter'] },
-                  description: 'Optional message-type filter applied INSIDE each resolved span: only messages of these types are matched. user/developer match that single message; assistant/error/letter match the whole step unit (assistant message + its tool results). Cookie messages are NEVER matched, even by user/developer. All matched units are hidden except the last, which receives new_text. Omit types to keep the old behavior: every message in the interval is matched.',
+                  description: 'Optional type filter inside each resolved span: user/developer match one message; assistant/error/letter match the whole unit (assistant message + its tool results). Cookie messages never match, even as user/developer. Matched units are hidden; the last matched unit is replaced by new_text. If omitted, every message in the interval matches, cookies included.',
                 },
               },
               required: ['spans'],
@@ -421,7 +406,7 @@ export function apply(ctx, config) {
           },
           also_execute_last_set: {
             type: 'boolean',
-            description: 'Only valid with option:execute. Also commits the most recent unexecuted set.',
+            description: 'Optional with option:execute. When true, also commits the most recent unexecuted set.',
           },
         },
         required: ['ops', 'option'],
@@ -429,21 +414,21 @@ export function apply(ctx, config) {
       execute(args, exec) {
         const session = sessionOf(exec);
         const option = args?.option;
-        if (option !== 'set' && option !== 'execute') throw new Error('option 必须是 set 或 execute');
+        if (option !== 'set' && option !== 'execute') throw new Error('option must be "set" or "execute"');
         if (option === 'set' && args?.also_execute_last_set === true) {
-          throw new Error('also_execute_last_set 只能和 option:execute 一起用');
+          throw new Error('also_execute_last_set is only valid with option:"execute"');
         }
 
         // 「本步整组」：容纳本次调用的 assistant 消息 … 它的全部工具结果。
         const group = stepGroupFor(session, exec);
-        if (group === undefined) throw new Error('找不到承载本次调用的消息');
+        if (group === undefined) throw new Error('could not locate the assistant message carrying this call');
         const here = group.here;
 
         const parts = [];
         const batches = [];
         if (option === 'execute' && args?.also_execute_last_set === true) {
           const pending = findLastPendingSet(session);
-          if (pending === undefined) parts.push('（没有待执行的 set，跳过 also_execute_last_set）');
+          if (pending === undefined) parts.push('No unexecuted set to commit; also_execute_last_set was ignored.');
           else {
             // **零点属于写下这条 ops 的那条 plasticize（set）**，与 engine 的 flush 一致。
             // 预览与落实必须同源，否则「看过的」和「落实的」不是同一个。
@@ -460,17 +445,17 @@ export function apply(ctx, config) {
           const flat = [];
           for (const batch of batches) flat.push(...resolveOps(session, batch.ops, batch.here));
           const pv = previewOf(session, flat, exec.callId);
-          parts.push('已登记（未执行）。下一代会是第 ' + pv.generation + ' 代、' + pv.messageCount + ' 条消息：');
+          parts.push('Preview only (not committed). The next generation would contain ' + pv.messageCount + ' messages:');
           parts.push(pv.text);
-          parts.push('看到预览后：同意就再调 plasticize 并传 option: execute, also_execute_last_set: true；不同意就整条重写 ops（不是增量改）。');
+          parts.push('To commit this preview, call plasticize with option:"execute" and also_execute_last_set:true while this is still the most recent unexecuted set. Otherwise rewrite ops completely, not incrementally.');
         } else {
           // 只登记：真正写入由 flush 在提交边界做（见 engine.js 的说明）。
           let total = 0;
           for (const batch of batches) total += resolveOps(session, batch.ops, batch.here).length;
-          parts.push('已登记 ' + total + ' 段，将在下一个提交边界写入。');
+          parts.push('Registered ' + total + ' segment(s); they will be written at the next submission boundary.');
           const logicalGeneration = logicalGenerationForCall(session, exec.callId);
-          parts.push('逻辑世代 ' + logicalGeneration + '（pm-logical-generation=' + logicalGeneration + '）；物理世代在提交边界产生，仅作参考。');
-          for (const batch of batches) parts.push('  · ' + batch.from + '：' + batch.ops.length + ' 个段落');
+          parts.push('Logical generation ' + logicalGeneration + ' (pm-logical-generation=' + logicalGeneration + '); the physical generation is produced at the boundary and is reference only.');
+          for (const batch of batches) parts.push('  · ' + batch.from + ': ' + batch.ops.length + ' segment(s)');
         }
         return Promise.resolve({ text: parts.join(String.fromCharCode(10)) });
       },
@@ -481,17 +466,12 @@ export function apply(ctx, config) {
   ctx.tools.register(
     tool({
       name: 'retrospect',
-      description:
-        'Read the CONTEXT of ONE PAST logical generation (~ /plasticize history). It never changes anything. ' +
-        'Pass generation as either an absolute logical generation number (0-based, e.g. 3) or the ' +
-        'label form "self - N" (e.g. "self - 1"). The target MUST be strictly before self: the current ' +
-        'generation is already visible in your input, so querying it is meaningless and rejected. ' +
-        'Returns a compact STRUCTURED JSON object: {logical, messages, count, letter}; each message is {role, text, time}. letter is [{index, text, time}] for the notes input via the letter tool during THIS logical generation, in call order; index is the message position inside the generation at the time of the letter call. time is the native log epoch-ms timestamp (fallback staleness info). messages is that generation\'s ' +
-        'surface context (full text, no truncation), ' +
-        'reconstructed by replaying the log to that generation\'s last write; it does NOT include the material that ' +
-        'generation hid (that material belonged to the previous generation). ' +
-        'To read several generations, call this tool once per generation from a PTC program — it deliberately ' +
-        'returns only one generation per call so you can orchestrate/limit the data yourself.',
+      description: [
+        "Read the context of one PAST logical generation. Pure read.",
+        "Pass an absolute 0-based logical generation number or \"self - N\" (for example \"self - 1\", where self is the current logical generation number). The target must be less than self; the current generation is already visible and is rejected.",
+        "Returns compact JSON: {logical, messages, count, letter}. Each message is {role, text, time}; each letter is {index, text, time}. index is the message position inside that generation when the letter was written. time is the log epoch-millisecond timestamp, useful for staleness checks.",
+        "messages are that generation's surface context, replayed to that generation's last write. The material that generation hid belonged to the previous generation and is not included; read the previous generation to see it. Call once per generation; use a run_code program to iterate over several generations.",
+      ].join(String.fromCharCode(10) + String.fromCharCode(10)),
       parameters: {
         type: 'object',
         properties: {
@@ -512,15 +492,10 @@ export function apply(ctx, config) {
   ctx.tools.register(
     tool({
       name: 'letter',
-      description:
-        'Leave a note for future generations. This is NOT a message actively sent to them: it is a note waiting for ' +
-        'them to look back. Inheritance must not affect future generations — a small stabilization or hide may carry ' +
-        'the note forward, but a major rewrite or a note that has become stale should NOT be inherited. Information ' +
-        'that must actually guide future generations belongs in the plasticization operations themselves, not here. ' +
-        'One plain-text letter per call. This tool has no side effects: it writes no surfaceOp and no private data; ' +
-        'the text lives only in this tool call trajectory. retrospect({generation}) returns the letters input during ' +
-        'that logical generation, in order, each with its in-generation message index. Returns the minimal ' +
-        'confirmation 登记成功.',
+      description: [
+        "Leave a note for future generations. This is not a message sent to them; it is a note intended for retrieval via retrospect. Inherit it only when it will not distort future generations: small stabilizations or hides may carry it forward; major rewrites or stale notes should not. Information that must guide future generations belongs in the shaping operations themselves.",
+        "One plain-text letter per call. No side effects: no surfaceOp, no private data, no generation; the text exists only in this tool call's trajectory. Returns \"Registered.\" retrospect({generation}) returns that logical generation's letters in order, each with its in-generation message index and timestamp.",
+      ].join(String.fromCharCode(10) + String.fromCharCode(10)),
       parameters: {
         type: 'object',
         properties: {
@@ -530,8 +505,8 @@ export function apply(ctx, config) {
       },
       execute(args, exec) {
         sessionOf(exec);
-        // 只回执登记成功，避免模型把空结果误解为失败。
-        return Promise.resolve({ text: '登记成功' });
+        // Minimal English receipt.
+        return Promise.resolve({ text: 'Registered.' });
       },
     }),
   );

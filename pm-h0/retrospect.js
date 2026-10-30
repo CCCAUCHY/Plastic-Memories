@@ -45,16 +45,16 @@ function normalizeGeneration(value, self) {
       target = Number(text);
     } else {
       const match = /^self\s*-\s*(\d+)$/iu.exec(text);
-      if (match === null) throw new Error('generation 必须是绝对逻辑世代号（如 3）或 "self - N"（如 "self - 1"）');
+      if (match === null) throw new Error('generation must be an absolute logical generation number (e.g. 3) or "self - N" (e.g. "self - 1")');
       const offset = Number(match[1]);
-      if (!Number.isSafeInteger(offset) || offset < 1) throw new Error('"self - N" 的 N 必须是正整数');
+      if (!Number.isSafeInteger(offset) || offset < 1) throw new Error('N in "self - N" must be a positive integer');
       target = self - offset;
     }
   } else {
-    throw new Error('generation 必须是整数或 "self - N" 字符串');
+    throw new Error('generation must be an integer or a "self - N" string');
   }
-  if (!Number.isSafeInteger(target) || target < 0) throw new Error('generation 超出范围：目标世代号必须 >= 0');
-  if (target >= self) throw new Error('只能查询 self 之前的逻辑世代：当前世代 self 的上下文已经在模型输入里');
+  if (!Number.isSafeInteger(target) || target < 0) throw new Error('generation is out of range: the target must be >= 0');
+  if (target >= self) throw new Error('only past logical generations can be queried: the current generation self is already in the model input');
   return target;
 }
 
@@ -69,7 +69,7 @@ function normalizeGeneration(value, self) {
  */
 export function retrospect(session, args) {
   const value = args?.generation;
-  if (value === undefined) throw new Error('retrospect 需要 generation（历史逻辑世代号或 "self - N"）');
+  if (value === undefined) throw new Error('retrospect requires generation (a past logical generation number or "self - N")');
   return retrospectGeneration(session, value);
 }
 
@@ -126,7 +126,7 @@ export function retrospectGeneration(session, generation) {
   for (const event of events) {
     if (logicalOf(event) === target) cutoff = Math.max(cutoff, event.seq);
   }
-  if (cutoff < 0) throw new Error('找不到逻辑世代 ' + String(target) + ' 的上下文（日志中没有该世代的写入记录）');
+  if (cutoff < 0) throw new Error('no context found for logical generation ' + String(target) + ' (no write recorded for that generation)');
   const contextNodes = replaySurface(events, cutoff);
   const messages = [];
   for (const seq of contextNodes) {
