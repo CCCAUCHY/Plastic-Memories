@@ -68,8 +68,11 @@ export const COOKIE_PREFIX = '[Plastic-Memories][cookie]';
  * @param {number} n - 编号。
  * @returns {string} 文本，形如 `[Plastic-Memories][cookie][7]`。
  */
-export function cookieText(n) {
-  return COOKIE_PREFIX + '[' + n + ']';
+export function cookieText(n, contextPercent) {
+  const waterline = Number.isFinite(contextPercent)
+    ? '[' + String(Math.max(0, Math.min(100, Math.round(contextPercent)))) + '% of context used]'
+    : '';
+  return waterline + COOKIE_PREFIX + '[' + n + ']';
 }
 
 /** cookie 文本的正则（**只**用于容错反解，不用于识别身份）。
@@ -77,7 +80,7 @@ export function cookieText(n) {
  * **整行锚定**：cookie 消息的正文就是这一行。夹在别的文本里的同样字样
  * 不应该被反解成一个编号 —— 那会让「引用这个样式」变成「制造一个锚点」。
  */
-const COOKIE_RE = /^\s*\[Plastic-Memories\]\[cookie\]\[(\d+)\]\s*$/;
+const COOKIE_RE = /^\s*(?:\[\d+% of context used\])?\[Plastic-Memories\]\[cookie\]\[(\d+)\]\s*$/;
 
 /**
  * 从一条消息的文本里解出 cookie 编号。
@@ -202,11 +205,11 @@ export function maxVisibleCookieId(view) {
  * @param {number} id - cookie 编号（1 起）。
  * @returns {object} user/message 的消息体。
  */
-export function cookieMessage(id, role = 'user') {
+export function cookieMessage(id, role = 'user', contextPercent) {
   return {
     id: 'pm-cookie-' + String(id),
     role,
-    content: [{ type: 'text', text: cookieText(id) }],
+    content: [{ type: 'text', text: cookieText(id, contextPercent) }],
     source: { kind: COOKIE_KIND, v: 1, id },
   };
 }
@@ -231,7 +234,7 @@ export function cookieMessage(id, role = 'user') {
  * @param {Array<object>} messages - pre-step 即将落盘的消息。
  * @returns {Array<object>|undefined} 插好 cookie 的新数组；没有用户消息时 undefined。
  */
-export function bracketUserMessages(session, messages) {
+export function bracketUserMessages(session, messages, contextPercent) {
   if (!Array.isArray(messages) || messages.length === 0) return undefined;
   let hasUser = false;
   for (const message of messages) {
@@ -258,7 +261,7 @@ export function bracketUserMessages(session, messages) {
       continue;
     }
     out.push(message);
-    out.push(cookieMessage(next + reserve));
+    out.push(cookieMessage(next + reserve, 'user', contextPercent));
     reserve += 1;
   }
   return out;

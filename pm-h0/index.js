@@ -229,17 +229,42 @@ export function apply(ctx, config) {
    *
    * cookie 不标记任何东西 —— 它就是流里的一个可见锚点。
    */
+  /** 当前上下文水位（百分比整数）；缺少 tokenMeter/contextWindow 时返回 undefined。 */
+  function contextUsagePercent(session) {
+    try {
+      const meter = ctx.get('tokenMeter');
+      if (meter === undefined || meter === null || typeof meter.measure !== 'function') return undefined;
+      let contextWindow;
+      const events = session.snapshotEvents();
+      for (let index = events.length - 1; index >= 0; index -= 1) {
+        const event = events[index];
+        if (event.type === 'request/context' && Number.isSafeInteger(event.data?.contextWindow) && event.data.contextWindow > 0) {
+          contextWindow = event.data.contextWindow;
+          break;
+        }
+      }
+      if (contextWindow === undefined) return undefined;
+      const measurement = meter.measure(session);
+      const used = Number.isFinite(measurement?.totalTokens) ? measurement.totalTokens : measurement?.surfaceTokens;
+      if (!Number.isFinite(used) || used < 0) return undefined;
+      return Math.round((used / contextWindow) * 100);
+    } catch {
+      return undefined;
+    }
+  }
+
   const insertCookie = (session, payload, role = 'developer') => {
     if (session === undefined || session === null) return 0;
     try {
       const plan = planCookie(session);
       if (plan === undefined) return 0;
       const id = nextCookieId(session);
+      const contextPercent = contextUsagePercent(session);
       if (role === 'user') {
-        session.append('user/message', cookieMessage(id), { surfaceOp: 'append' });
+        session.append('user/message', cookieMessage(id, 'user', contextPercent), { surfaceOp: 'append' });
         return 1;
       }
-      const message = cookieMessage(id, 'developer');
+      const message = cookieMessage(id, 'developer', contextPercent);
       let turn = Number.isSafeInteger(payload?.turn) ? payload.turn : undefined;
       let step = Number.isSafeInteger(payload?.step) ? payload.step : undefined;
       if (turn === undefined || step === undefined) {
@@ -297,7 +322,7 @@ export function apply(ctx, config) {
       const session = payload?.agent?.session;
       if (session === undefined || session === null) return decision;
       try {
-        const bracketed = bracketUserMessages(session, decision.messages);
+        const bracketed = bracketUserMessages(session, decision.messages, contextUsagePercent(session));
         if (bracketed === undefined) return decision;
         return { ...decision, messages: bracketed };
       } catch (error) {

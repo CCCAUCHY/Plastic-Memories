@@ -27,6 +27,9 @@ const ctx = new Context(); new SessionStore(ctx);
 console.log(NL + '① 文本格式与反解');
 {
   ok(cookieText(17) === '[Plastic-Memories][cookie][17]', '格式 = [Plastic-Memories][cookie][序号]', cookieText(17));
+  ok(cookieText(17, 42) === '[42% of context used][Plastic-Memories][cookie][17]', 'context 水位前缀', cookieText(17, 42));
+  ok(parseCookieText(cookieText(17, 42)) === 17, '带水位前缀也能反解编号', String(parseCookieText(cookieText(17, 42))));
+  ok(cookieText(1, 150) === '[100% of context used][Plastic-Memories][cookie][1]', '水位夹在 0..100', cookieText(1, 150));
   ok(parseCookieText(cookieText(1)) === 1, '反解 1');
   ok(parseCookieText(cookieText(4096)) === 4096, '反解 4096');
   ok(parseCookieText('普通文本') === undefined, '普通文本解不出来');
