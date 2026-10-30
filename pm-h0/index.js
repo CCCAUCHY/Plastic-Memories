@@ -343,8 +343,10 @@ export function apply(ctx, config) {
         'submission boundary; with also_execute_last_set:true it also commits the most recent unexecuted set, so one ' +
         'call turns a preview you agreed with into reality. ' +
 
-        'After a successful execute the plugin also hides the PM steps that are pure noise for the new generation: ' +
-        'failed plasticize calls and fulfilled plasticize(set) previews. You do not have to clean those up yourself. ' +
+        'After a successful execute the plugin auto-hides WHOLE UNITS (the assistant message AND all its tool results) ' +
+        'that contain a failed plasticize call or a fulfilled plasticize(set) preview — including unrelated tools mixed into ' +
+        'the same unit. Therefore do NOT mix shaping work with task/tool work in the same assistant message/step: keep ' +
+        'plasticize and task calls in separate units. ' +
 
         'ONE OPERATION IS POINTLESS: spans ["this"] with new_text:"" as the ENTIRE operation. It hides only ' +
         'this call and its result with no replacement, so the net effect equals never making the call at all ' +

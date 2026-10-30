@@ -48,7 +48,6 @@ import {
 export const PM_TOOL = 'plasticize';
 
 /** 被认为是「PM 自己」的工具名集合（自动隐藏只动这些调用组成的步骤组）。 */
-const PM_TOOLS = new Set([PM_TOOL]);
 
 // 插件私有记录：DSH 允许 ignorable plugin record（plugin:<name>/<kind>），
 // 它是给插件存私有数据的官方扩展点；不进入 surface/上下文。
@@ -188,36 +187,8 @@ function isDone(state, declaration) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 自动隐藏：只动「纯 PM 步骤组」
+// 自动隐藏：命中含 set/报错 PM 调用的整个步骤组（包括混入的其他工具）
 // ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * 这一步是不是**纯 PM** 步骤（除了 PM 调用没有别的工具）。
- *
- * 为什么必须纯：自动隐藏是为 PM 自己的噪音服务的。若那一步里还夹着 bash / write
- * 之类的工作成果，连带隐藏会**直接毁掉模型的工作** —— 宁可留着噪音。
- *
- * @param {object} session - 目标会话。
- * @param {object} declaration - 声明。
- * @param {number[]} seqs - 步骤组的事件 seq。
- * @returns {boolean} 是否纯 PM。
- */
-function stepIsPurePm(session, declaration, seqs) {
-  if (declaration.via === 'ptc') {
-    const dispatches = [];
-    for (const event of session.snapshotEvents()) {
-      if (event.type !== 'tool/ptc-dispatch-start') continue;
-      if (event.data?.rootCallId !== declaration.ownerCallId) continue;
-      dispatches.push(String(event.data?.name));
-    }
-    return dispatches.length > 0 && dispatches.every((name) => PM_TOOLS.has(name));
-  }
-  const head = session.eventAt(seqs[0]);
-  const content = head?.type === 'assistant/message' ? head.data?.message?.content : undefined;
-  if (!Array.isArray(content)) return false;
-  const calls = content.filter((block) => block !== null && typeof block === 'object' && block.type === 'tool-call');
-  return calls.length > 0 && calls.every((call) => PM_TOOLS.has(String(call.name)));
-}
 
 /**
  * 这一步的 PM 调用有没有报错。
@@ -259,7 +230,8 @@ function stepHasError(session, declaration, seqs) {
  * 真实事故：没有这道先后判断时，测试 3 里全程只有 set、没有 execute，
  * 预览却在下一个边界被当成「已兑现」吞掉 → 模型看不到预览 → 反复重发 set。
  *
- * 约束：全部节点必须仍在工作面上、不与本批显式区间重叠、且那一步是纯 PM 步骤。
+ * 约束：全部节点必须仍在工作面上、且不与本批显式区间重叠。
+ * 注意：混合步骤也会被整体隐藏 —— 只要该单元里含成功的 set/报错的 PM 调用。
  *
  * @param {object} session - 目标会话。
  * @param {object} state - 派生缓存。
@@ -286,7 +258,6 @@ function autoHideTargets(session, state, claimed, settledBefore, locks) {
     if (!seqs.every((seq) => visible.has(seq))) continue;
     if (locks !== undefined && locks.size > 0 && seqs.some((seq) => locks.has(seq))) continue;
     if (seqs.some((seq) => claimed.has(seq))) continue;
-    if (!stepIsPurePm(session, declaration, seqs)) continue;
     const errored = stepHasError(session, declaration, seqs);
     // **只在 execute 成功时一起清理**：比最近一次成功 execute 更晚的东西一律不动。
     if (declaration.seq > settledBefore) continue;

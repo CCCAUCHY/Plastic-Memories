@@ -6,8 +6,8 @@
  *   1. 报错的 PM 工具步骤组（失败调用只会污染下一个世代）
  *   2. 成功的 plasticize(set) 步骤组（预览已兑现，留着会让模型以为还没执行）
  *
- * 硬约束：只动**纯 PM 步骤组** —— 那一步里若还有 bash/write 之类的工作成果，
- * 连带隐藏会毁掉模型的工作，所以宁可留着噪音。
+ * 只要某个步骤组里含成功的 set 或报错的 PM 调用，自动隐藏会**连其他工具一起**隐藏；
+ * 因此工具说明要求不要把塑形工作和任务工作混在同一步/同一条助手消息里。
  *
  * 运行：node autohide.mjs
  */
@@ -82,10 +82,10 @@ console.log(NL + '② 报错的 PM 步骤组，在下一次成功的 execute 时
   ok(!s.surface.nodes.includes(badSeq), '失败消息已离开工作面');
 }
 
-console.log(NL + '③ 混合步骤绝不自动隐藏（只动纯 PM 步骤组）');
+console.log(NL + '③ 混合步骤也会整体自动隐藏（只要含成功的 set）');
 {
   const s = mk();
-  // 一步里同时有 plasticize(set) 与 bash：自动隐藏必须放过它。
+  // 一步里同时有 plasticize(set) 与 bash：现在整组都会被自动隐藏。
   s.append('assistant/message', {
     turn: 2, step: 1,
     message: {
@@ -109,11 +109,46 @@ console.log(NL + '③ 混合步骤绝不自动隐藏（只动纯 PM 步骤组）
   plasticizeCall(s, { turn: 2, step: 2 }, 'ah-exec2', { ops: [{ spans: ['(5,6)'], new_text: '⟨结论⟩' }], option: 'execute' });
   const r = flush(s, { openStep: { turn: 2, step: 2 } }, quiet);
   ok(r.applied === 1, 'execute 落地', JSON.stringify(r));
-  ok(autoReps(s).length === 0, '混合步骤没有被自动隐藏', String(autoReps(s).length));
-  ok(textOf(s).includes('构建成功'), '同一步里 bash 的成果还在');
+  const autos = autoReps(s);
+  ok(autos.length === 1, '混合 set 步骤被自动隐藏', String(autos.length));
+  ok(noteOf(autos[0]) === 'auto-hide:set', '原因标记为 set', String(noteOf(autos[0])));
   const mixedSeq = seqOfCall(s, 'mix-pm');
-  ok(s.surface.nodes.includes(mixedSeq), '混合步骤的调用消息仍留在工作面上（不连带隐藏）',
-    String(mixedSeq));
+  ok(!s.surface.nodes.includes(mixedSeq), '混合步骤的调用消息离开工作面', String(mixedSeq));
+  ok(!textOf(s).includes('构建成功'), '同一步里 bash 的成果也随整组隐藏');
+}
+
+console.log(NL + '③b 混合的报错 PM 步骤也会整体隐藏');
+{
+  const s = mk();
+  s.append('assistant/message', {
+    turn: 2, step: 1,
+    message: {
+      id: 'am-mixed-err', role: 'assistant', source: { kind: 'model', provider: 'q', model: 'd' },
+      content: [
+        { type: 'tool-call', id: 'mix-bad', name: 'plasticize', arguments: JSON.stringify({ ops: [{ spans: ['bad-span'] }], option: 'execute' }) },
+        { type: 'tool-call', id: 'mix-bash-err', name: 'bash', arguments: '{}' },
+      ],
+    },
+    stream: [],
+  }, { surfaceOp: 'append' });
+  s.append('tool/call', { turn: 2, step: 1, callId: 'mix-bad', name: 'plasticize', arguments: '{}' });
+  s.append('tool/call', { turn: 2, step: 1, callId: 'mix-bash-err', name: 'bash', arguments: '{}' });
+  s.append('tool/result', { turn: 2, step: 1, message: { id: 'tr-mix-bad', role: 'tool', toolCallId: 'mix-bad',
+    content: [{ type: 'text', text: 'Error: 端点不合法' }], isError: true, source: { kind: 'tool', callId: 'mix-bad' } } }, { surfaceOp: 'append' });
+  s.append('tool/result', { turn: 2, step: 1, message: { id: 'tr-mix-bash-err', role: 'tool', toolCallId: 'mix-bash-err',
+    content: [{ type: 'text', text: '任务成果' }], isError: false, source: { kind: 'tool', callId: 'mix-bash-err' } } }, { surfaceOp: 'append' });
+  flush(s, { openStep: { turn: 2, step: 1 } }, quiet);
+
+  step2(s);
+  plasticizeCall(s, { turn: 2, step: 2 }, 'ah-exec3', { ops: [{ spans: ['(5,6)'], new_text: '⟨结论2⟩' }], option: 'execute' });
+  const r = flush(s, { openStep: { turn: 2, step: 2 } }, quiet);
+  ok(r.applied === 1, 'execute 落地（混合报错组）', JSON.stringify(r));
+  const autos = autoReps(s);
+  ok(autos.length === 1, '混合报错步骤被自动隐藏', String(autos.length));
+  ok(noteOf(autos[0]) === 'auto-hide:error', '原因标记为 error', String(noteOf(autos[0])));
+  const badSeq = seqOfCall(s, 'mix-bad');
+  ok(!s.surface.nodes.includes(badSeq), '混合报错步骤的调用消息离开工作面');
+  ok(!textOf(s).includes('任务成果'), '同一步里 bash 的成果也随整组隐藏');
 }
 
 console.log(NL + '④ autoHide:false 时完全不隐藏');
