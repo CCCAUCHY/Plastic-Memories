@@ -859,6 +859,7 @@ window.__ModuleLoader__.load({
       '.pm-pgs button:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}',
       '.pm-pgs button.pm-pgs-current{background:var(--dsw-alias-state-business-tertiary);border-color:var(--dsw-alias-state-business-primary);color:var(--dsw-alias-state-business-primary);font-weight:600}',
       '.pm-pgs .pm-pgs-gap{color:var(--dsw-alias-label-tertiary);padding:0 2px}',
+      '.pm-pgs .pm-pgs-logical{display:inline-flex;align-items:center;gap:3px;margin-left:8px;padding-left:8px;border-left:1px solid var(--dsw-alias-border-l3)}',
     ].join(String.fromCharCode(10));
     function generationButtons(current, last) {
       const out = [];
@@ -952,6 +953,25 @@ window.__ModuleLoader__.load({
           title: pmUiText(t, 'pm.pagerTitle', 'Generation') + ' ' + String(gen),
           onClick: () => setGeneration(gen === last ? null : gen),
         }, String(gen)));
+      }
+      const pages = Array.isArray(state.data.logicalPages) ? state.data.logicalPages : [];
+      if (pages.length > 0) {
+        const logicalItems = [h('span', { key: 'llabel', className: 'pm-pgs-label' }, pmUiText(t, 'pm.logicalPagerLabel', 'Logical'))];
+        for (const page of pages) {
+          const isCurrent = page.physical === current;
+          const title = t === undefined || t === null
+            ? 'Logical generation ' + String(page.logical) + ' (physical page ' + String(page.physical) + ')'
+            : t('pm.logicalPageTitle', { logical: page.logical, physical: page.physical });
+          logicalItems.push(h('button', {
+            key: 'l' + String(page.logical),
+            type: 'button',
+            className: isCurrent ? 'pm-pgs-current' : '',
+            'aria-current': isCurrent ? 'true' : undefined,
+            title,
+            onClick: () => setGeneration(page.physical === last ? null : page.physical),
+          }, 'L' + String(page.logical)));
+        }
+        items.push(h('div', { key: 'logical', className: 'pm-pgs-logical' }, logicalItems));
       }
       return h('div', { className: 'pm-pgs', 'data-pm-pages': '' }, [h('style', { key: 'css' }, PAGER_CSS), ...items]);
     }

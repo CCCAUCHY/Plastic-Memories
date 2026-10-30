@@ -31,7 +31,7 @@
 export const GENERATIONS_KEY = 'pmGenerations';
 
 /** 状态版本：字段或 fold 语义变了就 bump（持久化缓存据此丢弃旧行）。 */
-export const GENERATIONS_STATE_VERSION = 3;
+export const GENERATIONS_STATE_VERSION = 4;
 
 /**
  * 鸭子类型的 schema 替身。
@@ -135,7 +135,7 @@ export function initState() {
   // raw  = **未投影时**的原始工作面节点（全部 append 事件，按 seq）；
   // reps = 每次替换的历史：{ gen, shadowed:[被遮 seq], repl: 替代节点 seq }。
   // 客户端据此把每一代拼成「可见行 + 遮罩块」：遮罩里显示替代文本，可逐层展开。
-  return { gen: 0, asOfSeq: -1, seqs: [], meta: {}, gens: [], raw: [], reps: [], safety: [] };
+  return { gen: 0, asOfSeq: -1, seqs: [], meta: {}, gens: [], raw: [], reps: [], safety: [], logicalPages: [] };
 }
 
 /**
@@ -181,6 +181,12 @@ export function applyEvent(state, event) {
   const seqs = [...state.seqs];
   const shadowed = seqs.slice(cutStart, cutEnd + 1);
   seqs.splice(cutStart, cutEnd - cutStart + 1, event.seq);
+  const source = event.type === 'user/message' ? event.data?.source : event.data?.message?.source;
+  const logical = source?.kind === 'pm-surface' && Number.isSafeInteger(source.logicalGeneration) ? source.logicalGeneration : undefined;
+  const previousPages = Array.isArray(state.logicalPages) ? state.logicalPages : [];
+  const logicalPages = logical !== undefined && !previousPages.some((page) => page.logical === logical)
+    ? [...previousPages, { logical, physical: state.gen + 1 }]
+    : previousPages;
   return {
     gen: state.gen + 1,
     asOfSeq: event.seq,
@@ -189,6 +195,8 @@ export function applyEvent(state, event) {
     meta: { ...state.meta, [String(event.seq)]: describeEvent(event) },
     gens: [...state.gens, { gen: state.gen, asOfSeq: state.asOfSeq, seqs: state.seqs }],
     reps: [...state.reps, { gen: state.gen + 1, shadowed, repl: event.seq }],
+    safety: Array.isArray(state.safety) ? state.safety : [],
+    logicalPages,
   };
 }
 
@@ -211,6 +219,7 @@ export function viewOf(state) {
     raw: state.raw,
     replacements: state.reps,
     safety: Array.isArray(state.safety) ? state.safety : [],
+    logicalPages: Array.isArray(state.logicalPages) ? state.logicalPages : [],
   };
 }
 

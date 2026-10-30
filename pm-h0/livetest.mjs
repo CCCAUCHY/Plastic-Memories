@@ -14,7 +14,8 @@ import SessionStore from '/var/data/.npm/_npx/1e7f6d9597241db0/node_modules/@dee
 import { makeCounter, fixture, cookieSeed, cookieNodes, cookieEvent, textOf, openStep, plasticizeCall, makeStore } from './testkit.mjs';
 import { pairingMaps, snapshotSurface, stepGroup, indexOfCall, checkBalanced } from './coords.js';
 import { appendPluginRecord, snapshotSessionEvent } from '/var/data/.npm/_npx/1e7f6d9597241db0/node_modules/@deepseek-ai/dsh-session/lib/index.js';
-import { flush, stageUserOperation, flushUserOperations, clearStagedOperations, countLogicalGenerations, logicalGenerationGroups, installPrivateRecordAppender, lockedSeqs, safetyZoneIntervals } from './engine.js';
+import { flush, stageUserOperation, flushUserOperations, clearStagedOperations, countLogicalGenerations, installPrivateRecordAppender, lockedSeqs, safetyZoneIntervals } from './engine.js';
+import { initState, applyEvent, viewOf } from './generations.js';
 import { retrospect } from './retrospect.js';
 
 const NL = String.fromCharCode(10);
@@ -224,9 +225,10 @@ console.log(NL + '⑥.10 逻辑世代标记：同号物理世代成组，第一�
   });
   const r = flush(s, { openStep: { turn: 99, step: 1 } }, quiet);
   ok(r.applied === 1 && s.snapshotEvents().filter((e) => e.surfaceOp?.op === 'replace').length === 2, '一次 execute 写出两个物理世代', JSON.stringify(r));
-  const groups = logicalGenerationGroups(s);
-  ok(groups.length === 1 && groups[0].logical === 0, '同 logicalGeneration 的物理世代归为一组', JSON.stringify(groups));
-  ok(groups[0].lastPhysical === groups[0].firstPhysical + 1, '组内第二个物理世代是中间世代', JSON.stringify(groups[0]));
+  let state = initState();
+  for (const event of s.snapshotEvents()) state = applyEvent(state, event);
+  const pages = viewOf(state).logicalPages;
+  ok(JSON.stringify(pages) === JSON.stringify([{ logical: 0, physical: 1 }]), '逻辑页码：逻辑 0 指向第一个物理页', JSON.stringify(pages));
   ok(countLogicalGenerations(s) === 1, '逻辑世代数为 1', String(countLogicalGenerations(s)));
   const sources = s.snapshotEvents().filter((e) => e.surfaceOp?.op === 'replace').map((e) => (e.type === 'user/message' ? e.data?.source : e.data?.message?.source));
   ok(sources.every((source) => Number.isSafeInteger(source.logicalGeneration)), '新替代消息都持久化 logicalGeneration 标记');
@@ -235,8 +237,10 @@ console.log(NL + '⑥.10 逻辑世代标记：同号物理世代成组，第一�
   plasticizeCall(s, { turn: 99, step: 2 }, 'lg-2', { ops: [{ spans: ['this'], new_text: '⟨LG-C⟩' }], option: 'execute' });
   const r2 = flush(s, { openStep: { turn: 99, step: 2 } }, quiet);
   ok(r2.applied === 1, '第二个逻辑世代写入', JSON.stringify(r2));
-  const groups2 = logicalGenerationGroups(s);
-  ok(groups2.length === 2 && groups2[1].logical === 1, '第二个逻辑世代单独成组', JSON.stringify(groups2));
+  state = initState();
+  for (const event of s.snapshotEvents()) state = applyEvent(state, event);
+  const pages2 = viewOf(state).logicalPages;
+  ok(JSON.stringify(pages2) === JSON.stringify([{ logical: 0, physical: 1 }, { logical: 1, physical: 3 }]), '逻辑页码：中间物理世代不生成新逻辑页', JSON.stringify(pages2));
   ok(countLogicalGenerations(s) === 2, '逻辑世代数递增到 2', String(countLogicalGenerations(s)));
 }
 

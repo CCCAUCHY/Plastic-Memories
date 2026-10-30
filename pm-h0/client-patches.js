@@ -49,6 +49,8 @@ export function applyExtraPatches(patched) {
     'pm.roleSystem': '系统',
     'pm.pagerLabel': '世代',
     'pm.pagerTitle': '第 {n} 代',
+    'pm.logicalPagerLabel': '逻辑',
+    'pm.logicalPageTitle': '逻辑世代 {logical}（物理页 {physical}）',
   };
   const pmLocaleEn = {
     'pm.reshaped': 'Reshaped',
@@ -76,6 +78,8 @@ export function applyExtraPatches(patched) {
     'pm.roleSystem': 'System',
     'pm.pagerLabel': 'Generations',
     'pm.pagerTitle': 'Generation {n}',
+    'pm.logicalPagerLabel': 'Logical',
+    'pm.logicalPageTitle': 'Logical generation {logical} (physical page {physical})',
   };
   const insertPmLocale = (text, anchor, dict) => {
     const inserted = Object.entries(dict).map(([key, value]) => String.fromCharCode(10) + '\t\t\t' + JSON.stringify(key) + ': ' + JSON.stringify(value) + ',').join('');

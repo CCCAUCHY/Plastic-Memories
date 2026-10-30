@@ -1037,35 +1037,6 @@ export function logicalGenerationForCall(session, callId) {
   return applied + (index >= 0 ? index : pending.length);
 }
 
-/**
- * 按 PM 替代消息携带的 logicalGeneration 标记，把物理世代分成逻辑世代组。
- * 同一逻辑世代的所有物理世代共享同一个 logicalGeneration；连续同号为一组，
- * 组内第一个物理世代就是该逻辑世代的边界，其余是中间物理世代。
- * 非 PM 的官方 surface 替换（system-prompt 等）不携带标记，不改变逻辑分组。
- * @param {object} session - 目标会话。
- * @returns {Array<{logical:number, firstPhysical:number, lastPhysical:number, firstSeq:number, lastSeq:number}>} 分组。
- */
-export function logicalGenerationGroups(session) {
-  const groups = [];
-  let physical = 0;
-  for (const event of session.snapshotEvents()) {
-    if (event.surfaceOp?.op !== 'replace') continue;
-    physical += 1;
-    const source = event.type === 'user/message' ? event.data?.source : event.data?.message?.source;
-    if (source?.kind !== 'pm-surface') continue;
-    const logical = source.logicalGeneration;
-    if (!Number.isSafeInteger(logical) || logical < 0) continue;
-    const last = groups[groups.length - 1];
-    if (last !== undefined && last.logical === logical) {
-      last.lastPhysical = physical;
-      last.lastSeq = event.seq;
-      continue;
-    }
-    groups.push({ logical, firstPhysical: physical, lastPhysical: physical, firstSeq: event.seq, lastSeq: event.seq });
-  }
-  return groups;
-}
-
 export function logicalGenerations(session) {
   const state = stateOf(session);
   scanNew(session, state);

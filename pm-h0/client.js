@@ -63,6 +63,8 @@ window.__ModuleLoader__.load({
 			"pm.roleSystem": "系统",
 			"pm.pagerLabel": "世代",
 			"pm.pagerTitle": "第 {n} 代",
+			"pm.logicalPagerLabel": "逻辑",
+			"pm.logicalPageTitle": "逻辑世代 {logical}（物理页 {physical}）",
 			"toolbar.aria": "轨迹工具栏",
 			"toolbar.duration": "时长",
 			"toolbar.useActualDuration": "使用实际时长",
@@ -283,6 +285,8 @@ window.__ModuleLoader__.load({
 			"pm.roleSystem": "System",
 			"pm.pagerLabel": "Generations",
 			"pm.pagerTitle": "Generation {n}",
+			"pm.logicalPagerLabel": "Logical",
+			"pm.logicalPageTitle": "Logical generation {logical} (physical page {physical})",
 			"toolbar.aria": "Trajectory toolbar",
 			"toolbar.duration": "Duration",
 			"toolbar.useActualDuration": "Use actual duration",
@@ -9214,6 +9218,7 @@ window.__ModuleLoader__.load({
       '.pm-pgs button:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}',
       '.pm-pgs button.pm-pgs-current{background:var(--dsw-alias-state-business-tertiary);border-color:var(--dsw-alias-state-business-primary);color:var(--dsw-alias-state-business-primary);font-weight:600}',
       '.pm-pgs .pm-pgs-gap{color:var(--dsw-alias-label-tertiary);padding:0 2px}',
+      '.pm-pgs .pm-pgs-logical{display:inline-flex;align-items:center;gap:3px;margin-left:8px;padding-left:8px;border-left:1px solid var(--dsw-alias-border-l3)}',
     ].join(String.fromCharCode(10));
     function generationButtons(current, last) {
       const out = [];
@@ -9307,6 +9312,25 @@ window.__ModuleLoader__.load({
           title: pmUiText(t, 'pm.pagerTitle', 'Generation') + ' ' + String(gen),
           onClick: () => setGeneration(gen === last ? null : gen),
         }, String(gen)));
+      }
+      const pages = Array.isArray(state.data.logicalPages) ? state.data.logicalPages : [];
+      if (pages.length > 0) {
+        const logicalItems = [h('span', { key: 'llabel', className: 'pm-pgs-label' }, pmUiText(t, 'pm.logicalPagerLabel', 'Logical'))];
+        for (const page of pages) {
+          const isCurrent = page.physical === current;
+          const title = t === undefined || t === null
+            ? 'Logical generation ' + String(page.logical) + ' (physical page ' + String(page.physical) + ')'
+            : t('pm.logicalPageTitle', { logical: page.logical, physical: page.physical });
+          logicalItems.push(h('button', {
+            key: 'l' + String(page.logical),
+            type: 'button',
+            className: isCurrent ? 'pm-pgs-current' : '',
+            'aria-current': isCurrent ? 'true' : undefined,
+            title,
+            onClick: () => setGeneration(page.physical === last ? null : page.physical),
+          }, 'L' + String(page.logical)));
+        }
+        items.push(h('div', { key: 'logical', className: 'pm-pgs-logical' }, logicalItems));
       }
       return h('div', { className: 'pm-pgs', 'data-pm-pages': '' }, [h('style', { key: 'css' }, PAGER_CSS), ...items]);
     }
