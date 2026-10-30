@@ -178,6 +178,25 @@ function scanNew(session, state) {
 }
 
 /**
+ * 一个提交边界只允许一条 execute：两个 execute 连续落盘会违反
+ * “同一 execute 内区间不重叠则操作可交换”的原则。
+ * @param {object} session - 目标会话。
+ * @param {string} currentCallId - 当前 execute 的 callId（不计入待决）。
+ */
+export function assertSinglePendingExecute(session, currentCallId) {
+  const state = stateOf(session);
+  scanNew(session, state);
+  const pending = state.declarations.filter((declaration) =>
+    declaration.callId !== currentCallId &&
+    declaration.args?.option === 'execute' &&
+    !state.appliedCallIds.has(declaration.callId) &&
+    !state.failedCallIds.has(declaration.callId));
+  if (pending.length > 0) {
+    throw new Error('only one execute is allowed per submission boundary; execute one logical generation per boundary');
+  }
+}
+
+/**
  * 判断一条声明是否已经**了结**（已落地，或执行报错）。
  *
  * 报错的也算「了结」：它不产生投影，也不该在后续每个边界上重试。
@@ -574,6 +593,9 @@ function applyDeclarations(session, declarations, open, state, options = {}) {
     }
   }
 
+  if (planned.filter((entry) => entry.duplicateOf === undefined && entry.declaration.args?.option === 'execute').length > 1) {
+    throw new Error('only one execute is allowed per submission boundary; consecutive executes would violate operation commutativity');
+  }
   const claimed = new Set();
   for (let i = 0; i < planned.length; i++) {
     if (planned[i].duplicateOf !== undefined) continue;
@@ -618,6 +640,7 @@ function applyDeclarations(session, declarations, open, state, options = {}) {
     : [];
 
   // 全部解析完再写：上面所有 resolveOps 都针对同一个（尚未改变）的工作面。
+  const batchFirstPhysical = session.surface.replaceGeneration + 1;
   let explicit = 0;
   for (let i = 0; i < planned.length; i++) {
     const { declaration, resolved, duplicateOf } = planned[i];
@@ -633,12 +656,9 @@ function applyDeclarations(session, declarations, open, state, options = {}) {
       const rawText = String(span.op.new_text ?? '');
       const isHole = rawText.length === 0;
       if (isHole && open === undefined) throw new Error('没有打开的 step，纯空洞推迟到下一个边界');
-      const consumedLogical = consumed.map((id) => logicalOf.get(id)).find((value) => typeof value === 'number');
-      const logicalGeneration = consumedLogical ?? logicalOf.get(declaration.callId) ?? batchLogical;
       const source = pmSource({
         op: isHole ? 'hide' : 'stabilize',
         callId: declaration.callId,
-        logicalGeneration,
         generation,
         refs: [...span.shadowed],
         ...(consumed.length === 0 ? {} : { consumed }),
@@ -671,7 +691,6 @@ function applyDeclarations(session, declarations, open, state, options = {}) {
       const generation = session.surface.replaceGeneration + 1;
       const source = pmSource({
         op: 'hide',
-        logicalGeneration: batchLogical,
         generation,
         refs: [...target.shadowed],
         note: 'auto-hide:' + target.reason,
@@ -692,6 +711,21 @@ function applyDeclarations(session, declarations, open, state, options = {}) {
       });
       auto++;
     }
+  }
+  // 统一把逻辑世代元数据写进私有事件：logical N、冻结物理页、触发调用。
+  for (const entry of planned) {
+    if (entry.declaration.args?.option !== 'execute') continue;
+    const logical = logicalOf.get(entry.declaration.callId);
+    if (logical === undefined) continue;
+    const physical = batchFirstPhysical;
+    try {
+      appendPrivateRecord(session, 'plugin:plastic-memories/logical', {
+        logical,
+        physical,
+        kind: 'execute',
+        callId: entry.declaration.callId,
+      });
+    } catch { /* 忽略持久化失败 */ }
   }
   return { explicit, auto, applied: planned.length, failed };
 }
@@ -952,6 +986,7 @@ export async function flushUserOperations(session, openStep, logger) {
       safety += 1;
     }
     let projections = 0;
+    const firstProjectionPhysical = session.surface.replaceGeneration + 1;
     for (const group of groups) {
       if (group.kind !== 'project') continue;
       const visible = new Set(session.surface.nodes);
@@ -962,7 +997,7 @@ export async function flushUserOperations(session, openStep, logger) {
       const generation = session.surface.replaceGeneration + 1;
       const isHole = group.text.length === 0;
       const callId = 'pm-user-' + String(session.seq) + '-' + String(projections);
-      const source = pmSource({ op: isHole ? 'hide' : 'stabilize', callId, generation, logicalGeneration: base, refs: [...group.seqs] });
+      const source = pmSource({ op: isHole ? 'hide' : 'stabilize', callId, generation, refs: [...group.seqs] });
       const message = { id: 'pm-surface-' + callId, role: 'developer', content: isHole ? [] : [{ type: 'text', text: group.text }], source };
       const mark = { surfaceOp: { op: 'replace', startSeq: group.seqs[0], endSeq: group.seqs[group.seqs.length - 1] }, sourceEventSeqs: [...group.seqs] };
       if (openStep !== undefined && openStep !== null) session.append('developer/message', { turn: openStep.turn, step: openStep.step, message }, mark);
@@ -970,7 +1005,7 @@ export async function flushUserOperations(session, openStep, logger) {
       projections += 1;
     }
     if (projections > 0) {
-      await appendPrivateRecord(session, 'plugin:plastic-memories/logical', { logical: base, kind: 'user-projection', count: projections, comment: groups.filter((group) => group.kind === 'project').flatMap((group) => group.comments).join('\n') });
+      await appendPrivateRecord(session, 'plugin:plastic-memories/logical', { logical: base, physical: firstProjectionPhysical, kind: 'user-projection', count: projections, comment: groups.filter((group) => group.kind === 'project').flatMap((group) => group.comments).join('\n') });
     }
     // prelock：把「触发本次落盘的那条用户消息」纳入安全区（准确 seq）。
     if (prelock !== undefined) {
@@ -1019,7 +1054,7 @@ export function pendingReport(session) {
  * 已落地的 execute 数量 + 本批尚未落地 execute 中的序号。
  * @param {object} session - 目标会话。
  * @param {string} callId - 本次调用 id。
- * @returns {number} 逻辑世代号（1 起）。
+ * @returns {number} 本次 execute 冻结的逻辑世代号（0 起）。
  */
 export function logicalGenerationForCall(session, callId) {
   const state = stateOf(session);
@@ -1055,17 +1090,25 @@ export function logicalGenerations(session) {
 
 /** 已产生的逻辑世代总数（成功的 execute + 用户命令写入的逻辑世代事件）。 */
 export function countLogicalGenerations(session) {
-  // 新日志：PM 替代消息自带 logicalGeneration 标记，取最大号 + 1。
+  let maxLogical = -1;
   let maxMarker = -1;
+  let privateExecutes = 0;
+  let privateUsers = 0;
   for (const event of session.snapshotEvents()) {
+    if (event.type === 'plugin:plastic-memories/logical' && Number.isSafeInteger(event.data?.logical)) {
+      if (event.data?.kind === 'execute') privateExecutes += 1; else privateUsers += 1;
+      if (event.data.logical > maxLogical) maxLogical = event.data.logical;
+      continue;
+    }
     if (event.surfaceOp?.op !== 'replace') continue;
     const source = event.type === 'user/message' ? event.data?.source : event.data?.message?.source;
     if (source?.kind === 'pm-surface' && Number.isSafeInteger(source.logicalGeneration) && source.logicalGeneration > maxMarker) {
       maxMarker = source.logicalGeneration;
     }
   }
-  if (maxMarker >= 0) return maxMarker + 1;
-  // 旧日志没有标记：退回声明扫描 + 私有逻辑事件计数。
+  // 新格式：每次 execute 冻结都有 kind=execute 的私有事件。
+  if (privateExecutes > 0) return Math.max(maxLogical, maxMarker) + 1;
+  // 旧日志回退：已落地 execute 数 + 旧的用户投影私有事件数；有旧标记时取更大者。
   const state = stateOf(session);
   scanNew(session, state);
   let executes = 0;
@@ -1073,9 +1116,5 @@ export function countLogicalGenerations(session) {
     if (declaration.args?.option !== 'execute') continue;
     if (state.appliedCallIds.has(declaration.callId)) executes += 1;
   }
-  let privateEvents = 0;
-  for (const event of session.snapshotEvents()) {
-    if (event.type === 'plugin:plastic-memories/logical') privateEvents += 1;
-  }
-  return executes + privateEvents;
+  return Math.max(maxMarker + 1, executes + privateUsers);
 }

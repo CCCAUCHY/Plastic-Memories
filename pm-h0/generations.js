@@ -31,7 +31,7 @@
 export const GENERATIONS_KEY = 'pmGenerations';
 
 /** 状态版本：字段或 fold 语义变了就 bump（持久化缓存据此丢弃旧行）。 */
-export const GENERATIONS_STATE_VERSION = 4;
+export const GENERATIONS_STATE_VERSION = 5;
 
 /**
  * 鸭子类型的 schema 替身。
@@ -145,6 +145,15 @@ export function initState() {
  * @returns {object} 下一状态。
  */
 export function applyEvent(state, event) {
+  if (event?.type === 'plugin:plastic-memories/logical') {
+    const logical = event.data?.logical;
+    const physical = event.data?.physical;
+    if (!Number.isSafeInteger(logical) || !Number.isSafeInteger(physical)) return state;
+    const previousPages = Array.isArray(state.logicalPages) ? state.logicalPages : [];
+    if (previousPages.some((page) => page.logical === logical)) return state;
+    return { ...state, logicalPages: [...previousPages, { logical, physical }] };
+  }
+
   if (event?.type === 'plugin:plastic-memories/locks') {
     const data = event.data ?? {};
     const set = new Set(Array.isArray(state.safety) ? state.safety : []);

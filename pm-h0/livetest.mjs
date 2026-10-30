@@ -14,7 +14,7 @@ import SessionStore from '/var/data/.npm/_npx/1e7f6d9597241db0/node_modules/@dee
 import { makeCounter, fixture, cookieSeed, cookieNodes, cookieEvent, textOf, openStep, plasticizeCall, makeStore } from './testkit.mjs';
 import { pairingMaps, snapshotSurface, stepGroup, indexOfCall, checkBalanced } from './coords.js';
 import { appendPluginRecord, snapshotSessionEvent } from '/var/data/.npm/_npx/1e7f6d9597241db0/node_modules/@deepseek-ai/dsh-session/lib/index.js';
-import { flush, stageUserOperation, flushUserOperations, clearStagedOperations, countLogicalGenerations, installPrivateRecordAppender, lockedSeqs, safetyZoneIntervals } from './engine.js';
+import { flush, stageUserOperation, flushUserOperations, clearStagedOperations, countLogicalGenerations, assertSinglePendingExecute, installPrivateRecordAppender, lockedSeqs, safetyZoneIntervals } from './engine.js';
 import { initState, applyEvent, viewOf } from './generations.js';
 import { retrospect } from './retrospect.js';
 
@@ -230,8 +230,8 @@ console.log(NL + '⑥.10 逻辑世代标记：同号物理世代成组，第一�
   const pages = viewOf(state).logicalPages;
   ok(JSON.stringify(pages) === JSON.stringify([{ logical: 0, physical: 1 }]), '逻辑页码：逻辑 0 指向第一个物理页', JSON.stringify(pages));
   ok(countLogicalGenerations(s) === 1, '逻辑世代数为 1', String(countLogicalGenerations(s)));
-  const sources = s.snapshotEvents().filter((e) => e.surfaceOp?.op === 'replace').map((e) => (e.type === 'user/message' ? e.data?.source : e.data?.message?.source));
-  ok(sources.every((source) => Number.isSafeInteger(source.logicalGeneration)), '新替代消息都持久化 logicalGeneration 标记');
+  const freezeEvents = s.snapshotEvents().filter((e) => e.type === 'plugin:plastic-memories/logical' && e.data?.kind === 'execute');
+  ok(freezeEvents.length === 1 && freezeEvents[0].data.logical === 0 && freezeEvents[0].data.physical === 1, 'execute 冻结写入私有 logical 事件（logical=0, physical=1）', JSON.stringify(freezeEvents.map((e) => e.data)));
 
   openStep(s, 99, 2);
   plasticizeCall(s, { turn: 99, step: 2 }, 'lg-2', { ops: [{ spans: ['this'], new_text: '⟨LG-C⟩' }], option: 'execute' });
@@ -242,6 +242,19 @@ console.log(NL + '⑥.10 逻辑世代标记：同号物理世代成组，第一�
   const pages2 = viewOf(state).logicalPages;
   ok(JSON.stringify(pages2) === JSON.stringify([{ logical: 0, physical: 1 }, { logical: 1, physical: 3 }]), '逻辑页码：中间物理世代不生成新逻辑页', JSON.stringify(pages2));
   ok(countLogicalGenerations(s) === 2, '逻辑世代数递增到 2', String(countLogicalGenerations(s)));
+}
+
+console.log(NL + '⑥.11 一个提交边界只允许一条 execute');
+{
+  const s = mk();
+  openStep(s, 99, 1);
+  plasticizeCall(s, { turn: 99, step: 1 }, 'one-1', { ops: [{ spans: ['(3,4)'], new_text: '⟨ONE-A⟩' }], option: 'execute' });
+  plasticizeCall(s, { turn: 99, step: 1 }, 'one-2', { ops: [{ spans: ['(5,6)'], new_text: '⟨ONE-B⟩' }], option: 'execute' });
+  let guard = null;
+  try { assertSinglePendingExecute(s, 'one-2'); } catch (error) { guard = error.message; }
+  ok(typeof guard === 'string' && guard.includes('only one execute'), '第二条 execute 在工具边界被拒绝', String(guard).slice(0, 60));
+  const r = flush(s, { openStep: { turn: 99, step: 1 } }, quiet);
+  ok(r.applied === 0 && r.skipped === 2 && s.snapshotEvents().filter((e) => e.surfaceOp?.op === 'replace').length === 0, 'flush 侧同样拒绝，不写任何投影', JSON.stringify(r));
 }
 
 console.log(NL + '⑥.5 安全区：lock 后 plasticize 不能命中锁定区间');

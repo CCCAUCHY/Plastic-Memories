@@ -89,28 +89,31 @@ export function retrospectGeneration(session, generation) {
   const target = normalizeGeneration(generation, self);
 
   const bySeq = new Map(events.map((event) => [event.seq, event]));
-  const logicalOf = (event) => {
-    if (event?.type === 'plugin:plastic-memories/logical' && Number.isSafeInteger(event.data?.logical)) return event.data.logical;
-    if (event?.surfaceOp?.op !== 'replace') return undefined;
-    const source = event.type === 'user/message' ? event.data?.source : event.data?.message?.source;
-    if (source?.kind !== 'pm-surface') return undefined;
-    if (typeof source.logicalGeneration === 'number') return source.logicalGeneration;
-    for (const candidate of [source.callId, ...(Array.isArray(source.consumed) ? source.consumed : [])]) {
-      if (typeof candidate === 'string' && info.byCallId.has(candidate)) return info.byCallId.get(candidate);
-    }
-    return undefined;
-  };
+  // 统一元数据来源：plugin:plastic-memories/logical；旧日志回退替代消息标记。
   const cutoffs = [];
   for (const event of events) {
-    const logical = logicalOf(event);
+    if (event.type === 'plugin:plastic-memories/logical' && Number.isSafeInteger(event.data?.logical)) {
+      cutoffs.push({ logical: event.data.logical, seq: event.seq });
+      continue;
+    }
+    if (event.surfaceOp?.op !== 'replace') continue;
+    const source = event.type === 'user/message' ? event.data?.source : event.data?.message?.source;
+    if (source?.kind !== 'pm-surface') continue;
+    let logical;
+    if (Number.isSafeInteger(source.logicalGeneration)) logical = source.logicalGeneration;
+    else {
+      for (const candidate of [source.callId, ...(Array.isArray(source.consumed) ? source.consumed : [])]) {
+        if (typeof candidate === 'string' && info.byCallId.has(candidate)) { logical = info.byCallId.get(candidate); break; }
+      }
+    }
     if (logical !== undefined) cutoffs.push({ logical, seq: event.seq });
   }
   cutoffs.sort((left, right) => left.seq - right.seq);
 
   // 只查历史世代；normalizeGeneration 已拒绝当前/未来世代。
   let cutoff = -1;
-  for (const event of events) {
-    if (logicalOf(event) === target) cutoff = Math.max(cutoff, event.seq);
+  for (const marker of cutoffs) {
+    if (marker.logical === target) cutoff = Math.max(cutoff, marker.seq);
   }
   if (cutoff < 0) throw new Error('no context found for logical generation ' + String(target) + ' (no write recorded for that generation)');
   const contextNodes = replaySurface(events, cutoff);
