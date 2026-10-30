@@ -483,7 +483,8 @@ export function apply(ctx, config) {
         'that must actually guide future generations belongs in the plasticization operations themselves, not here. ' +
         'One plain-text letter per call. This tool has no side effects: it writes no surfaceOp and no private data; ' +
         'the text lives only in this tool call trajectory. retrospect({generation}) returns the letters input during ' +
-        'that logical generation, in order, each with its in-generation message index.',
+        'that logical generation, in order, each with its in-generation message index. Returns the minimal ' +
+        'confirmation 登记成功.',
       parameters: {
         type: 'object',
         properties: {
@@ -493,8 +494,8 @@ export function apply(ctx, config) {
       },
       execute(args, exec) {
         sessionOf(exec);
-        // 输入即结果：不再输出有意义的内容。
-        return Promise.resolve({ text: '' });
+        // 只回执登记成功，避免模型把空结果误解为失败。
+        return Promise.resolve({ text: '登记成功' });
       },
     }),
   );
