@@ -136,6 +136,7 @@ export function retrospectGeneration(session, generation) {
     messages.push({
       role: message !== undefined && typeof message.role === 'string' ? String(message.role) : (ROLE_BY_TYPE[event.type] ?? String(event.type)),
       text: messageText(message),
+      time: Number.isSafeInteger(event.time) ? event.time : null,
     });
   }
   return JSON.stringify({ logical: target, count: messages.length, messages, letter: lettersOfGeneration(events, target, cutoffs) });
@@ -162,7 +163,7 @@ function lettersOfGeneration(events, target, cutoffs) {
     const text = parsed?.text;
     if (typeof text !== 'string' || text.trim().length === 0) continue;
     const surface = replaySurface(events, event.seq);
-    out.push({ index: surface.length - 1, text });
+    out.push({ index: surface.length - 1, text, time: Number.isSafeInteger(event.time) ? event.time : null });
   }
   return out;
 }

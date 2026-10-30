@@ -135,7 +135,12 @@ console.log(NL + '⑥ retrospect：只返回历史世代自己的上下文（结
   ok(byNumber.count === afterFirst.length, '历史上下文 = 当时写入后的 surface', String(byNumber.count));
   ok(!byNumber.messages.some((message) => String(message.text).includes(keyword)), '历史世代上下文不含它隐藏的上一代原文');
   ok(byNumber.messages.some((message) => message.role === 'developer' && message.text === ''), '历史上下文包含该世代写出的空替代消息');
-  ok(JSON.stringify(byNumber.letter) === JSON.stringify([{ index: preIndex, text: 'S: 第 0 代之前的话' }, { index: zeroIndex, text: 'L0: 第 0 代的话' }]), 'letter 只含第 0 代生命周期内的输入且带消息序号', JSON.stringify(byNumber.letter));
+  ok(byNumber.letter.length === 2
+    && byNumber.letter[0].index === preIndex && byNumber.letter[0].text === 'S: 第 0 代之前的话'
+    && byNumber.letter[1].index === zeroIndex && byNumber.letter[1].text === 'L0: 第 0 代的话',
+    'letter 只含第 0 代生命周期内的输入且带消息序号', JSON.stringify(byNumber.letter));
+  ok(byNumber.messages.every((message) => Number.isSafeInteger(message.time)), 'messages 每项带底层日志时间');
+  ok(byNumber.letter.every((entry) => Number.isSafeInteger(entry.time)), 'letter 每项带底层日志时间');
 
   // 第三代：第 1 代生命周期内的 letter 归入 gen1（独立 step）。
   openStep(s, 99, 4);
@@ -146,7 +151,7 @@ console.log(NL + '⑥ retrospect：只返回历史世代自己的上下文（结
   const r3 = flush(s, { openStep: { turn: 99, step: 5 } }, quiet);
   ok(r3.applied === 1, '第三个逻辑世代写入成功', JSON.stringify(r3));
   const gen1 = JSON.parse(retrospect(s, { generation: 1 }));
-  ok(JSON.stringify(gen1.letter) === JSON.stringify([{ index: oneIndex, text: 'L1: 第 1 代的话' }]), 'letter 按逻辑世代归属，不跨代累积', JSON.stringify(gen1.letter));
+  ok(gen1.letter.length === 1 && gen1.letter[0].index === oneIndex && gen1.letter[0].text === 'L1: 第 1 代的话', 'letter 按逻辑世代归属，不跨代累积', JSON.stringify(gen1.letter));
 
   let againError = null;
   try { retrospect(s, { generation: 'self - 0' }); } catch (error) { againError = error.message; }
