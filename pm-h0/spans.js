@@ -43,16 +43,16 @@ export const SELF = Symbol('this');
  */
 export function parseSpan(raw) {
   const text = String(raw).trim();
-  if (text.length === 0) throw new Error('区间不能为空');
+  if (text.length === 0) throw new Error('span must not be empty');
 
   const endpoint = (tok) => {
     const t = tok.trim();
     if (t === 'this') return SELF;
     if (!/^[0-9]+$/.test(t)) {
-      throw new Error('端点 ' + JSON.stringify(t) + ' 不合法：只能是 cookie 编号或 this');
+      throw new Error('invalid endpoint ' + JSON.stringify(t) + ': expected a cookie number or "this"');
     }
     const n = Number(t);
-    if (n < 1) throw new Error('cookie 编号从 1 开始，收到 ' + n);
+    if (n < 1) throw new Error('cookie numbers start at 1; got ' + n);
     return n;
   };
 
@@ -65,16 +65,16 @@ export function parseSpan(raw) {
   const openA = text.startsWith('(');
   const closeCh = text.slice(-1);
   if (closeCh !== ']' && closeCh !== ')') {
-    throw new Error('区间 ' + JSON.stringify(text) + ' 没有闭合的括号');
+    throw new Error('span ' + JSON.stringify(text) + ' has an unclosed bracket');
   }
   const openB = closeCh === ')';
   const inner = text.slice(1, -1);
   const cut = inner.indexOf(',');
   if (cut === -1) {
-    throw new Error('区间 ' + JSON.stringify(text) + ' 缺少逗号；仅端点请直接写编号，不要写 [3]');
+    throw new Error('span ' + JSON.stringify(text) + ' is missing a comma; for a single endpoint write the number directly, not [3]');
   }
   if (inner.indexOf(',', cut + 1) !== -1) {
-    throw new Error('区间 ' + JSON.stringify(text) + ' 只能有两个端点');
+    throw new Error('span ' + JSON.stringify(text) + ' must have exactly two endpoints');
   }
   return { a: endpoint(inner.slice(0, cut)), b: endpoint(inner.slice(cut + 1)), openA, openB };
 }
@@ -87,13 +87,13 @@ export function parseSpan(raw) {
  */
 function resolveSelf(view, here) {
   if (here === undefined || here === null) {
-    throw new Error('this 端点只能用在 plasticize 调用里（没有本步坐标）');
+    throw new Error('the "this" endpoint is only valid inside a plasticize call (no step coordinates)');
   }
   const nodes = view.surface.nodes;
   const i = nodes.indexOf(here.thisSeq);
   const j = nodes.indexOf(here.thisEndSeq);
   if (i === -1 || j === -1) {
-    throw new Error('this 端点（本次调用所在的 assistant 消息与它的工具结果）在当前工作面上找不到');
+    throw new Error('cannot locate the "this" endpoint (the assistant message making this call and its tool results) on the current surface');
   }
   return { index: i, endIndex: j };
 }
@@ -109,7 +109,7 @@ function resolveOne(view, tok, here) {
   if (tok === SELF) return { index: resolveSelf(view, here).index, isSelf: true };
   const found = cookieIndex(view, tok);
   if (found === undefined) {
-    throw new Error('找不到 ' + tok + ' 号 cookie。当前工作面上最大的 cookie 编号是 ' + maxVisibleCookieId(view) +
+    throw new Error('cookie ' + tok + ' not found. The largest visible cookie number is ' + maxVisibleCookieId(view) +
       ' —— 编号按日志顺序自增，它可能已被投影遮蔽（或者根本还没被插入）。');
   }
   return { index: found.index, isSelf: false };
@@ -153,7 +153,7 @@ export function resolveSpan(view, raw, here) {
   }
 
   if (lo > hi) {
-    throw new Error('区间 ' + JSON.stringify(String(raw)) + ' 是空的（开括号把端点全排除了）');
+    throw new Error('span ' + JSON.stringify(String(raw)) + ' is empty (open brackets exclude every endpoint)');
   }
   return { startIndex: lo, endIndex: hi };
 }

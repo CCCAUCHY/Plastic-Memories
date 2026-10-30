@@ -1,18 +1,3 @@
-/**
- * 私有化的官方轨迹页面（upstream: @deepseek-ai/dsh-client-ui-trajectory@0.2.1-rc.2）。
- *
- * 这是 **逐字节复制** 的 loader bundle，只做以下私有化改名（见 build-client.mjs）：
- *   - 模块 id：@deepseek-ai/dsh-client-ui-trajectory → pm-trajectory-vendor
- *   - target / hook：trajectory → pmTrajectory
- *   - 事件定义 kind：trajectory-* → pmtrajectory-*
- *   - slot：conversation.trajectory.images → pmTrajectory.images
- *   - locale NS：trajectory → pm-trajectory（标签文字改成「世代」）
- *   - 视图 id/order：trajectory/10 → pm-generations/9000
- *
- * 这样它和官方轨迹可以同时挂载、互不干扰。升级 DSH 时：
- *   1. 从新版本 node_modules 重新复制此文件；
- *   2. node build-client.mjs（补丁一条不匹配就报错，不会静默生成半成品）。
- */
 window.__ModuleLoader__.load({
 	id: "@deepseek-ai/dsh-client-ui-trajectory",
 	factory: (require) => {

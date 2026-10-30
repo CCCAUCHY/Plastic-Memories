@@ -67,7 +67,7 @@ console.log(NL + '② 切在工具对中间的区间：checkBalanced 必须判�
   if (result !== undefined) {
     const verdict = checkBalanced(s, result.index, snap.entries.length - 1);
     ok(verdict.ok === false, '被判为不平衡', JSON.stringify(verdict).slice(0, 80));
-    ok(typeof verdict.reason === 'string' && verdict.reason.includes('拆开'), '给出可读原因', String(verdict.reason).slice(0, 60));
+    ok(typeof verdict.reason === 'string' && verdict.reason.includes('split'), '给出可读原因', String(verdict.reason).slice(0, 60));
   }
 }
 

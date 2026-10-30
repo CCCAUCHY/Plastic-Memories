@@ -144,7 +144,7 @@ function typeRangesFor(session, view, startIndex, endIndex, types) {
     if (wanted.has('letter') && letterUnits.has(key)) selected.add(key);
   }
   if (selected.size === 0) {
-    throw new Error('types ' + JSON.stringify(types) + ' 没有匹配到区间内的消息（cookie 不参与匹配）');
+    throw new Error('types ' + JSON.stringify(types) + ' matched no messages in the span (cookies never match)');
   }
   const indexes = [];
   for (const key of selected) indexes.push(...(members.get(key) ?? []));
@@ -178,7 +178,7 @@ function typeRangesFor(session, view, startIndex, endIndex, types) {
  * @returns {Array<{op: {new_text: string}, shadowed: number[]}>} 展开成一区间一项的结果。
  */
 export function resolveOps(session, rawOps, here) {
-  if (!Array.isArray(rawOps) || rawOps.length === 0) throw new Error('ops 必须是非空数组');
+  if (!Array.isArray(rawOps) || rawOps.length === 0) throw new Error('ops must be a non-empty array');
   const ops = rawOps.map((raw, i) => normalizeOp(raw, i));
   const nodes = surfaceNodes(session);
   const consumed = new Set();
@@ -200,7 +200,7 @@ export function resolveOps(session, rawOps, here) {
       try {
         ({ startIndex, endIndex } = resolveSpan(view, raw, here));
       } catch (error) {
-        throw new Error('段落 #' + i + '：' + error.message);
+        throw new Error('op #' + i + ': ' + error.message);
       }
       if (op.types.length > 0) {
         try {
@@ -212,7 +212,7 @@ export function resolveOps(session, rawOps, here) {
         // 滑到组合边界，保证不拆开工具对（组合边界永远是合法切口）。
         const lo = slideToGroupEdge(visible, profile, startIndex, 'start');
         const hi = slideToGroupEdge(visible, profile, endIndex, 'end');
-        if (lo > hi) throw new Error('段落 #' + i + '：区间 ' + JSON.stringify(raw) + ' 解析后是空的');
+        if (lo > hi) throw new Error('op #' + i + ': span ' + JSON.stringify(raw) + ' resolves to an empty range');
         ranges.push([lo, hi]);
       }
     }
@@ -220,7 +220,7 @@ export function resolveOps(session, rawOps, here) {
     ranges.sort((a, b) => a[0] - b[0]);
     for (let k = 1; k < ranges.length; k++) {
       if (ranges[k][0] <= ranges[k - 1][1]) {
-        throw new Error('段落 #' + i + ' 的两个区间重叠了（#' + ranges[k - 1][0] + '..#' + ranges[k - 1][1] +
+        throw new Error('op #' + i + ' has overlapping spans (#' + ranges[k - 1][0] + '..#' + ranges[k - 1][1] +
           ' 与 #' + ranges[k][0] + '..#' + ranges[k][1] + '）');
       }
     }
@@ -231,7 +231,7 @@ export function resolveOps(session, rawOps, here) {
         const endsAtIncompleteSelf = here?.selfComplete === false
           && here.thisEndSeq !== undefined
           && visible[ranges[k][1]] === here.thisEndSeq;
-        if (!endsAtIncompleteSelf) throw new Error('段落 #' + i + '：' + check.reason);
+        if (!endsAtIncompleteSelf) throw new Error('op #' + i + ': ' + check.reason);
       }
       for (const q of seqs) consumed.add(q);
       out.push({ op: { new_text: k === ranges.length - 1 ? op.new_text : '', ...(k === ranges.length - 1 && op.lock_this === true ? { lock_this: true } : {}) }, shadowed: seqs });
@@ -246,7 +246,7 @@ export function resolveOps(session, rawOps, here) {
     ? []
     : closureViolations({ surface: { nodes }, eventAt: (seq) => session.eventAt(seq) }, out.flatMap((entry) => entry.shadowed));
   if (closure.length > 0) {
-    throw new Error('内部不变量：投影区间没有整步闭合（' + closure.map((v) => v.unit + ' 遮了 ' + String(v.inside) + '/' + String(v.size)).join('，') + '）');
+    throw new Error('internal invariant: the projection range does not close whole step units (' + closure.map((v) => v.unit + ' hides ' + String(v.inside) + '/' + String(v.size)).join(', ') + ')');
   }
   return out;
 }

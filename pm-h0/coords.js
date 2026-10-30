@@ -287,7 +287,7 @@ export function checkBalanced(session, startIndex, endIndex) {
   const nodes = surfaceNodes(session);
   const startSeq = nodes[startIndex];
   const endSeq = nodes[endIndex];
-  if (startSeq === undefined || endSeq === undefined) return { ok: false, reason: '区间端点不在工作面上' };
+  if (startSeq === undefined || endSeq === undefined) return { ok: false, reason: 'span endpoints are not on the current surface' };
   const { before, after } = pairingMaps(session);
   const beforeOk = (before.get(startSeq) ?? 1) === 0;
   const afterOk = (after.get(endSeq) ?? 1) === 0;
@@ -297,7 +297,7 @@ export function checkBalanced(session, startIndex, endIndex) {
     ok: false,
     // 按注册表说出**是哪种组合**被拆开 —— 不写死 tool-call，
     // 将来加了新组合类型，错误信息自动跟上（见 grouping.js 的扩展指南）。
-    reason: '该区间会在' + which + '拆开' + describeGroupings() + '（真实供应商会拒绝）。请把区间对齐到组合边界。',
+    reason: 'this span would split ' + describeGroupings() + ' at ' + which + ' (real providers reject that). Align the span to the unit boundary.',
   };
 }
 

@@ -118,11 +118,11 @@ console.log(NL + '⑤ 校验：错误必须点名说清楚');
     '未知字段被拒绝');
   ok(msg(() => resolveOps(s, [{ spans: [] }], here)).includes('non-empty array'), '空 spans 被拒绝');
   ok(msg(() => resolveOps(s, [{ spans: [3] }], here)).includes('must be strings'), '非字符串区间被拒绝');
-  ok(msg(() => resolveOps(s, [{ spans: ['99'] }], here)).includes('找不到 99 号 cookie'), '不存在的 cookie 编号被点名');
-  ok(msg(() => resolveOps(s, [{ spans: ['(3,3)'] }], here)).includes('空的'), '空区间被拒绝');
-  ok(msg(() => resolveOps(s, [{ spans: ['[3,4'] }], here)).includes('没有闭合'), '括号不闭合被拒绝');
-  ok(msg(() => resolveOps(s, [{ spans: ['ck3'] }], here)).includes('不合法'), '非法端点被拒绝');
-  ok(msg(() => resolveOps(s, [{ spans: ['0'] }], here)).includes('从 1 开始'), '0 号被拒绝');
+  ok(msg(() => resolveOps(s, [{ spans: ['99'] }], here)).includes('cookie 99 not found'), '不存在的 cookie 编号被点名');
+  ok(msg(() => resolveOps(s, [{ spans: ['(3,3)'] }], here)).includes('empty'), '空区间被拒绝');
+  ok(msg(() => resolveOps(s, [{ spans: ['[3,4'] }], here)).includes('unclosed'), '括号不闭合被拒绝');
+  ok(msg(() => resolveOps(s, [{ spans: ['ck3'] }], here)).includes('invalid'), '非法端点被拒绝');
+  ok(msg(() => resolveOps(s, [{ spans: ['0'] }], here)).includes('start at 1'), '0 号被拒绝');
 }
 
 console.log(NL + '⑥ 切在工具块中间的区间：**自动扩到整块边界**，而不是被拒');
@@ -234,7 +234,7 @@ console.log(NL + '⑩ cookie 被遮蔽后，编号不漂移');
     '解析到的仍是 assistant+result 那一组');
   let err = '';
   try { resolveOps(s, [{ spans: ['(1,5)'] }], here); } catch (e) { err = e.message; }
-  ok(err.includes('找不到 1 号 cookie'), '引用已遮蔽的 cookie 会明确报错', err.slice(0, 60));
+  ok(err.includes('cookie 1 not found'), '引用已遮蔽的 cookie 会明确报错', err.slice(0, 60));
 }
 
 console.log(NL + '⑪ execute 不带 ops（ops: []）时内容完全来自 set');
