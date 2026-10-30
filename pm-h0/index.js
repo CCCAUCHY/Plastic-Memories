@@ -348,7 +348,7 @@ export function apply(ctx, config) {
         'the same unit. Therefore do NOT mix shaping work with task/tool work in the same assistant message/step: keep ' +
         'plasticize and task calls in separate units. ' +
 
-        'ROLE FILTER: an op may include roles=[...] (user, developer, assistant, error, letter). It narrows the resolved span to matching messages only: ' +
+        'TYPE FILTER: an op may include types=[...] (user, developer, assistant, error, letter). It narrows the resolved span to matching messages only: ' +
         'user/developer match that single message, while assistant/error/letter match the whole unit (assistant message + all its tool results) so no orphan is left. ' +
         'Cookie messages are never matched, even by user/developer. Matched units are hidden; the LAST matched unit receives new_text. ' +
 
@@ -380,10 +380,10 @@ export function apply(ctx, config) {
                 },
                 new_text: { type: 'string', description: 'The replacement message, placed at the LAST span. Empty string = pure hole (hide). Every earlier span is hidden automatically.' },
                 lock_this: { type: 'boolean', description: 'Default false. If true, lock the replacement message itself into the safety zone (it can never be reshaped afterwards).' },
-                roles: {
+                types: {
                   type: 'array',
                   items: { type: 'string', enum: ['user', 'developer', 'assistant', 'error', 'letter'] },
-                  description: 'Optional role filter applied INSIDE each resolved span: only messages of these roles are matched. user/developer match that single message; assistant/error/letter match the whole step unit (assistant message + its tool results). Cookie messages are NEVER matched, even by user/developer. All matched units are hidden except the last, which receives new_text.',
+                  description: 'Optional message-type filter applied INSIDE each resolved span: only messages of these types are matched. user/developer match that single message; assistant/error/letter match the whole step unit (assistant message + its tool results). Cookie messages are NEVER matched, even by user/developer. All matched units are hidden except the last, which receives new_text. Omit types to keep the old behavior: every message in the interval is matched.',
                 },
               },
               required: ['spans'],

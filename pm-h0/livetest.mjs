@@ -161,7 +161,7 @@ console.log(NL + '⑥ retrospect：只返回历史世代自己的上下文（结
   ok(typeof futureError === 'string', '当前/未来世代号被拒绝');
 }
 
-console.log(NL + '⑥.9 plasticize roles：区间内按角色匹配，cookie 不参与');
+console.log(NL + '⑥.9 plasticize types：区间内按类型匹配，cookie 不参与');
 {
   const buildRoleSession = () => {
     const s = mk();
@@ -177,11 +177,11 @@ console.log(NL + '⑥.9 plasticize roles：区间内按角色匹配，cookie 不
     cookieSeqs.push(s.append('user/message', cookieEvent(baseId + 1).data, { surfaceOp: 'append' }).seq);
     return { s, span: '[' + baseId + ',' + (baseId + 1) + ']', cookieSeqs };
   };
-  const run = (roles, marker) => {
+  const run = (types, marker) => {
     const { s, span } = buildRoleSession();
-    plasticizeCall(s, { turn: 99, step: 9 }, 'role-exec', { ops: [{ spans: [span], new_text: marker, roles }], option: 'execute' });
+    plasticizeCall(s, { turn: 99, step: 9 }, 'role-exec', { ops: [{ spans: [span], new_text: marker, types }], option: 'execute' });
     const r = flush(s, { openStep: { turn: 99, step: 9 } }, quiet);
-    ok(r.applied === 1, 'roles ' + JSON.stringify(roles) + ' 写入成功', JSON.stringify(r));
+    ok(r.applied === 1, 'types ' + JSON.stringify(types) + ' 写入成功', JSON.stringify(r));
     return s;
   };
 
@@ -204,9 +204,9 @@ console.log(NL + '⑥.9 plasticize roles：区间内按角色匹配，cookie 不
   ok(textOf(letters).includes('ROLE-USER') && textOf(letters).includes('ROLE-DEV'), '其他角色保留');
 
   const cookieCheck = buildRoleSession();
-  plasticizeCall(cookieCheck.s, { turn: 99, step: 9 }, 'role-cookie', { ops: [{ spans: [cookieCheck.span], new_text: '⟨ROLE-C⟩', roles: ['user'] }], option: 'execute' });
+  plasticizeCall(cookieCheck.s, { turn: 99, step: 9 }, 'role-cookie', { ops: [{ spans: [cookieCheck.span], new_text: '⟨ROLE-C⟩', types: ['user'] }], option: 'execute' });
   flush(cookieCheck.s, { openStep: { turn: 99, step: 9 } }, quiet);
-  ok(cookieCheck.cookieSeqs.every((seq) => cookieCheck.s.surface.nodes.includes(seq)), 'cookie 消息本身永远不被 roles 匹配');
+  ok(cookieCheck.cookieSeqs.every((seq) => cookieCheck.s.surface.nodes.includes(seq)), 'cookie 消息本身永远不被 types 匹配');
 }
 
 console.log(NL + '⑥.5 安全区：lock 后 plasticize 不能命中锁定区间');

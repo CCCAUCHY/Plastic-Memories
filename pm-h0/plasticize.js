@@ -17,8 +17,8 @@ import { isCookie } from './cookie.js';
 const NL = String.fromCharCode(10);
 
 /** 段落里允许出现的字段。 */
-const OP_FIELDS = new Set(['spans', 'new_text', 'lock_this', 'roles']);
-const ROLE_NAMES = new Set(['user', 'developer', 'assistant', 'error', 'letter']);
+const OP_FIELDS = new Set(['spans', 'new_text', 'lock_this', 'types']);
+const TYPE_NAMES = new Set(['user', 'developer', 'assistant', 'error', 'letter']);
 
 /**
  * 校验并归一化一个段落。
@@ -55,15 +55,15 @@ export function normalizeOp(raw, index) {
   if (typeof newText !== 'string') throw new Error('段落 #' + index + ' 的 new_text 必须是字符串');
   const lockThis = raw.lock_this === undefined ? false : raw.lock_this;
   if (typeof lockThis !== 'boolean') throw new Error('段落 #' + index + ' 的 lock_this 必须是布尔值');
-  const rawRoles = raw.roles === undefined ? [] : raw.roles;
-  if (!Array.isArray(rawRoles)) throw new Error('段落 #' + index + ' 的 roles 必须是数组');
-  const roles = [...new Set(rawRoles)];
-  for (const role of roles) {
-    if (typeof role !== 'string' || !ROLE_NAMES.has(role)) {
-      throw new Error('段落 #' + index + ' 的 roles 含未知角色 ' + JSON.stringify(role) + '；允许：' + [...ROLE_NAMES].join(', '));
+  const rawTypes = raw.types === undefined ? [] : raw.types;
+  if (!Array.isArray(rawTypes)) throw new Error('段落 #' + index + ' 的 types 必须是数组');
+  const types = [...new Set(rawTypes)];
+  for (const type of types) {
+    if (typeof type !== 'string' || !TYPE_NAMES.has(type)) {
+      throw new Error('段落 #' + index + ' 的 types 含未知类型 ' + JSON.stringify(type) + '；允许：' + [...TYPE_NAMES].join(', '));
     }
   }
-  return { spans: [...raw.spans], new_text: newText, lock_this: lockThis, roles };
+  return { spans: [...raw.spans], new_text: newText, lock_this: lockThis, types };
 }
 
 /** 取消息纯文本。 */
@@ -79,7 +79,7 @@ function textOf(message) {
 }
 
 /** 事件类型 → 可匹配角色（cookie 不参与匹配）。 */
-function directRoleOf(event) {
+function directTypeOf(event) {
   if (event === undefined || isCookie(event)) return undefined;
   if (event.type === 'user/message') return 'user';
   if (event.type === 'developer/message') return 'developer';
@@ -88,13 +88,13 @@ function directRoleOf(event) {
 }
 
 /**
- * 收集一个区间内按 roles 匹配到的完整步骤单元，返回合并后的连续下标区间。
+ * 收集一个区间内按 types 匹配到的完整步骤单元，返回合并后的连续下标区间。
  *
  * user / developer：匹配单个消息；assistant / error / letter：匹配整个
  * 「助手消息 + 工具结果」步骤单元（closure 要求整步隐藏）。
  * cookie 永远不参与匹配。
  */
-function roleRangesFor(session, view, startIndex, endIndex, roles) {
+function typeRangesFor(session, view, startIndex, endIndex, types) {
   const nodes = view.surface.nodes;
   const units = stepUnitsOf(view);
   const members = new Map();
@@ -107,10 +107,10 @@ function roleRangesFor(session, view, startIndex, endIndex, roles) {
     members.get(key).push(index);
     const event = view.eventAt(seq);
     if (event?.type === 'tool/result' && event.data?.message?.isError === true) errorUnits.add(key);
-    const role = directRoleOf(event);
+    const role = directTypeOf(event);
     if (role !== undefined) direct.set(index, role);
   }
-  const wanted = new Set(roles);
+  const wanted = new Set(types);
   // letter：扫描原生事件，标记含 letter 工具调用的单元。
   const letterSeq = [];
   const letterUnits = new Set();
@@ -138,13 +138,13 @@ function roleRangesFor(session, view, startIndex, endIndex, roles) {
     const event = view.eventAt(seq);
     if (event === undefined || isCookie(event)) continue;
     const key = units.get(seq);
-    const role = direct.get(index);
-    if (role !== undefined && wanted.has(role)) selected.add(key);
+    const type = direct.get(index);
+    if (type !== undefined && wanted.has(type)) selected.add(key);
     if (wanted.has('error') && errorUnits.has(key)) selected.add(key);
     if (wanted.has('letter') && letterUnits.has(key)) selected.add(key);
   }
   if (selected.size === 0) {
-    throw new Error('roles ' + JSON.stringify(roles) + ' 没有匹配到区间内的消息（cookie 不参与匹配）');
+    throw new Error('types ' + JSON.stringify(types) + ' 没有匹配到区间内的消息（cookie 不参与匹配）');
   }
   const indexes = [];
   for (const key of selected) indexes.push(...(members.get(key) ?? []));
@@ -202,9 +202,9 @@ export function resolveOps(session, rawOps, here) {
       } catch (error) {
         throw new Error('段落 #' + i + '：' + error.message);
       }
-      if (op.roles.length > 0) {
+      if (op.types.length > 0) {
         try {
-          ranges.push(...roleRangesFor(session, view, startIndex, endIndex, op.roles));
+          ranges.push(...typeRangesFor(session, view, startIndex, endIndex, op.types));
         } catch (error) {
           throw new Error('段落 #' + i + '：' + error.message);
         }
