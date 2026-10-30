@@ -42,6 +42,7 @@ export function pmSource(op) {
     op: op.op,
     ...(op.callId === undefined ? {} : { callId: op.callId }),
     generation: op.generation,
+    ...(op.logicalGeneration === undefined ? {} : { logicalGeneration: op.logicalGeneration }),
     ...(op.refs === undefined ? {} : { refs: Object.freeze([...op.refs]) }),
     ...(op.consumed === undefined ? {} : { consumed: Object.freeze([...op.consumed]) }),
     ...(op.note === undefined ? {} : { note: op.note }),

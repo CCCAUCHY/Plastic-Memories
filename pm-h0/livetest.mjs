@@ -14,7 +14,7 @@ import SessionStore from '/var/data/.npm/_npx/1e7f6d9597241db0/node_modules/@dee
 import { makeCounter, fixture, cookieSeed, cookieNodes, cookieEvent, textOf, openStep, plasticizeCall, makeStore } from './testkit.mjs';
 import { pairingMaps, snapshotSurface, stepGroup, indexOfCall, checkBalanced } from './coords.js';
 import { appendPluginRecord, snapshotSessionEvent } from '/var/data/.npm/_npx/1e7f6d9597241db0/node_modules/@deepseek-ai/dsh-session/lib/index.js';
-import { flush, stageUserOperation, flushUserOperations, clearStagedOperations, countLogicalGenerations, installPrivateRecordAppender, lockedSeqs, safetyZoneIntervals } from './engine.js';
+import { flush, stageUserOperation, flushUserOperations, clearStagedOperations, countLogicalGenerations, logicalGenerationGroups, installPrivateRecordAppender, lockedSeqs, safetyZoneIntervals } from './engine.js';
 import { retrospect } from './retrospect.js';
 
 const NL = String.fromCharCode(10);
@@ -207,6 +207,35 @@ console.log(NL + '⑥.9 plasticize types：区间内按类型匹配，cookie 不
   plasticizeCall(cookieCheck.s, { turn: 99, step: 9 }, 'role-cookie', { ops: [{ spans: [cookieCheck.span], new_text: '⟨ROLE-C⟩', types: ['user'] }], option: 'execute' });
   flush(cookieCheck.s, { openStep: { turn: 99, step: 9 } }, quiet);
   ok(cookieCheck.cookieSeqs.every((seq) => cookieCheck.s.surface.nodes.includes(seq)), 'cookie 消息本身永远不被 types 匹配');
+}
+
+console.log(NL + '⑥.10 逻辑世代标记：同号物理世代成组，第一个是边界');
+{
+  const s = mk();
+  openStep(s, 99, 1);
+  plasticizeCall(s, { turn: 99, step: 1 }, 'lg-1', {
+    ops: [
+      { spans: ['(3,4)'], new_text: '⟨LG-A⟩' },
+      { spans: ['(5,6)'], new_text: '⟨LG-B⟩' },
+    ],
+    option: 'execute',
+  });
+  const r = flush(s, { openStep: { turn: 99, step: 1 } }, quiet);
+  ok(r.applied === 1 && s.snapshotEvents().filter((e) => e.surfaceOp?.op === 'replace').length === 2, '一次 execute 写出两个物理世代', JSON.stringify(r));
+  const groups = logicalGenerationGroups(s);
+  ok(groups.length === 1 && groups[0].logical === 0, '同 logicalGeneration 的物理世代归为一组', JSON.stringify(groups));
+  ok(groups[0].lastPhysical === groups[0].firstPhysical + 1, '组内第二个物理世代是中间世代', JSON.stringify(groups[0]));
+  ok(countLogicalGenerations(s) === 1, '逻辑世代数为 1', String(countLogicalGenerations(s)));
+  const sources = s.snapshotEvents().filter((e) => e.surfaceOp?.op === 'replace').map((e) => (e.type === 'user/message' ? e.data?.source : e.data?.message?.source));
+  ok(sources.every((source) => Number.isSafeInteger(source.logicalGeneration)), '新替代消息都持久化 logicalGeneration 标记');
+
+  openStep(s, 99, 2);
+  plasticizeCall(s, { turn: 99, step: 2 }, 'lg-2', { ops: [{ spans: ['this'], new_text: '⟨LG-C⟩' }], option: 'execute' });
+  const r2 = flush(s, { openStep: { turn: 99, step: 2 } }, quiet);
+  ok(r2.applied === 1, '第二个逻辑世代写入', JSON.stringify(r2));
+  const groups2 = logicalGenerationGroups(s);
+  ok(groups2.length === 2 && groups2[1].logical === 1, '第二个逻辑世代单独成组', JSON.stringify(groups2));
+  ok(countLogicalGenerations(s) === 2, '逻辑世代数递增到 2', String(countLogicalGenerations(s)));
 }
 
 console.log(NL + '⑥.5 安全区：lock 后 plasticize 不能命中锁定区间');
