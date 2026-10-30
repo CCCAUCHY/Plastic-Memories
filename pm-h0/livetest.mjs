@@ -161,6 +161,54 @@ console.log(NL + '⑥ retrospect：只返回历史世代自己的上下文（结
   ok(typeof futureError === 'string', '当前/未来世代号被拒绝');
 }
 
+console.log(NL + '⑥.9 plasticize roles：区间内按角色匹配，cookie 不参与');
+{
+  const buildRoleSession = () => {
+    const s = mk();
+    openStep(s, 99, 1);
+    const baseId = Math.max(...cookieNodes(s).map((cookie) => cookie.id)) + 1;
+    const cookieSeqs = [];
+    cookieSeqs.push(s.append('user/message', cookieEvent(baseId).data, { surfaceOp: 'append' }).seq);
+    s.append('user/message', { id: 'role-u', role: 'user', content: [{ type: 'text', text: 'ROLE-USER' }], source: { kind: 'user' } }, { surfaceOp: 'append' });
+    s.append('developer/message', { message: { id: 'role-d', role: 'developer', content: [{ type: 'text', text: 'ROLE-DEV' }], source: { kind: 'runtime-context' } } }, { surfaceOp: 'append' });
+    plasticizeCall(s, { turn: 99, step: 2 }, 'role-bash', {}, { name: 'bash', resultText: 'ROLE-BASH' });
+    plasticizeCall(s, { turn: 99, step: 3 }, 'role-err', {}, { name: 'bash', resultText: 'ROLE-ERR', isError: true });
+    plasticizeCall(s, { turn: 99, step: 4 }, 'role-letter', { text: 'ROLE-LETTER' }, { name: 'letter', resultText: 'ROLE-LETTER' });
+    cookieSeqs.push(s.append('user/message', cookieEvent(baseId + 1).data, { surfaceOp: 'append' }).seq);
+    return { s, span: '[' + baseId + ',' + (baseId + 1) + ']', cookieSeqs };
+  };
+  const run = (roles, marker) => {
+    const { s, span } = buildRoleSession();
+    plasticizeCall(s, { turn: 99, step: 9 }, 'role-exec', { ops: [{ spans: [span], new_text: marker, roles }], option: 'execute' });
+    const r = flush(s, { openStep: { turn: 99, step: 9 } }, quiet);
+    ok(r.applied === 1, 'roles ' + JSON.stringify(roles) + ' 写入成功', JSON.stringify(r));
+    return s;
+  };
+
+  const assistants = run(['assistant'], '⟨ROLE-A⟩');
+  ok(!textOf(assistants).includes('ROLE-BASH') && !textOf(assistants).includes('ROLE-ERR'), 'assistant 角色隐藏了对应单元', textOf(assistants).slice(0, 80));
+  ok(textOf(assistants).includes('ROLE-USER') && textOf(assistants).includes('ROLE-DEV'), '非匹配角色保留');
+  ok(textOf(assistants).includes('⟨ROLE-A⟩'), '最后一个匹配单元得到 new_text');
+
+  const users = run(['user'], '⟨ROLE-U⟩');
+  ok(!textOf(users).includes('ROLE-USER'), 'user 角色只隐藏用户消息');
+  ok(textOf(users).includes('ROLE-DEV') && textOf(users).includes('ROLE-BASH'), '其他角色保留');
+  ok(textOf(users).includes('ROLE-LETTER'), 'letter 调用单元未被 user 角色连带');
+
+  const errors = run(['error'], '⟨ROLE-E⟩');
+  ok(!textOf(errors).includes('ROLE-ERR'), 'error 角色隐藏报错单元');
+  ok(textOf(errors).includes('ROLE-BASH') && textOf(errors).includes('ROLE-LETTER'), '其他工具单元保留');
+
+  const letters = run(['letter'], '⟨ROLE-L⟩');
+  ok(!textOf(letters).includes('ROLE-LETTER'), 'letter 角色隐藏 letter 单元');
+  ok(textOf(letters).includes('ROLE-USER') && textOf(letters).includes('ROLE-DEV'), '其他角色保留');
+
+  const cookieCheck = buildRoleSession();
+  plasticizeCall(cookieCheck.s, { turn: 99, step: 9 }, 'role-cookie', { ops: [{ spans: [cookieCheck.span], new_text: '⟨ROLE-C⟩', roles: ['user'] }], option: 'execute' });
+  flush(cookieCheck.s, { openStep: { turn: 99, step: 9 } }, quiet);
+  ok(cookieCheck.cookieSeqs.every((seq) => cookieCheck.s.surface.nodes.includes(seq)), 'cookie 消息本身永远不被 roles 匹配');
+}
+
 console.log(NL + '⑥.5 安全区：lock 后 plasticize 不能命中锁定区间');
 {
   const s = mk();

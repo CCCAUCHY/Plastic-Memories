@@ -8,15 +8,17 @@
  */
 
 import { projectNext, renderPreview } from './preview.js';
-import { closureViolations, openSetProfile, slideToGroupEdge } from './grouping.js';
+import { closureViolations, openSetProfile, slideToGroupEdge, stepUnitsOf } from './grouping.js';
 import { resolveSpan } from './spans.js';
 import { checkBalanced, derivedMessage, surfaceNodes } from './coords.js';
 import { pmSettledCallIds } from './markers.js';
+import { isCookie } from './cookie.js';
 
 const NL = String.fromCharCode(10);
 
 /** 段落里允许出现的字段。 */
-const OP_FIELDS = new Set(['spans', 'new_text', 'lock_this']);
+const OP_FIELDS = new Set(['spans', 'new_text', 'lock_this', 'roles']);
+const ROLE_NAMES = new Set(['user', 'developer', 'assistant', 'error', 'letter']);
 
 /**
  * 校验并归一化一个段落。
@@ -53,7 +55,15 @@ export function normalizeOp(raw, index) {
   if (typeof newText !== 'string') throw new Error('段落 #' + index + ' 的 new_text 必须是字符串');
   const lockThis = raw.lock_this === undefined ? false : raw.lock_this;
   if (typeof lockThis !== 'boolean') throw new Error('段落 #' + index + ' 的 lock_this 必须是布尔值');
-  return { spans: [...raw.spans], new_text: newText, lock_this: lockThis };
+  const rawRoles = raw.roles === undefined ? [] : raw.roles;
+  if (!Array.isArray(rawRoles)) throw new Error('段落 #' + index + ' 的 roles 必须是数组');
+  const roles = [...new Set(rawRoles)];
+  for (const role of roles) {
+    if (typeof role !== 'string' || !ROLE_NAMES.has(role)) {
+      throw new Error('段落 #' + index + ' 的 roles 含未知角色 ' + JSON.stringify(role) + '；允许：' + [...ROLE_NAMES].join(', '));
+    }
+  }
+  return { spans: [...raw.spans], new_text: newText, lock_this: lockThis, roles };
 }
 
 /** 取消息纯文本。 */
@@ -66,6 +76,86 @@ function textOf(message) {
     else if (block.type === 'tool-call') parts.push('[tool-call ' + String(block.name) + ']');
   }
   return parts.join(NL);
+}
+
+/** 事件类型 → 可匹配角色（cookie 不参与匹配）。 */
+function directRoleOf(event) {
+  if (event === undefined || isCookie(event)) return undefined;
+  if (event.type === 'user/message') return 'user';
+  if (event.type === 'developer/message') return 'developer';
+  if (event.type === 'assistant/message') return 'assistant';
+  return undefined;
+}
+
+/**
+ * 收集一个区间内按 roles 匹配到的完整步骤单元，返回合并后的连续下标区间。
+ *
+ * user / developer：匹配单个消息；assistant / error / letter：匹配整个
+ * 「助手消息 + 工具结果」步骤单元（closure 要求整步隐藏）。
+ * cookie 永远不参与匹配。
+ */
+function roleRangesFor(session, view, startIndex, endIndex, roles) {
+  const nodes = view.surface.nodes;
+  const units = stepUnitsOf(view);
+  const members = new Map();
+  const errorUnits = new Set();
+  const direct = new Map();
+  for (let index = 0; index < nodes.length; index += 1) {
+    const seq = nodes[index];
+    const key = units.get(seq);
+    if (!members.has(key)) members.set(key, []);
+    members.get(key).push(index);
+    const event = view.eventAt(seq);
+    if (event?.type === 'tool/result' && event.data?.message?.isError === true) errorUnits.add(key);
+    const role = directRoleOf(event);
+    if (role !== undefined) direct.set(index, role);
+  }
+  const wanted = new Set(roles);
+  // letter：扫描原生事件，标记含 letter 工具调用的单元。
+  const letterSeq = [];
+  const letterUnits = new Set();
+  if (wanted.has('letter')) {
+    for (const event of session.snapshotEvents()) {
+      const name = event.type === 'tool/call' || event.type === 'tool/ptc-dispatch-start' || event.type === 'tool/ptc-dispatch'
+        ? event.data?.name
+        : undefined;
+      if (name === 'letter') letterSeq.push(event.seq);
+      if (event.type === 'assistant/message' && Array.isArray(event.data?.message?.content)) {
+        for (const block of event.data.message.content) {
+          if (block?.type === 'tool-call' && block.name === 'letter') letterSeq.push(event.seq);
+        }
+      }
+    }
+    for (const [key, list] of members) {
+      const first = nodes[list[0]];
+      const last = nodes[list[list.length - 1]];
+      if (letterSeq.some((seq) => seq >= first && seq <= last)) letterUnits.add(key);
+    }
+  }
+  const selected = new Set();
+  for (let index = startIndex; index <= endIndex; index += 1) {
+    const seq = nodes[index];
+    const event = view.eventAt(seq);
+    if (event === undefined || isCookie(event)) continue;
+    const key = units.get(seq);
+    const role = direct.get(index);
+    if (role !== undefined && wanted.has(role)) selected.add(key);
+    if (wanted.has('error') && errorUnits.has(key)) selected.add(key);
+    if (wanted.has('letter') && letterUnits.has(key)) selected.add(key);
+  }
+  if (selected.size === 0) {
+    throw new Error('roles ' + JSON.stringify(roles) + ' 没有匹配到区间内的消息（cookie 不参与匹配）');
+  }
+  const indexes = [];
+  for (const key of selected) indexes.push(...(members.get(key) ?? []));
+  indexes.sort((left, right) => left - right);
+  const ranges = [];
+  for (const index of indexes) {
+    const last = ranges[ranges.length - 1];
+    if (last !== undefined && index === last[1] + 1) last[1] = index;
+    else ranges.push([index, index]);
+  }
+  return ranges;
 }
 
 /**
@@ -112,11 +202,19 @@ export function resolveOps(session, rawOps, here) {
       } catch (error) {
         throw new Error('段落 #' + i + '：' + error.message);
       }
-      // 滑到组合边界，保证不拆开工具对（组合边界永远是合法切口）。
-      const lo = slideToGroupEdge(visible, profile, startIndex, 'start');
-      const hi = slideToGroupEdge(visible, profile, endIndex, 'end');
-      if (lo > hi) throw new Error('段落 #' + i + '：区间 ' + JSON.stringify(raw) + ' 解析后是空的');
-      ranges.push([lo, hi]);
+      if (op.roles.length > 0) {
+        try {
+          ranges.push(...roleRangesFor(session, view, startIndex, endIndex, op.roles));
+        } catch (error) {
+          throw new Error('段落 #' + i + '：' + error.message);
+        }
+      } else {
+        // 滑到组合边界，保证不拆开工具对（组合边界永远是合法切口）。
+        const lo = slideToGroupEdge(visible, profile, startIndex, 'start');
+        const hi = slideToGroupEdge(visible, profile, endIndex, 'end');
+        if (lo > hi) throw new Error('段落 #' + i + '：区间 ' + JSON.stringify(raw) + ' 解析后是空的');
+        ranges.push([lo, hi]);
+      }
     }
     // 按位置排序 —— 替代文本落在最靠后的那个区间，其余全部隐藏。
     ranges.sort((a, b) => a[0] - b[0]);
