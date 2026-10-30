@@ -26,13 +26,13 @@ try { apply(ctx, { trace: false }); } catch (e) { applied = false; console.log('
 ok(applied, 'apply() 无异常');
 
 console.log(NL + '② 两个工具已注册且 schema 合法');
-const NAMES = ['plasticize', 'retrospect'];
+const NAMES = ['plasticize', 'retrospect', 'letter'];
 const defs = new Map();
 for (const n of NAMES) {
   const d = (() => { try { return ctx.tools.get(n); } catch { return undefined; } })();
   if (d !== undefined) defs.set(n, d);
 }
-ok(defs.size === 2, 'plasticize / retrospect 都已注册', [...defs.keys()].join(', '));
+ok(defs.size === 3, 'plasticize / retrospect / letter 都已注册', [...defs.keys()].join(', '));
 for (const [n, d] of defs) {
   const shapeOk = typeof d.description === 'string' && d.description.length > 40
     && d.parameters?.type === 'object'

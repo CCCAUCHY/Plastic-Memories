@@ -101,13 +101,14 @@ console.log(NL + '⑥ retrospect：只返回历史世代自己的上下文（结
 {
   const s = mk();
   openStep(s, 99, 1);
-  // set 预览也可以留 letter；它不产生任何 surfaceOp/私有数据。
-  plasticizeCall(s, { turn: 99, step: 1 }, 'letter-set', { ops: [{ spans: ['(3,4)'], new_text: '⟨预览⟩' }], option: 'set', letter: 'S: set 的话' });
+  // 独立 letter 工具：第一次成功 execute 之前的 letter 归入第 0 代。
+  const preLetter = plasticizeCall(s, { turn: 99, step: 1 }, 'letter-pre', { text: 'S: 第 0 代之前的话' }, { name: 'letter', resultText: '' });
+  const preIndex = s.surface.nodes.indexOf(preLetter.declSeq);
   // 时间快照夹在 cookie3 与 cookie4 之间 → (3,4) 精确遮掉它。
   const victim = s.eventAt(s.surface.nodes[6]);
   ok(victim.type === 'user/message', '目标是时间快照那条消息', victim.type);
   const keyword = victim.data.content[0].text.slice(0, 12);
-  plasticizeCall(s, { turn: 99, step: 1 }, 'hide-1', { ops: [{ spans: ['(3,4)'], new_text: '' }], option: 'execute', letter: 'L0: 第一代的话' });
+  plasticizeCall(s, { turn: 99, step: 1 }, 'hide-1', { ops: [{ spans: ['(3,4)'], new_text: '' }], option: 'execute' });
   const r = flush(s, { openStep: { turn: 99, step: 1 } }, quiet);
   ok(r.applied === 1, '空洞写入成功', JSON.stringify(r));
   ok(!s.surface.nodes.includes(6), '那条消息已离开工作面');
@@ -118,10 +119,13 @@ console.log(NL + '⑥ retrospect：只返回历史世代自己的上下文（结
   try { retrospect(s, { generation: 0 }); } catch (error) { currentError = error.message; }
   ok(typeof currentError === 'string' && currentError.includes('self'), '当前世代 self 拒绝查询', String(currentError).slice(0, 60));
 
-  // 第二代：产生历史世代 0。
+  // 第二代：先在第 0 代生命周期内留一条 letter（独立 step），再执行 execute。
   openStep(s, 99, 2);
-  plasticizeCall(s, { turn: 99, step: 2 }, 'hide-2', { ops: [{ spans: ['this'], new_text: '⟨第二代⟩' }], option: 'execute', letter: ['L1-A', 'L1-B'] });
-  const r2 = flush(s, { openStep: { turn: 99, step: 2 } }, quiet);
+  const zeroLetter = plasticizeCall(s, { turn: 99, step: 2 }, 'letter-zero', { text: 'L0: 第 0 代的话' }, { name: 'letter', resultText: '' });
+  const zeroIndex = s.surface.nodes.indexOf(zeroLetter.declSeq);
+  openStep(s, 99, 3);
+  plasticizeCall(s, { turn: 99, step: 3 }, 'hide-2', { ops: [{ spans: ['this'], new_text: '⟨第二代⟩' }], option: 'execute' });
+  const r2 = flush(s, { openStep: { turn: 99, step: 3 } }, quiet);
   ok(r2.applied === 1, '第二个逻辑世代写入成功', JSON.stringify(r2));
 
   const byNumber = JSON.parse(retrospect(s, { generation: 0 }));
@@ -131,14 +135,18 @@ console.log(NL + '⑥ retrospect：只返回历史世代自己的上下文（结
   ok(byNumber.count === afterFirst.length, '历史上下文 = 当时写入后的 surface', String(byNumber.count));
   ok(!byNumber.messages.some((message) => String(message.text).includes(keyword)), '历史世代上下文不含它隐藏的上一代原文');
   ok(byNumber.messages.some((message) => message.role === 'developer' && message.text === ''), '历史上下文包含该世代写出的空替代消息');
-  ok(JSON.stringify(byNumber.letter) === JSON.stringify(['S: set 的话', 'L0: 第一代的话']), 'letter 累积到该世代且不含未来 letter', JSON.stringify(byNumber.letter));
-  // 第三代：验证 letter 累积到该世代（第三代自己的 letter 不应出现在 gen1）。
-  openStep(s, 99, 3);
-  plasticizeCall(s, { turn: 99, step: 3 }, 'hide-3', { ops: [{ spans: ['this'], new_text: '⟨第三代⟩' }], option: 'execute', letter: 'L2' });
-  const r3 = flush(s, { openStep: { turn: 99, step: 3 } }, quiet);
+  ok(JSON.stringify(byNumber.letter) === JSON.stringify([{ index: preIndex, text: 'S: 第 0 代之前的话' }, { index: zeroIndex, text: 'L0: 第 0 代的话' }]), 'letter 只含第 0 代生命周期内的输入且带消息序号', JSON.stringify(byNumber.letter));
+
+  // 第三代：第 1 代生命周期内的 letter 归入 gen1（独立 step）。
+  openStep(s, 99, 4);
+  const oneLetter = plasticizeCall(s, { turn: 99, step: 4 }, 'letter-one', { text: 'L1: 第 1 代的话' }, { name: 'letter', resultText: '' });
+  const oneIndex = s.surface.nodes.indexOf(oneLetter.declSeq);
+  openStep(s, 99, 5);
+  plasticizeCall(s, { turn: 99, step: 5 }, 'hide-3', { ops: [{ spans: ['this'], new_text: '⟨第三代⟩' }], option: 'execute' });
+  const r3 = flush(s, { openStep: { turn: 99, step: 5 } }, quiet);
   ok(r3.applied === 1, '第三个逻辑世代写入成功', JSON.stringify(r3));
   const gen1 = JSON.parse(retrospect(s, { generation: 1 }));
-  ok(JSON.stringify(gen1.letter) === JSON.stringify(['S: set 的话', 'L0: 第一代的话', 'L1-A', 'L1-B']), 'letter 累积到 gen1 且不含 gen2 的 letter', JSON.stringify(gen1.letter));
+  ok(JSON.stringify(gen1.letter) === JSON.stringify([{ index: oneIndex, text: 'L1: 第 1 代的话' }]), 'letter 按逻辑世代归属，不跨代累积', JSON.stringify(gen1.letter));
 
   let againError = null;
   try { retrospect(s, { generation: 'self - 0' }); } catch (error) { againError = error.message; }

@@ -107,16 +107,19 @@ export function retrospectGeneration(session, generation) {
     if (event?.type === 'plugin:plastic-memories/logical' && Number.isSafeInteger(event.data?.logical)) return event.data.logical;
     if (event?.surfaceOp?.op !== 'replace') return undefined;
     const source = event.type === 'user/message' ? event.data?.source : event.data?.message?.source;
-    if (typeof source?.logicalGeneration === 'number') return source.logicalGeneration;
-    for (const candidate of [source?.callId, ...(Array.isArray(source?.consumed) ? source.consumed : [])]) {
+    if (source?.kind !== 'pm-surface') return undefined;
+    if (typeof source.logicalGeneration === 'number') return source.logicalGeneration;
+    for (const candidate of [source.callId, ...(Array.isArray(source.consumed) ? source.consumed : [])]) {
       if (typeof candidate === 'string' && info.byCallId.has(candidate)) return info.byCallId.get(candidate);
     }
-    let fallback;
-    for (const entry of info.executes) {
-      if (entry.seq <= event.seq) fallback = entry.logical; else break;
-    }
-    return fallback;
+    return undefined;
   };
+  const cutoffs = [];
+  for (const event of events) {
+    const logical = logicalOf(event);
+    if (logical !== undefined) cutoffs.push({ logical, seq: event.seq });
+  }
+  cutoffs.sort((left, right) => left.seq - right.seq);
 
   // 只查历史世代；normalizeGeneration 已拒绝当前/未来世代。
   let cutoff = -1;
@@ -135,25 +138,31 @@ export function retrospectGeneration(session, generation) {
       text: messageText(message),
     });
   }
-  return JSON.stringify({ logical: target, count: messages.length, messages, letter: lettersUpTo(events, cutoff) });
+  return JSON.stringify({ logical: target, count: messages.length, messages, letter: lettersOfGeneration(events, target, cutoffs) });
 }
 
-/** 从 plasticize 的 tool/call 参数里收集截至 cutoff 的 letter（无任何额外写入）。 */
-function lettersUpTo(events, cutoff) {
+/** 取某个逻辑世代生命周期内输入的全部 letter（按调用顺序，附消息序号）。 */
+function lettersOfGeneration(events, target, cutoffs) {
+  const generationAt = (seq) => {
+    let logical = 0; // 第一次成功 execute 之前：归入第 0 代
+    for (const cutoff of cutoffs) {
+      if (cutoff.seq < seq) logical = cutoff.logical; else break;
+    }
+    return logical;
+  };
   const out = [];
   for (const event of events) {
-    if (event.seq > cutoff) break;
-    if (event.type !== 'tool/call' || event.data?.name !== 'plasticize') continue;
+    if (event.type !== 'tool/call' || event.data?.name !== 'letter') continue;
+    if (generationAt(event.seq) !== target) continue;
     const raw = event.data?.arguments;
     let parsed = raw;
     if (typeof raw === 'string') {
       try { parsed = JSON.parse(raw); } catch { continue; }
     }
-    const letter = parsed?.letter;
-    const list = Array.isArray(letter) ? letter : [letter];
-    for (const entry of list) {
-      if (typeof entry === 'string' && entry.trim().length > 0) out.push(entry);
-    }
+    const text = parsed?.text;
+    if (typeof text !== 'string' || text.trim().length === 0) continue;
+    const surface = replaySurface(events, event.seq);
+    out.push({ index: surface.length - 1, text });
   }
   return out;
 }

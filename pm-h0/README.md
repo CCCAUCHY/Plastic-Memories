@@ -56,7 +56,7 @@
 
 ```bash
 dsh plugin --profile web2 add link:/绝对路径/可塑性记忆/pm-h0
-dsh plugin --profile web2 add file:/绝对路径/可塑性记忆/dist/dsh-plugin-plastic-memories-h0-0.31.0.tgz
+dsh plugin --profile web2 add file:/绝对路径/可塑性记忆/dist/dsh-plugin-plastic-memories-h0-0.32.0.tgz
 ```
 
 > ⚠️ **改了包内容必须冷启动**：宿主按裸包名缓存模块，热重载只换配置不换 JS。
@@ -102,7 +102,7 @@ dsh plugin --profile web2 add file:/绝对路径/可塑性记忆/dist/dsh-plugin
 > 不要把插件行搬回 bundle 的 `cordis.patch.yml`：那样所有模式都会加载 PM，
 > 而带自动压缩的模式会让压缩插件与 PM 争用同一个 surface（可行性报告 §5.14）。
 
-## 「世代」选项卡：官方轨迹页面的私有化复刻（v0.31.0+）
+## 「世代」选项卡：官方轨迹页面的私有化复刻（v0.32.0+）
 
 会话主区域的视图选项卡里新增 **世代**，紧贴 **轨迹** 之后（`order = 9000`：官方 Chat=0、
 轨迹=10，未来任何插件选项卡 order < 9000 都落在轨迹与世代之间 —— 世代始终最后）。
@@ -132,7 +132,7 @@ loader bundle **逐字节复制**进本包（`trajectory-vendor.js`），由 `bu
 2. `node build-client.mjs` —— 每个私有化补丁都必须命中，否则直接抛错（不会静默生成半成品）；
 3. `node versioncheck.mjs` + `npm test`。
 
-### 第一层 PM 图层：世代选择（v0.31.0+）
+### 第一层 PM 图层：世代选择（v0.32.0+）
 
 工具栏（时长 / 轮次 / 调用 那一行）**最右侧、搜索框左边**新增论坛式世代选择：
 
@@ -153,7 +153,7 @@ loader bundle **逐字节复制**进本包（`trajectory-vendor.js`），由 `bu
 > asOfSeq」当作字典，对官方快照做展示层过滤。DSH 本身没有「按世代取快照」的官方函数
 > （世代是 PM 自己的概念），所以没有可直接复用的官方投影函数；但也没有第二套投影语义。
 
-### 事实源与一致性：日志 → 官方投影 → 真实上下文 → 轨迹（v0.31.0+）
+### 事实源与一致性：日志 → 官方投影 → 真实上下文 → 轨迹（v0.32.0+）
 
 按「不要发明第二套转换算法」的原则，世代轨迹现在**不再过滤官方快照**，而是走一条链：
 
@@ -193,7 +193,7 @@ loader bundle **逐字节复制**进本包（`trajectory-vendor.js`），由 `bu
 
 **性能**：切世代需要重装配整个已加载窗口，超长会话可能有一瞬卡顿。
 
-### 相邻世代差异：已塑形折叠（A 形态，v0.31.0+）
+### 相邻世代差异：已塑形折叠（A 形态，v0.32.0+）
 
 - 只展示当前代与上一代的差异；第 0 代没有已塑形；
 - 差异 = 相邻两代官方可见面直接 diff：上一代可见面 ∩ 本代 replace 的 [startSeq,endSeq]，
@@ -216,7 +216,7 @@ loader bundle **逐字节复制**进本包（`trajectory-vendor.js`），由 `bu
 > `config.uiHost: true`）让浏览器发现 `client.js`；它只注册世代投影，不注册工具/命令。
 > 改完插件后**重启 dsh + 刷新页面**（客户端 bundle 不在热重载范围内）。
 
-## 用户侧命令（v0.31.0+）
+## 用户侧命令（v0.32.0+）
 
 输入框里以 `/` 开头，参数与工具**逐字段相同**（同一套 spans / ops 语法）：
 
@@ -247,24 +247,25 @@ dsh --profile web2 --port 3081
 启动时看两件事：
 
 1. **没有** `Cannot find package` / `patch: entry ... not found` 之类的告警；
-2. 会话的工具列表里出现 **plasticize** 与 **retrospect**（只有这两个）。
+2. 会话的工具列表里出现 **plasticize / retrospect / letter**（只有这三个）。
 
-会话模式选择器里应显示 **PM · 可塑记忆 v0.31.0**。机械验收步骤见 `../PM-机械测试脚本.md`。
+会话模式选择器里应显示 **PM · 可塑记忆 v0.32.0**。机械验收步骤见 `../PM-机械测试脚本.md`。
 
 ---
 
 ## 工具
 
-只有两个。旧版的 pm_hide / pm_stabilize / pm_rehydrate / pm_inspect / pm_status / cookie 已全部移除。
+只有三个。旧版的 pm_hide / pm_stabilize / pm_rehydrate / pm_inspect / pm_status / cookie 已全部移除。
 
 | 工具 | 作用 | 关键参数 |
 |---|---|---|
-| plasticize | **唯一**会改变工作面、产生新世代的工具（也能只预览）；可附带无副作用的 letter | ops / option / letter / also_execute_last_set |
-| retrospect | 只读**一个历史逻辑世代（严格 < self）**的上下文，返回完整结构化 JSON（含累积 letter）；当前世代不查 | generation（绝对编号或 self - N） |
+| plasticize | **唯一**会改变工作面、产生新世代的工具（也能只预览） | ops / option / also_execute_last_set |
+| letter | 无副作用地留一条给未来世代回看的便签；不是主动发送的消息，写/读都只在原生轨迹里 | text（一篇纯文本） |
+| retrospect | 只读**一个历史逻辑世代（严格 < self）**的上下文，返回完整结构化 JSON（含该世代 letter）；当前世代不查 | generation（绝对编号或 self - N） |
 
-### letter：无副作用的世代间便签
+### letter：交给未来世代回看的便签
 
-plasticize 支持可选 `letter`（字符串或字符串数组）。它只写入本次工具调用的原生轨迹，不写 surfaceOp、不写私有事件、不产生新世代；未来世代调 `retrospect({ generation })` 时，`letter` 数组会返回截至该世代的全部便签（按写入顺序累积），无需再逐代翻查旧记录。
+`letter` 是独立工具，一次输入一篇纯文本，工具结果为空（输入即结果）。它**不是**主动发给未来世代的消息，而是留在轨迹里等未来世代回看的便签；继承的前提是不影响未来世代：小范围稳定化或隐藏可以继承，大幅修改或已经过时的 letter 不建议继承。真正要引导未来世代的信息应写进塑形操作本身。`retrospect({ generation })` 的 `letter` 数组按调用顺序返回该逻辑世代的便签，每项形如 `{ index, text }`。
 
 ### cookie：自动插入的坐标
 
@@ -273,7 +274,7 @@ plasticize 支持可选 `letter`（字符串或字符串数组）。它只写入
 **规则一：提交边界的队尾永远保持一个 cookie。** 队尾不是 cookie 就补一个，是就什么都不做。
 它负责工具块之后的锚点，也负责「turn 末补一个 → 下一轮用户消息自然在它后面」。
 
-**规则二：每条用户主动发送的消息，前后各夹一条 cookie**（v0.31.0+）。
+**规则二：每条用户主动发送的消息，前后各夹一条 cookie**（v0.32.0+）。
 一次主动发送产生两条 cookie：
 
     … 助手回复 [cookie N] 用户亲口说的 [cookie N+1] 时间快照 助手 …
@@ -387,7 +388,7 @@ execute **成功时**，插件顺手为新世代隐藏两类纯噪音：
 cd pm-h0 && npm test
 ```
 
-17 套 / 597 条断言：
+17 套 / 600 条断言：
 
     selftest       61  区间语法 / this / 组扩展 / cookie 遮蔽后不漂移
     integration    22  工具注册、参数校验、宿主的 schema 校验器

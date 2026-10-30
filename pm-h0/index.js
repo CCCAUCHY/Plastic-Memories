@@ -346,11 +346,6 @@ export function apply(ctx, config) {
         'After a successful execute the plugin also hides the PM steps that are pure noise for the new generation: ' +
         'failed plasticize calls and fulfilled plasticize(set) previews. You do not have to clean those up yourself. ' +
 
-        'LETTERS FOR FUTURE GENERATIONS: optional letter (string or string[]) records durable notes in THIS ' +
-        'tool call trajectory only — no surfaceOp, no private plugin event, no generation. Future ' +
-        'retrospect({generation}) returns every letter written up to that generation in a letter array; ' +
-        'use it to leave hints instead of making later generations dig through old records. ' +
-
         'ONE OPERATION IS POINTLESS: spans ["this"] with new_text:"" as the ENTIRE operation. It hides only ' +
         'this call and its result with no replacement, so the net effect equals never making the call at all ' +
         '(and you cannot even see the receipt). Hiding this TOGETHER with other spans is fine and often useful. ' +
@@ -387,10 +382,6 @@ export function apply(ctx, config) {
             type: 'string',
             enum: ['set', 'execute'],
             description: 'set = preview only, writes nothing. execute = commit at the next boundary.',
-          },
-          letter: {
-            oneOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }],
-            description: 'Optional note(s) for future generations. Stored only in this tool call trajectory (no surfaceOp, no private data); future retrospect returns them. Multiple notes via an array.',
           },
           also_execute_last_set: {
             type: 'boolean',
@@ -445,10 +436,6 @@ export function apply(ctx, config) {
           parts.push('逻辑世代 ' + logicalGeneration + '（pm-logical-generation=' + logicalGeneration + '）；物理世代在提交边界产生，仅作参考。');
           for (const batch of batches) parts.push('  · ' + batch.from + '：' + batch.ops.length + ' 个段落');
         }
-        const rawLetter = args?.letter;
-        const letters = Array.isArray(rawLetter) ? rawLetter : typeof rawLetter === 'string' ? [rawLetter] : [];
-        const kept = letters.filter((entry) => typeof entry === 'string' && entry.trim().length > 0);
-        if (kept.length > 0) parts.push('已记录 ' + kept.length + ' 条 letter（仅存于本次调用轨迹，未来世代可由 retrospect 读取）。');
         return Promise.resolve({ text: parts.join(String.fromCharCode(10)) });
       },
     }),
@@ -463,7 +450,7 @@ export function apply(ctx, config) {
         'Pass generation as either an absolute logical generation number (0-based, e.g. 3) or the ' +
         'label form "self - N" (e.g. "self - 1"). The target MUST be strictly before self: the current ' +
         'generation is already visible in your input, so querying it is meaningless and rejected. ' +
-        'Returns a compact STRUCTURED JSON object: {logical, messages, count, letter}; each message is {role, text}. letter is a string[] of every note left through plasticize\'s optional letter field up to this generation (extracted from the native tool-call trajectory, no extra storage). messages is that generation\'s ' +
+        'Returns a compact STRUCTURED JSON object: {logical, messages, count, letter}; each message is {role, text}. letter is [{index, text}] for the notes input via the letter tool during THIS logical generation, in call order; index is the message position inside the generation at the time of the letter call. messages is that generation\'s ' +
         'surface context (full text, no truncation), ' +
         'reconstructed by replaying the log to that generation\'s last write; it does NOT include the material that ' +
         'generation hid (that material belonged to the previous generation). ' +
@@ -482,6 +469,32 @@ export function apply(ctx, config) {
       execute(args, exec) {
         const session = sessionOf(exec);
         return Promise.resolve({ text: retrospect(session, args ?? {}) });
+      },
+    }),
+  );
+
+  ctx.tools.register(
+    tool({
+      name: 'letter',
+      description:
+        'Leave a note for future generations. This is NOT a message actively sent to them: it is a note waiting for ' +
+        'them to look back. Inheritance must not affect future generations — a small stabilization or hide may carry ' +
+        'the note forward, but a major rewrite or a note that has become stale should NOT be inherited. Information ' +
+        'that must actually guide future generations belongs in the plasticization operations themselves, not here. ' +
+        'One plain-text letter per call. This tool has no side effects: it writes no surfaceOp and no private data; ' +
+        'the text lives only in this tool call trajectory. retrospect({generation}) returns the letters input during ' +
+        'that logical generation, in order, each with its in-generation message index.',
+      parameters: {
+        type: 'object',
+        properties: {
+          text: { type: 'string', description: 'The note to leave. One letter per call.' },
+        },
+        required: ['text'],
+      },
+      execute(args, exec) {
+        sessionOf(exec);
+        // 输入即结果：不再输出有意义的内容。
+        return Promise.resolve({ text: '' });
       },
     }),
   );
