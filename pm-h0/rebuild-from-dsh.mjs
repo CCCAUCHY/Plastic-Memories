@@ -156,7 +156,16 @@ const presetPath = join(here, 'presets', 'pm.patch.yml');
 const currentPreset = readFileSync(presetPath, 'utf8');
 const presetDrift = currentPreset !== derivedPreset;
 const trajectory = locateTrajectoryClient(dshRoot);
+const pluginPkgPath = join(here, 'package.json');
+const pluginPkg = readJson(pluginPkgPath);
+const officialClient = trajectory.pkg.dsh?.client ?? {};
+const officialInject = Array.isArray(officialClient.inject) ? officialClient.inject : [];
+if (officialInject.length === 0) fail('dsh-client-ui-trajectory package.json has no dsh.client.inject list; dependency contract changed');
+const currentInject = Array.isArray(pluginPkg.dsh?.client?.inject) ? pluginPkg.dsh.client.inject : [];
+const injectDrift = JSON.stringify(currentInject) !== JSON.stringify(officialInject);
+const platformDrift = pluginPkg.dsh?.client?.platform !== officialClient.platform;
 const expectedVendor = readFileSync(trajectory.file);
+
 const vendorPath = join(here, 'trajectory-vendor.js');
 const currentVendor = readFileSync(vendorPath);
 const vendorDrift = !currentVendor.equals(expectedVendor);
@@ -166,9 +175,11 @@ console.log('[rebuild-from-dsh] PTC preset: ' + ptcPath);
 console.log('[rebuild-from-dsh] trajectory client: ' + trajectory.file);
 console.log('[rebuild-from-dsh] pm preset drift: ' + (presetDrift ? 'YES' : 'no'));
 console.log('[rebuild-from-dsh] vendor drift: ' + (vendorDrift ? 'YES' : 'no'));
+console.log('[rebuild-from-dsh] client inject drift: ' + (injectDrift ? 'YES' : 'no'));
+console.log('[rebuild-from-dsh] client platform drift: ' + (platformDrift ? 'YES' : 'no'));
 
 if (check) {
-  if (presetDrift || vendorDrift) {
+  if (presetDrift || vendorDrift || injectDrift || platformDrift) {
     console.error('[rebuild-from-dsh] drift detected; run: node rebuild-from-dsh.mjs');
     process.exit(1);
   }
@@ -178,6 +189,21 @@ if (check) {
 
 if (presetDrift) writeFileSync(presetPath, derivedPreset);
 if (vendorDrift) writeFileSync(vendorPath, expectedVendor);
+if (injectDrift || platformDrift) {
+  const next = {
+    ...pluginPkg,
+    dsh: {
+      ...pluginPkg.dsh,
+      client: {
+        ...pluginPkg.dsh?.client,
+        platform: officialClient.platform,
+        inject: [...officialInject],
+      },
+    },
+  };
+  writeFileSync(pluginPkgPath, JSON.stringify(next, null, 2) + '\\n');
+  console.log('[rebuild-from-dsh] synced dsh.client.inject/platform from official trajectory package');
+}
 if (presetDrift || vendorDrift) {
   execFileSync(process.execPath, ['build-client.mjs'], { cwd: here, stdio: 'inherit' });
   execFileSync(process.execPath, ['versioncheck.mjs'], { cwd: here, stdio: 'inherit' });
