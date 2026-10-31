@@ -13,7 +13,7 @@
 import { assertSinglePendingPlasticize, logicalGenerationForCall, flush, flushUserOperations, pendingReport, assertResolvedUnlocked, installPrivateRecordAppender } from './engine.js';
 import { homedir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
-import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { registerCommands } from './commands.js';
 import { GENERATIONS_KEY, generationProjection } from './generations.js';
@@ -279,8 +279,14 @@ export function apply(ctx, config) {
 
   if (options.captureMessages) {
     const capture = createMessageCapture({ dir: captureDir, logger: ctx.logger });
-    ctx.on('llm/stream', (request, next) => {
+    const eventCtx = ctx.root ?? ctx;
+    const listener = (request, next) => {
       try {
+        appendFileSync(join(captureDir, '_events.log'), JSON.stringify({
+          time: Date.now(),
+          sessionId: typeof request?.sessionId === 'string' ? request.sessionId : null,
+          messageCount: Array.isArray(request?.messages) ? request.messages.length : null,
+        }) + String.fromCharCode(10));
         const sessionId = typeof request?.sessionId === 'string' ? request.sessionId : undefined;
         if (sessionId !== undefined) {
           const session = ctx.sessions.get(sessionId);
@@ -290,7 +296,15 @@ export function apply(ctx, config) {
         ctx.logger?.warn?.('[pm-h0] message capture failed: ' + String(error?.message ?? error));
       }
       return next();
-    }, { global: true });
+    };
+    if (typeof ctx.effect === 'function') {
+      ctx.effect(() => {
+        const dispose = eventCtx.on('llm/stream', listener, { global: true });
+        return () => { if (typeof dispose === 'function') dispose(); };
+      });
+    } else {
+      eventCtx.on('llm/stream', listener, { global: true });
+    }
   }
 
   // 工具/hook 之外的两件装配：世代投影（轨迹世代选择的数据）与用户侧 slash 命令。
