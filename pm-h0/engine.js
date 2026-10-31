@@ -984,6 +984,7 @@ export async function flushUserOperations(session, openStep, logger) {
   const allOp = list.find((entry) => entry.mode === 'all');
   const ranges = list.filter((entry) => entry.mode === 'range');
   let safety = 0;
+  let projections = 0;
   if (allOp !== undefined) {
     let seqs;
     if (allOp.kind === 'lock') seqs = nodes.filter((seq) => !locks.has(seq));
@@ -1015,7 +1016,6 @@ export async function flushUserOperations(session, openStep, logger) {
       await appendPrivateRecord(session, 'plugin:plastic-memories/locks', { op: group.kind, seqs: group.seqs, comment: group.comments.join('\n') });
       safety += 1;
     }
-    let projections = 0;
     const firstProjectionPhysical = session.surface.replaceGeneration + 1;
     for (const group of groups) {
       if (group.kind !== 'project') continue;
@@ -1037,25 +1037,23 @@ export async function flushUserOperations(session, openStep, logger) {
     if (projections > 0) {
       await appendPrivateRecord(session, 'plugin:plastic-memories/logical', { logical: base, physical: firstProjectionPhysical, kind: 'user-projection', count: projections, comment: groups.filter((group) => group.kind === 'project').flatMap((group) => group.comments).join('\n') });
     }
-    // prelock：把「触发本次落盘的那条用户消息」纳入安全区（准确 seq）。
-    if (prelock !== undefined) {
-      const candidates = session.snapshotEvents().filter((event) => event.type === 'user/message'
-        && event.data?.source?.kind === 'user' && event.seq >= prelock.atSeq);
-      const target = candidates[candidates.length - 1];
-      if (target !== undefined) {
-        await appendPrivateRecord(session, 'plugin:plastic-memories/locks', { op: 'lock', seqs: [target.seq], comment: prelock.comment ?? '' });
-        safety += 1;
-      } else {
-        logger?.warn?.('[pm-h0] prelock 没有找到触发落盘的用户消息，保留到下次。');
-        PENDING_USER_OPS.set(session, [prelock]);
-        return { projections, safety };
-      }
+  }
+  // prelock：把「触发本次落盘的那条用户消息」纳入安全区（准确 seq）。
+  if (prelock !== undefined) {
+    const candidates = session.snapshotEvents().filter((event) => event.type === 'user/message'
+      && event.data?.source?.kind === 'user' && event.seq >= prelock.atSeq);
+    const target = candidates[candidates.length - 1];
+    if (target !== undefined) {
+      await appendPrivateRecord(session, 'plugin:plastic-memories/locks', { op: 'lock', seqs: [target.seq], comment: prelock.comment ?? '' });
+      safety += 1;
+    } else {
+      logger?.warn?.('[pm-h0] prelock 没有找到触发落盘的用户消息，保留到下次。');
+      PENDING_USER_OPS.set(session, [prelock]);
+      return { projections, safety };
     }
-    PENDING_USER_OPS.delete(session);
-    return { projections, safety };
   }
   PENDING_USER_OPS.delete(session);
-  return { projections: 0, safety };
+  return { projections, safety };
 }
 
 /** 供 pm_status 用的诊断：列出待办声明。 */

@@ -126,6 +126,8 @@ console.log(NL + '⑥ retrospect：只返回历史世代自己的上下文（结
   openStep(s, 99, 2);
   const zeroLetter = plasticizeCall(s, { turn: 99, step: 2 }, 'letter-zero', { text: 'L0: 第 0 代的话' }, { name: 'letter', resultText: '' });
   const zeroIndex = s.surface.nodes.indexOf(zeroLetter.declSeq);
+  const ptcIndex = s.surface.nodes.length - 1;
+  s.append('tool/ptc-dispatch-start', { rootCallId: 'root-letter', parentCallId: 'root-letter', subCallId: 'root-letter:ptc:1', name: 'letter', arguments: { text: 'L0: PTC 的话' } });
   openStep(s, 99, 3);
   plasticizeCall(s, { turn: 99, step: 3 }, 'hide-2', { ops: [{ spans: ['this'], new_text: '⟨第二代⟩' }], option: 'execute' });
   const r2 = flush(s, { openStep: { turn: 99, step: 3 } }, quiet);
@@ -138,10 +140,11 @@ console.log(NL + '⑥ retrospect：只返回历史世代自己的上下文（结
   ok(byNumber.count === afterFirst.length, '历史上下文 = 当时写入后的 surface', String(byNumber.count));
   ok(!byNumber.messages.some((message) => String(message.text).includes(keyword)), '历史世代上下文不含它隐藏的上一代原文');
   ok(byNumber.messages.some((message) => message.role === 'developer' && message.text === ''), '历史上下文包含该世代写出的空替代消息');
-  ok(byNumber.letter.length === 2
+  ok(byNumber.letter.length === 3
     && byNumber.letter[0].index === preIndex && byNumber.letter[0].text === 'S: 第 0 代之前的话'
-    && byNumber.letter[1].index === zeroIndex && byNumber.letter[1].text === 'L0: 第 0 代的话',
-    'letter 只含第 0 代生命周期内的输入且带消息序号', JSON.stringify(byNumber.letter));
+    && byNumber.letter[1].index === zeroIndex && byNumber.letter[1].text === 'L0: 第 0 代的话'
+    && byNumber.letter[2].index === ptcIndex && byNumber.letter[2].text === 'L0: PTC 的话',
+    'letter 只含第 0 代生命周期内的输入（含 PTC 内层 letter）且带消息序号', JSON.stringify(byNumber.letter));
   ok(byNumber.messages.every((message) => Number.isSafeInteger(message.time)), 'messages 每项带底层日志时间');
   ok(byNumber.letter.every((entry) => Number.isSafeInteger(entry.time)), 'letter 每项带底层日志时间');
 
@@ -343,6 +346,17 @@ console.log(NL + '⑥.8 all / prelock / lock_this 与区间描述');
   const userMessage = s.append('user/message', { id: 'prelock-u', role: 'user', content: [{ type: 'text', text: '这条进入安全区' }], source: { kind: 'user' } }, { surfaceOp: 'append' });
   await flushUserOperations(s, { turn: 99, step: 1 }, quiet);
   ok(lockedSeqs(s).has(userMessage.seq), 'prelock 锁定触发落盘的用户消息', String(userMessage.seq));
+}
+{
+  const s = mk();
+  openStep(s, 99, 1);
+  stageUserOperation(s, { kind: 'lock', mode: 'all' });
+  stageUserOperation(s, { kind: 'lock', mode: 'prelock' });
+  const first = await flushUserOperations(s, { turn: 99, step: 1 }, quiet);
+  ok(first.safety === 1, 'lock all 与 prelock 同批时先落盘 lock all', JSON.stringify(first));
+  const trigger = s.append('user/message', { id: 'prelock-all-u', role: 'user', content: [{ type: 'text', text: '触发 prelock 的用户消息' }], source: { kind: 'user' } }, { surfaceOp: 'append' });
+  const second = await flushUserOperations(s, { turn: 99, step: 2 }, quiet);
+  ok(second.safety === 1 && lockedSeqs(s).has(trigger.seq), 'lock all 同批的 prelock 在用户消息落盘后仍生效', JSON.stringify({ safety: second.safety, locked: lockedSeqs(s).has(trigger.seq) }));
 }
 {
   const s = mk();

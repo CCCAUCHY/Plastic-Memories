@@ -142,9 +142,18 @@ function lettersOfGeneration(events, target, cutoffs) {
   };
   const out = [];
   for (const event of events) {
-    if (event.type !== 'tool/call' || event.data?.name !== 'letter') continue;
+    let name;
+    let raw;
+    if (event.type === 'tool/call') {
+      name = event.data?.name;
+      raw = event.data?.arguments;
+    } else if (event.type === 'tool/ptc-dispatch-start') {
+      // PTC 内层调用的 call 记在 dispatch-start 上，surface 上没有 tool/call。
+      name = event.data?.name;
+      raw = event.data?.arguments;
+    } else continue;
+    if (name !== 'letter') continue;
     if (generationAt(event.seq) !== target) continue;
-    const raw = event.data?.arguments;
     let parsed = raw;
     if (typeof raw === 'string') {
       try { parsed = JSON.parse(raw); } catch { continue; }
