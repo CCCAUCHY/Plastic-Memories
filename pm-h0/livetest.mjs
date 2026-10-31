@@ -14,7 +14,7 @@ import SessionStore from '/var/data/.npm/_npx/1e7f6d9597241db0/node_modules/@dee
 import { makeCounter, fixture, cookieSeed, cookieNodes, cookieEvent, textOf, openStep, plasticizeCall, makeStore } from './testkit.mjs';
 import { pairingMaps, snapshotSurface, stepGroup, indexOfCall, checkBalanced } from './coords.js';
 import { appendPluginRecord, snapshotSessionEvent } from '/var/data/.npm/_npx/1e7f6d9597241db0/node_modules/@deepseek-ai/dsh-session/lib/index.js';
-import { flush, stageUserOperation, flushUserOperations, clearStagedOperations, countLogicalGenerations, assertSinglePendingPlasticize, assertResolvedUnlocked, installPrivateRecordAppender, lockedSeqs, safetyZoneIntervals } from './engine.js';
+import { flush, stageUserOperation, flushUserOperations, clearStagedOperations, countLogicalGenerations, logicalGenerationForCall, assertSinglePendingPlasticize, assertResolvedUnlocked, installPrivateRecordAppender, lockedSeqs, safetyZoneIntervals } from './engine.js';
 import { initState, applyEvent, viewOf } from './generations.js';
 import { retrospect } from './retrospect.js';
 
@@ -242,6 +242,11 @@ console.log(NL + '⑥.10 逻辑世代标记：同号物理世代成组，第一�
   const pages2 = viewOf(state).logicalPages;
   ok(JSON.stringify(pages2) === JSON.stringify([{ logical: 0, physical: 1 }, { logical: 1, physical: 3 }]), '逻辑页码：中间物理世代不生成新逻辑页', JSON.stringify(pages2));
   ok(countLogicalGenerations(s) === 2, '逻辑世代数递增到 2', String(countLogicalGenerations(s)));
+  openStep(s, 99, 3);
+  plasticizeCall(s, { turn: 99, step: 3 }, 'lg-set', { ops: [{ spans: ['(3,4)'], new_text: '⟨SET⟩' }], option: 'set' });
+  openStep(s, 99, 4);
+  plasticizeCall(s, { turn: 99, step: 4 }, 'lg-3', { ops: [{ spans: ['(5,6)'], new_text: '⟨LG-D⟩' }], option: 'execute' });
+  ok(logicalGenerationForCall(s, 'lg-3') === 2, 'pending set 不占用逻辑世代号，tool 结果应为 2', String(logicalGenerationForCall(s, 'lg-3')));
 }
 
 console.log(NL + '⑥.11 同一 run_code/助手消息只允许一条 plasticize');

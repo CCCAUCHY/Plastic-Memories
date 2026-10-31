@@ -1089,11 +1089,11 @@ export function pendingReport(session) {
 export function logicalGenerationForCall(session, callId) {
   const state = stateOf(session);
   scanNew(session, state);
-  let applied = countLogicalGenerations(session);
+  const applied = countLogicalGenerations(session);
   const pending = [];
   for (const declaration of state.declarations) {
     if (declaration.args?.option !== 'execute') continue;
-    if (state.appliedCallIds.has(declaration.callId)) { applied += 1; continue; }
+    if (state.appliedCallIds.has(declaration.callId)) continue;
     if (state.failedCallIds.has(declaration.callId)) continue;
     pending.push(declaration);
   }
