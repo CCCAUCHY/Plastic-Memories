@@ -93,7 +93,7 @@ console.log(NL + '③ execute 用**新内容**时，覆盖 set（不是叠加）
   const s = mk();
   plasticizeCall(s, { turn: 2, step: 1 }, 'za-set3', { ops: [{ spans: ['(1,5)'], new_text: '⟨旧的⟩' }], option: 'set' });
   step2(s);
-  plasticizeCall(s, { turn: 2, step: 2 }, 'za-exec3', { ops: [{ spans: ['(5,6)'], new_text: '⟨新的⟩' }], option: 'execute' });
+  plasticizeCall(s, { turn: 2, step: 2 }, 'za-exec3', { ops: [{ spans: ['(5,6)'], new_text: '⟨新的⟩' }], option: 'execute', also_execute_last_set: false });
   flush(s, { openStep: { turn: 2, step: 2 } }, quiet);
   const t = textOf(s);
   ok(t.includes('⟨新的⟩'), '新内容生效');

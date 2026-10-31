@@ -49,17 +49,31 @@ console.log(NL + '① execute 成功后：成功的 set 步骤组被自动隐藏
   step2(s);
   plasticizeCall(s, { turn: 2, step: 2 }, 'ah-exec', { ops: [{ spans: ['(5,6)'], new_text: '⟨结论⟩' }], option: 'execute' });
   const r = flush(s, { openStep: { turn: 2, step: 2 } }, quiet);
-  ok(r.applied === 1, 'execute 落地', JSON.stringify(r));
+  ok(r.applied === 2, 'execute 默认连带兑现 set（2 条声明落地）', JSON.stringify(r));
   ok(r.auto === 1, '自动隐藏了 1 组', JSON.stringify(r));
-  ok(explicitReps(s).length === 1, '显式投影 1 条', String(explicitReps(s).length));
+  ok(explicitReps(s).length === 2, '显式投影 2 条', String(explicitReps(s).length));
   const autos = autoReps(s);
   const autoMsg = autos[0] === undefined ? undefined : (autos[0].data?.message ?? autos[0].data);
   ok(autos.length === 1 && autos[0].type === 'developer/message' && Array.isArray(autoMsg?.content) && autoMsg.content.length === 0, '自动隐藏写的是空 developer 消息', autos[0] === undefined ? '0' : String(autos[0].type));
   ok(noteOf(autos[0]) === 'auto-hide:set', '原因标记为 set', String(noteOf(autos[0])));
   ok(autos[0].sourceEventSeqs.includes(setSeq), '遮蔽的正是 set 那一步的调用消息');
   ok(!s.surface.nodes.includes(setSeq), 'set 消息已离开工作面');
-  ok(textOf(s).includes('⟨结论⟩'), '显式投影生效');
-  ok(!textOf(s).includes('⟨预览⟩'), '预览文本没有进入新世代');
+  ok(textOf(s).includes('⟨结论⟩') && textOf(s).includes('⟨预览⟩'), 'set 被兑现，预览文本与 execute 文本都进入新世代');
+}
+
+console.log(NL + '①b execute 成功后：成功的 letter 步骤组也被自动隐藏');
+{
+  const s = mk();
+  plasticizeCall(s, { turn: 2, step: 1 }, 'ah-letter', { text: 'LETTER-AH' }, { name: 'letter', resultText: 'Registered.' });
+  const letterSeq = seqOfCall(s, 'ah-letter');
+  ok(letterSeq !== undefined, '找到 letter 调用消息', String(letterSeq));
+  step2(s);
+  plasticizeCall(s, { turn: 2, step: 2 }, 'ah-letter-exec', { ops: [{ spans: ['(5,6)'], new_text: '⟨LETTER 后⟩' }], option: 'execute' });
+  const r = flush(s, { openStep: { turn: 2, step: 2 } }, quiet);
+  ok(r.applied === 1 && r.auto === 1, 'execute 落地并隐藏 letter 单元', JSON.stringify(r));
+  const autos = autoReps(s);
+  ok(autos.length === 1 && noteOf(autos[0]) === 'auto-hide:letter', '原因标记为 letter', String(noteOf(autos[0])));
+  ok(!s.surface.nodes.includes(letterSeq) && !textOf(s).includes('LETTER-AH'), 'letter 单元离开工作面', String(s.surface.nodes.includes(letterSeq)));
 }
 
 console.log(NL + '② 报错的 PM 步骤组，在下一次成功的 execute 时被隐藏');
@@ -108,7 +122,7 @@ console.log(NL + '③ 混合步骤也会整体自动隐藏（只要含成功的 
   step2(s);
   plasticizeCall(s, { turn: 2, step: 2 }, 'ah-exec2', { ops: [{ spans: ['(5,6)'], new_text: '⟨结论⟩' }], option: 'execute' });
   const r = flush(s, { openStep: { turn: 2, step: 2 } }, quiet);
-  ok(r.applied === 1, 'execute 落地', JSON.stringify(r));
+  ok(r.applied === 2, 'execute 默认连带兑现混合 set（2 条声明落地）', JSON.stringify(r));
   const autos = autoReps(s);
   ok(autos.length === 1, '混合 set 步骤被自动隐藏', String(autos.length));
   ok(noteOf(autos[0]) === 'auto-hide:set', '原因标记为 set', String(noteOf(autos[0])));
@@ -193,7 +207,7 @@ console.log(NL + '④ autoHide:false 时完全不隐藏');
   step2(s);
   plasticizeCall(s, { turn: 2, step: 2 }, 'ah-exec4', { ops: [{ spans: ['(5,6)'], new_text: '⟨结论⟩' }], option: 'execute' });
   const r = flush(s, { openStep: { turn: 2, step: 2 }, autoHide: false }, quiet);
-  ok(r.applied === 1, 'execute 落地', JSON.stringify(r));
+  ok(r.applied === 2, 'execute 默认连带兑现 set（2 条声明落地）', JSON.stringify(r));
   ok(r.auto === 0, 'autoHide:false 时不自动隐藏', JSON.stringify(r));
   ok(autoReps(s).length === 0, '没有自动隐藏事件', String(autoReps(s).length));
   const setSeq = seqOfCall(s, 'ah-set4');
@@ -222,7 +236,7 @@ console.log(NL + '⑥ 没有打开的 step 时自动隐藏推迟，下一个边�
   plasticizeCall(s, { turn: 2, step: 1 }, 'ah-set6', { ops: [{ spans: ['(1,5)'], new_text: '⟨预览⟩' }], option: 'set' });
   flush(s, { openStep: { turn: 2, step: 1 } }, quiet);
   step2(s);
-  plasticizeCall(s, { turn: 2, step: 2 }, 'ah-exec6', { ops: [{ spans: ['(5,6)'], new_text: '⟨结论⟩' }], option: 'execute' });
+  plasticizeCall(s, { turn: 2, step: 2 }, 'ah-exec6', { ops: [{ spans: ['(5,6)'], new_text: '⟨结论⟩' }], option: 'execute', also_execute_last_set: false });
   // 边界不知道 step 开着（turn 末的兜底调用就是这样）：显式投影可写，空洞要推迟。
   const r1 = flush(s, { openStep: undefined }, quiet);
   ok(r1.applied === 1 && r1.auto === 0, '第一拍：显式投影落地，自动隐藏推迟', JSON.stringify(r1));

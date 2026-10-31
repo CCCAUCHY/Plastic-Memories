@@ -405,10 +405,10 @@ export function apply(ctx, config) {
         "An assistant message and its tool results form one unit. A span that cuts through such a unit is widened to the unit boundary, so no orphan call or result is left; the replaced range may therefore be larger than the span you named.",
         "OPS. Each op has spans and new_text. Every span is hidden except the last by position, which is replaced by new_text. An empty new_text is a pure hole (hide). One op may cover several disjoint ranges.",
         "TYPES. An op may include types=[...] (user, developer, assistant, error, letter) to restrict matching inside the span. user and developer match one message; assistant, error and letter match the whole unit (assistant message plus its tool results). Cookie messages never match, even as user or developer. Matched units are hidden; the last matched unit is replaced by new_text. If types is omitted, every message in the interval matches, cookies included.",
-        "MODES. option:\"set\" previews and writes nothing. option:\"execute\" commits at the next submission boundary. Only ONE plasticize call is allowed per run_code program (or per assistant message); set and execute count the same. Do not issue two plasticize calls before the next boundary. also_execute_last_set is optional: when an execute call sets it true, the most recent unexecuted set is committed as well. A set result states whether this condition applies.",
+        "MODES. option:\"set\" previews and writes nothing. option:\"execute\" commits at the next submission boundary. Only ONE plasticize call is allowed per run_code program (or per assistant message); set and execute count the same. Do not issue two plasticize calls before the next boundary. also_execute_last_set defaults to true: an execute commits the most recent unexecuted set as well; pass false to leave it pending. The field is not valid on set. A set result states whether committing is available.",
         "lock_this:true locks the replacement message itself into the safety zone; default false.",
         "SAFETY ZONE. Locked messages cannot be reshaped. A span that intersects the safety zone fails and reports the locked region as cookie intervals; the user can unlock it with /plasticize unlock.",
-        "AUTO-HIDE. After a successful execute, whole units (assistant message plus all its tool results) that contain a failed call to any Plastic Memories tool (plasticize, retrospect, letter) or a fulfilled plasticize(set) preview are auto-hidden. Other tools mixed into the same unit are hidden with it.",
+        "AUTO-HIDE. After a successful execute, whole units (assistant message plus all its tool results) written before that execute are auto-hidden when they contain a failed call to any Plastic Memories tool (plasticize, retrospect, letter), any plasticize(set) preview (fulfilled or not), or any successful letter. Other tools mixed into the same unit are hidden with it. The execute receipt itself remains visible.",
         "WEAK OPERATION. spans [\"this\"] with an empty new_text as the ENTIRE operation hides only this call and its result; its net effect equals not making the call. A long run of cookie messages can indicate that this has happened repeatedly. Hiding this together with other spans is useful; to hide a target step, use its cookie interval.",
       ].join(String.fromCharCode(10) + String.fromCharCode(10)),
       parameters: {
@@ -448,7 +448,7 @@ export function apply(ctx, config) {
           },
           also_execute_last_set: {
             type: 'boolean',
-            description: 'Default false. Only valid with option:execute. When true, also commits the most recent unexecuted set.',
+            description: 'Default true. Only valid with option:execute. When true, also commits the most recent unexecuted set; set false to leave it pending.',
           },
         },
         required: ['ops', 'option'],
@@ -457,7 +457,7 @@ export function apply(ctx, config) {
         const session = sessionOf(exec);
         const option = args?.option;
         if (option !== 'set' && option !== 'execute') throw new Error('option must be "set" or "execute"');
-        if (option === 'set' && args?.also_execute_last_set === true) {
+        if (option === 'set' && args?.also_execute_last_set !== undefined) {
           throw new Error('also_execute_last_set is only valid with option:"execute"');
         }
         assertSinglePendingPlasticize(session, exec.callId);
@@ -469,10 +469,9 @@ export function apply(ctx, config) {
 
         const parts = [];
         const batches = [];
-        if (option === 'execute' && args?.also_execute_last_set === true) {
+        if (option === 'execute' && args?.also_execute_last_set !== false) {
           const pending = findLastPendingSet(session);
-          if (pending === undefined) parts.push('No unexecuted set to commit; also_execute_last_set was ignored.');
-          else {
+          if (pending !== undefined) {
             // **零点属于写下这条 ops 的那条 plasticize（set）**，与 engine 的 flush 一致。
             // 预览与落实必须同源，否则「看过的」和「落实的」不是同一个。
             const pendingGroup = stepGroupFor(session, { callId: pending.callId });
@@ -494,7 +493,7 @@ export function apply(ctx, config) {
           const pv = previewOf(session, flat, exec.callId);
           parts.push('Preview only (not committed). The next generation would contain ' + pv.messageCount + ' messages:');
           parts.push(pv.text);
-          parts.push('To commit this preview, call plasticize with option:"execute" and also_execute_last_set:true while this is still the most recent unexecuted set. Otherwise rewrite ops completely, not incrementally.');
+          parts.push('To commit this preview, call plasticize with option:"execute" while this is still the most recent unexecuted set; it is committed automatically unless also_execute_last_set:false. Otherwise rewrite ops completely, not incrementally.');
         } else {
           // 只登记：真正写入由 flush 在提交边界做（见 engine.js 的说明）。
           let total = 0;

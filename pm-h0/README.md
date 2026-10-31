@@ -56,7 +56,7 @@
 
 ```bash
 dsh plugin --profile web2 add link:/绝对路径/可塑性记忆/pm-h0
-dsh plugin --profile web2 add file:/绝对路径/可塑性记忆/dist/dsh-plugin-plastic-memories-h0-0.46.1.tgz
+dsh plugin --profile web2 add file:/绝对路径/可塑性记忆/dist/dsh-plugin-plastic-memories-h0-0.47.0.tgz
 ```
 
 > ⚠️ **改了包内容必须冷启动**：宿主按裸包名缓存模块，热重载只换配置不换 JS。
@@ -118,7 +118,7 @@ dsh plugin --profile web2 add file:/绝对路径/可塑性记忆/dist/dsh-plugin
 |---|---|---|---|---|
 | plasticize | `ops` | 是 | — | 操作数组 |
 | plasticize | `option` | 是 | — | `"set"` / `"execute"` |
-| plasticize | `also_execute_last_set` | 否 | `false` | 仅 execute 可用；true 时连带兑现最近未执行 set |
+| plasticize | `also_execute_last_set` | 否 | `true` | 仅 execute 可用；true 时连带兑现最近未执行 set；false 则保留待决 |
 | ops[] | `spans` | 是 | — | 区间字符串数组 |
 | ops[] | `new_text` | 否 | `""` | 替代文本；空串 = 纯隐藏 |
 | ops[] | `lock_this` | 否 | `false` | 替代文本自身纳入安全区 |
@@ -148,7 +148,7 @@ dsh plugin --profile web2 add file:/绝对路径/可塑性记忆/dist/dsh-plugin
 - `captureDir` 指定目录（相对 session cwd）；
 - 日志含完整提示词，按敏感数据保存。
 
-## 「世代」选项卡：官方轨迹页面的私有化复刻（v0.46.1+）
+## 「世代」选项卡：官方轨迹页面的私有化复刻（v0.47.0+）
 
 会话主区域的视图选项卡里新增 **世代**，紧贴 **轨迹** 之后（`order = 9000`：官方 Chat=0、
 轨迹=10，未来任何插件选项卡 order < 9000 都落在轨迹与世代之间 —— 世代始终最后）。
@@ -178,7 +178,7 @@ loader bundle **逐字节复制**进本包（`trajectory-vendor.js`），由 `bu
 2. `node build-client.mjs` —— 每个私有化补丁都必须命中，否则直接抛错（不会静默生成半成品）；
 3. `node versioncheck.mjs` + `npm test`。
 
-### 第一层 PM 图层：世代选择（v0.46.1+）
+### 第一层 PM 图层：世代选择（v0.47.0+）
 
 工具栏（时长 / 轮次 / 调用 那一行）**最右侧、搜索框左边**新增论坛式世代选择：
 
@@ -208,7 +208,7 @@ loader bundle **逐字节复制**进本包（`trajectory-vendor.js`），由 `bu
 > asOfSeq」当作字典，对官方快照做展示层过滤。DSH 本身没有「按世代取快照」的官方函数
 > （世代是 PM 自己的概念），所以没有可直接复用的官方投影函数；但也没有第二套投影语义。
 
-### 事实源与一致性：日志 → 官方投影 → 真实上下文 → 轨迹（v0.46.1+）
+### 事实源与一致性：日志 → 官方投影 → 真实上下文 → 轨迹（v0.47.0+）
 
 按「不要发明第二套转换算法」的原则，世代轨迹现在**不再过滤官方快照**，而是走一条链：
 
@@ -248,7 +248,7 @@ loader bundle **逐字节复制**进本包（`trajectory-vendor.js`），由 `bu
 
 **性能**：切世代需要重装配整个已加载窗口，超长会话可能有一瞬卡顿。
 
-### 相邻世代差异：已塑形折叠（A 形态，v0.46.1+）
+### 相邻世代差异：已塑形折叠（A 形态，v0.47.0+）
 
 - 只展示当前代与上一代的差异；第 0 代没有已塑形；
 - 差异 = 相邻两代官方可见面直接 diff：上一代可见面 ∩ 本代 replace 的 [startSeq,endSeq]，
@@ -271,7 +271,7 @@ loader bundle **逐字节复制**进本包（`trajectory-vendor.js`），由 `bu
 > `config.uiHost: true`）让浏览器发现 `client.js`；它只注册世代投影，不注册工具/命令。
 > 改完插件后**重启 dsh + 刷新页面**（客户端 bundle 不在热重载范围内）。
 
-## 用户侧命令（v0.46.1+）
+## 用户侧命令（v0.47.0+）
 
 输入框里以 `/` 开头，参数与工具**逐字段相同**（同一套 spans / ops 语法）：
 
@@ -304,7 +304,7 @@ dsh --profile web2 --port 3081
 1. **没有** `Cannot find package` / `patch: entry ... not found` 之类的告警；
 2. 会话的工具列表里出现 **plasticize / retrospect / letter**（只有这三个）。
 
-会话模式选择器里应显示 **PM · 可塑记忆 v0.46.1**。机械验收步骤见 `../PM-机械测试脚本.md`。
+会话模式选择器里应显示 **PM · 可塑记忆 v0.47.0**。机械验收步骤见 `../PM-机械测试脚本.md`。
 
 ---
 
@@ -333,7 +333,7 @@ plasticize 的每个 op 可加 `types` 数组：`user` / `developer` / `assistan
 **规则一：提交边界的队尾永远保持一个 cookie。** 队尾不是 cookie 就补一个，是就什么都不做。
 它负责工具块之后的锚点，也负责「turn 末补一个 → 下一轮用户消息自然在它后面」。
 
-**规则二：每条用户主动发送的消息，前后各夹一条 cookie**（v0.46.1+）。
+**规则二：每条用户主动发送的消息，前后各夹一条 cookie**（v0.47.0+）。
 一次主动发送产生两条 cookie：
 
     … 助手回复 [cookie N] 用户亲口说的 [cookie N+1] 时间快照 助手 …
@@ -396,19 +396,21 @@ plasticize({
 - **"set"** —— 只算预览并返回下一代的逐条消息，**什么都不写**。
 - **"execute"** —— 登记，由 flush 在**提交边界**写入。
 
-配合 `also_execute_last_set: true`，一次 execute 可以连带落实最近一条未执行的 set。
+`also_execute_last_set` 默认 true：一次 execute 自动连带落实最近一条未执行的 set；传 false 才保留待决。
 **零点属于写下这条 ops 的那条 plasticize**：所以 set 之后用 execute **原样重传同一条 ops**，
 就会落实你看过的那个预览 —— 尤其是 `this`（execute 自己的 this 与 set 的 this 不是同一个位置）。
 
 ### 自动隐藏
 
-execute **成功时**，插件顺手为新世代隐藏两类纯噪音：
+execute **成功时**，插件为新世代隐藏排在这次 execute 之前的：
 
-1. **报错的 PM 步骤组**（失败调用只会污染下一个世代）
-2. **成功的 plasticize(set) 步骤组**（预览已兑现，留着会让模型以为还没执行）
+1. **报错的 PM 工具步骤组**（失败调用只会污染下一个世代）
+2. **所有 plasticize(set) 步骤组**（不论是否兑现；execute 后它们不再与 execute 前操作满足交换律）
+3. **所有成功的 letter 步骤组**（便签只供未来世代检索，不占当前推理上下文）
 
-硬约束：**只动纯 PM 步骤组** —— 那一步里若还有 bash / write 之类的工作成果，
-连带隐藏会毁掉模型的工作，所以宁可留着噪音。可用 `autoHide: false` 关闭。
+排在最近一次成功 execute **之后**的新 set / letter / 失败调用不动，等下一次 execute。
+混合步骤也会整体隐藏 —— 只要单元里含上述任一调用。execute 的「已登记」回执保留。
+可用 `autoHide: false` 关闭。
 
 ### 硬约束
 
@@ -438,7 +440,7 @@ execute **成功时**，插件顺手为新世代隐藏两类纯噪音：
   config:
     trace: false          # 诊断：每次边界后打一行摘要
     probeImports: false   # 诊断：启动时探测能否解析 @deepseek-ai 运行时包
-    autoHide: true        # execute 成功时自动隐藏含 set/报错 PM 调用的整个步骤组
+    autoHide: true        # execute 成功时自动隐藏其前的 set / 成功 letter / 报错 PM 单元
 ```
 
 ---
@@ -449,7 +451,7 @@ execute **成功时**，插件顺手为新世代隐藏两类纯噪音：
 cd pm-h0 && npm test
 ```
 
-17 套 / 646 条断言：
+17 套 / 649 条断言：
 
     selftest       61  区间语法 / this / 组扩展 / cookie 遮蔽后不漂移
     integration    22  工具注册、参数校验、宿主的 schema 校验器
@@ -462,7 +464,7 @@ cd pm-h0 && npm test
     zeroanchor     21  this 的零点属于 set；cookie 端点没有零点问题；去重后不重复执行
     groupingtest   13  组合抽象本身
     cookietest     59  cookie 编号 / 文本 / 按 ID 解析 / 身份不误认 / planCookie / 用户消息夹层
-    autohide       55  自动隐藏（只在 execute 成功时清理；待决预览不吞）
+    autohide       61  自动隐藏（其前所有 set / 成功 letter / 报错 PM；待决预览不吞）
     uitest         89  vendored 轨迹私有化 / 世代选择 / 事件级过滤 / 已塑形差异 / 快照缓存 / 内嵌视图
     diffcheck       4  逐世代与官方 surface fold 差分校验（影子会话重放日志前缀）
     versioncheck   67  版本号演进 + 打包完整性 + 文档一致性 + 安装元数据 + 会话隔离 + 私有化轨迹 + PM 图层
@@ -483,7 +485,7 @@ cd pm-h0 && npm test
 | **不新增事件类型** | `KNOWN_SESSION_EVENT_TYPES` 硬编码，重启时拒绝未知类型。全部投影都用既有类型 + `surfaceOp` |
 | **失败的声明会一直 pending** | 它不阻塞其它声明（各自独立解析），但每次边界都会重试一次并只告警一次 |
 | **未挂 compaction** | PM 应是会话内**唯一**的 surface 改写者 |
-| **自动隐藏命中含 set/报错 PM 调用的整组** | 其他工具若混在同一步，也会被一起隐藏；应分开执行 |
+| **自动隐藏命中含 set / 成功 letter / 报错 PM 调用的整组** | 其他工具若混在同一步，也会被一起隐藏；应分开执行 |
 
 ---
 

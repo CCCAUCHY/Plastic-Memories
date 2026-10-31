@@ -200,12 +200,12 @@ console.log(NL + '⑥.9 plasticize types：区间内按类型匹配，cookie 不
 
   const users = run(['user'], '⟨ROLE-U⟩');
   ok(!textOf(users).includes('ROLE-USER'), 'user 角色只隐藏用户消息');
-  ok(textOf(users).includes('ROLE-DEV') && textOf(users).includes('ROLE-BASH'), '其他角色保留');
-  ok(textOf(users).includes('ROLE-LETTER'), 'letter 调用单元未被 user 角色连带');
+  ok(textOf(users).includes('ROLE-DEV') && textOf(users).includes('ROLE-BASH'), '其他角色/工具保留');
+  ok(!textOf(users).includes('ROLE-LETTER'), '成功的 letter 单元已被 execute 的自动隐藏清掉');
 
   const errors = run(['error'], '⟨ROLE-E⟩');
   ok(!textOf(errors).includes('ROLE-ERR'), 'error 角色隐藏报错单元');
-  ok(textOf(errors).includes('ROLE-BASH') && textOf(errors).includes('ROLE-LETTER'), '其他工具单元保留');
+  ok(textOf(errors).includes('ROLE-BASH') && !textOf(errors).includes('ROLE-LETTER'), '其他工具保留，letter 已被自动隐藏');
 
   const letters = run(['letter'], '⟨ROLE-L⟩');
   ok(!textOf(letters).includes('ROLE-LETTER'), 'letter 角色隐藏 letter 单元');

@@ -298,6 +298,7 @@ function autoHideTargets(session, state, claimed, settledBefore, locks) {
   const callNames = new Map();
   const roots = new Map();
   const failures = [];
+  const successes = [];
   for (const event of session.snapshotEvents()) {
     if (event.type === 'assistant/message' && Array.isArray(event.data?.message?.content)) {
       for (const block of event.data.message.content) {
@@ -310,13 +311,17 @@ function autoHideTargets(session, state, claimed, settledBefore, locks) {
         if (typeof event.data?.name === 'string') callNames.set(event.data.subCallId, event.data.name);
         if (typeof event.data?.rootCallId === 'string') roots.set(event.data.subCallId, event.data.rootCallId);
       }
-    } else if (event.type === 'tool/result' && event.data?.message?.isError === true) {
-      const callId = resultCallIdOf(event.data.message);
-      if (typeof callId === 'string') failures.push({ callId, seq: event.seq });
-    } else if (event.type === 'tool/ptc-dispatch' && event.data?.isError === true) {
+    } else if (event.type === 'tool/result') {
+      const callId = resultCallIdOf(event.data?.message ?? {});
+      if (typeof callId === 'string') {
+        if (event.data?.message?.isError === true) failures.push({ callId, seq: event.seq });
+        else if (callNames.get(callId) === 'letter') successes.push({ callId, seq: event.seq });
+      }
+    } else if (event.type === 'tool/ptc-dispatch') {
       if (typeof event.data?.subCallId === 'string') {
         if (typeof event.data?.name === 'string') callNames.set(event.data.subCallId, event.data.name);
-        failures.push({ callId: event.data.subCallId, seq: event.seq });
+        if (event.data?.isError === true) failures.push({ callId: event.data.subCallId, seq: event.seq });
+        else if (callNames.get(event.data.subCallId) === 'letter') successes.push({ callId: event.data.subCallId, seq: event.seq });
       }
     }
   }
@@ -336,6 +341,23 @@ function autoHideTargets(session, state, claimed, settledBefore, locks) {
     if (seqs.some((seq) => claimed.has(seq))) continue;
     seen.add(key);
     out.push({ shadowed: seqs, reason: 'error', callId: failure.callId });
+    for (const seq of seqs) claimed.add(seq);
+  }
+  // successful letters are notes for future generations, not current context
+  for (const success of successes) {
+    if (success.seq > settledBefore) continue;
+    const owner = roots.get(success.callId) ?? splitCallId(success.callId).ownerCallId;
+    const group = stepGroup(session, owner);
+    if (group === undefined || group.complete !== true) continue;
+    const seqs = nodes.slice(group.startIndex, group.endIndex + 1);
+    if (seqs.length === 0) continue;
+    const key = seqs.join(',');
+    if (seen.has(key)) continue;
+    if (!seqs.every((seq) => visible.has(seq))) continue;
+    if (locks !== undefined && locks.size > 0 && seqs.some((seq) => locks.has(seq))) continue;
+    if (seqs.some((seq) => claimed.has(seq))) continue;
+    seen.add(key);
+    out.push({ shadowed: seqs, reason: 'letter', callId: success.callId });
     for (const seq of seqs) claimed.add(seq);
   }
   return out;
@@ -806,7 +828,7 @@ export function flush(session, options, logger) {
     if (d.args?.option !== 'execute') continue;
     if (isDone(state, d)) continue;
     let anchor;
-    if (d.args?.also_execute_last_set === true) {
+    if (d.args?.also_execute_last_set !== false) {
       const pending = findLastPendingSet(state.declarations, d);
       if (pending !== undefined && !isDone(state, pending)) {
         if (!todo.includes(pending)) todo.push(pending);
