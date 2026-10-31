@@ -5590,7 +5590,7 @@ window.__ModuleLoader__.load({
 									});
 								}
 							}, trajectoryVirtualRecordKey(record))),
-							...(Array.from({ length: 20 }, (_, pmIndex) => (0, react_jsx_runtime.jsx)("tr", { key: "pm-blank-" + String(pmIndex), children: (0, react_jsx_runtime.jsx)("td", { colSpan: 2, style: { height: 30 } }) }))), virtualBottom > 0 && (0, react_jsx_runtime.jsx)("tr", {
+							virtualBottom > 0 && (0, react_jsx_runtime.jsx)("tr", {
 								className: TrajectoryTable_module_css_default.virtualSpacer,
 								"data-virtual-spacer": "bottom",
 								"aria-hidden": "true",

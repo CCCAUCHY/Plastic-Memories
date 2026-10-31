@@ -198,11 +198,6 @@ export function applyExtraPatches(patched) {
   text = text.split('globalThis.__PM_UI__.diffNativeTag(props.cell)').join('globalThis.__PM_UI__.diffNativeTag(props.cell, props.t)');
   // 10. 修复：恢复原生类型标签时少了类名之间的空格，导致彩色药丸样式失效。
   text = text.split('${TrajectoryTable_module_css_default.kindTag}${record.cell.kind === "system"').join('${TrajectoryTable_module_css_default.kindTag} ${record.cell.kind === "system"');
-  // 11. 真实空行：世代表底部追加 20 条空 <tr>，让滚动空间足够（不是 padding）。
-  const spacerAnchor = 'virtualBottom > 0 && (0, react_jsx_runtime.jsx)("tr", {';
-  if (text.split(spacerAnchor).length - 1 !== 1) throw new Error('extra patch: virtual bottom spacer not found');
-  const blanks = '...(Array.from({ length: 20 }, (_, pmIndex) => (0, react_jsx_runtime.jsx)("tr", { key: "pm-blank-" + String(pmIndex), children: (0, react_jsx_runtime.jsx)("td", { colSpan: 2, style: { height: 30 } }) }))), ';
-  text = text.split(spacerAnchor).join(blanks + spacerAnchor);
   // 14. 布局排序（layoutEntryOrder）也改用官方 surface 顺序。
   const pmLayoutFind = "return entry.kind === \"system\" && entry.change.kind === \"initial\" ? Number.NEGATIVE_INFINITY : entry.seq;";
   const pmLayoutRepl = "if (entry.kind === \"system\" && entry.change.kind === \"initial\") return Number.NEGATIVE_INFINITY; const pmLayoutOrder = globalThis.__PM_SEQ_ORDER__; if (pmLayoutOrder !== void 0 && pmLayoutOrder !== null && pmLayoutOrder.has(entry.seq)) return pmLayoutOrder.get(entry.seq); return entry.seq;";
