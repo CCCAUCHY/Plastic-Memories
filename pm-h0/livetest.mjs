@@ -18,6 +18,7 @@ import { flush, stageUserOperation, flushUserOperations, clearStagedOperations, 
 import { initState, applyEvent, viewOf } from './generations.js';
 import { retrospect } from './retrospect.js';
 import { createMessageCapture } from './capture.js';
+import { normalizeOp, OP_DEFAULTS } from './plasticize.js';
 
 const NL = String.fromCharCode(10);
 const { ok, done } = makeCounter('livetest');
@@ -368,6 +369,13 @@ console.log(NL + '⑥.8 all / prelock / lock_this 与区间描述');
   const replacement = s.snapshotEvents().find((event) => event.surfaceOp?.op === 'replace' && event.data?.message?.source?.op === 'stabilize');
   ok(replacement !== undefined && lockedSeqs(s).has(replacement.seq), 'lock_this 把替代文本自身纳入安全区', String(replacement?.seq));
   ok(safetyZoneIntervals(s).includes('孤立消息'), '孤立锁定点用文本锚描述', safetyZoneIntervals(s).slice(0, 80));
+}
+
+console.log(NL + '⓪.4 工具 op 默认值集中在一处');
+{
+  const op = normalizeOp({ spans: ['3'] }, 0);
+  ok(op.new_text === OP_DEFAULTS.new_text && op.lock_this === OP_DEFAULTS.lock_this && Array.isArray(op.types) && op.types.length === 0,
+    '省略 new_text/lock_this/types 时取统一默认值', JSON.stringify({ new_text: op.new_text, lock_this: op.lock_this, types: op.types }));
 }
 
 console.log(NL + '⓪.5 只读抓取：模型实际收到的 messages 原样落盘');

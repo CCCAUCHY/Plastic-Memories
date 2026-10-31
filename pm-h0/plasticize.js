@@ -20,6 +20,9 @@ const NL = String.fromCharCode(10);
 const OP_FIELDS = new Set(['spans', 'new_text', 'lock_this', 'types']);
 const TYPE_NAMES = new Set(['user', 'developer', 'assistant', 'error', 'letter']);
 
+/** 所有 op 可选字段的唯一默认值来源。 */
+export const OP_DEFAULTS = Object.freeze({ new_text: '', lock_this: false, types: [] });
+
 /**
  * 校验并归一化一个段落。
  *
@@ -51,11 +54,11 @@ export function normalizeOp(raw, index) {
       throw new Error('op #' + index + ' spans entries must be strings (span text), got ' + JSON.stringify(one));
     }
   }
-  const newText = raw.new_text === undefined ? '' : raw.new_text;
+  const newText = raw.new_text === undefined ? OP_DEFAULTS.new_text : raw.new_text;
   if (typeof newText !== 'string') throw new Error('op #' + index + ' new_text must be a string');
-  const lockThis = raw.lock_this === undefined ? false : raw.lock_this;
+  const lockThis = raw.lock_this === undefined ? OP_DEFAULTS.lock_this : raw.lock_this;
   if (typeof lockThis !== 'boolean') throw new Error('op #' + index + ' lock_this must be a boolean');
-  const rawTypes = raw.types === undefined ? [] : raw.types;
+  const rawTypes = raw.types === undefined ? OP_DEFAULTS.types : raw.types;
   if (!Array.isArray(rawTypes)) throw new Error('op #' + index + ' types must be an array');
   const types = [...new Set(rawTypes)];
   for (const type of types) {

@@ -77,8 +77,8 @@ function normalizeConfig(raw, logger) {
     // UI 宿主行（bundle 级）：只注册世代投影并让浏览器发现客户端半身；
     // 不注册工具/命令 —— 那是 PM 会话模式（preset 行）的事。
     uiHost: cfg.uiHost === true,
-    // 测试证据：把每次真实请求的 messages 追加到 <session.cwd>/.pm-capture/<sessionId>.jsonl。
-    captureMessages: cfg.captureMessages !== false,
+    // 调试选项（默认关闭）：把每次真实请求的 messages 追加到 <session.cwd>/.pm-capture/<sessionId>.jsonl。
+    captureMessages: cfg.captureMessages === true,
     captureDir: typeof cfg.captureDir === 'string' && cfg.captureDir.length > 0 ? cfg.captureDir : '.pm-capture',
   };
 }
@@ -425,20 +425,17 @@ export function apply(ctx, config) {
                 // 只认 type / properties / required / additionalProperties / items / enum / const / oneOf。
                 // minItems / maxItems 会直接被 assertSupportedJsonSchema 拒绝 —— 不要加。
                 // 数量约束（2..16）在 resolveEndpoint 里做。
-                // 注意：宿主的 JSON Schema 子集是**封闭白名单**（dsh-tools/json-schema）：
-                // 只认 type / properties / required / additionalProperties / items / enum / const / oneOf。
-                // minItems / maxItems 会被 assertSupportedJsonSchema 拒绝 —— 不要加。
                 spans: {
                   type: 'array',
                   items: { type: 'string' },
-                  description: "Cookie ranges. Forms: '3' (one point), '[3,4]' closed, '(3,4)' open, '[3,4)' or '(3,4]' half-open, 'this' (the assistant message that made this call plus its tool results). A span cutting an assistant-message-plus-tool-results unit is widened to the unit boundary. Every span is hidden except the last, which is replaced by new_text.",
+                  description: "Required. Cookie ranges. Forms: '3' (one point), '[3,4]' closed, '(3,4)' open, '[3,4)' or '(3,4]' half-open, 'this' (the assistant message that made this call plus its tool results). A span cutting an assistant-message-plus-tool-results unit is widened to the unit boundary. Every span is hidden except the last, which is replaced by new_text.",
                 },
-                new_text: { type: 'string', description: 'Placed at the LAST span: the replacement message. Empty string = pure hole (hide). Earlier spans are hidden automatically.' },
+                new_text: { type: 'string', description: 'Default: "" (pure hole/hide). Placed at the LAST span: the replacement message. Earlier spans are hidden automatically.' },
                 lock_this: { type: 'boolean', description: 'Default false. If true, lock the replacement message itself into the safety zone (it can never be reshaped afterwards).' },
                 types: {
                   type: 'array',
                   items: { type: 'string', enum: ['user', 'developer', 'assistant', 'error', 'letter'] },
-                  description: 'Optional type filter inside each resolved span: user/developer match one message; assistant/error/letter match the whole unit (assistant message + its tool results). Cookie messages never match, even as user/developer. Matched units are hidden; the last matched unit is replaced by new_text. If omitted, every message in the interval matches, cookies included.',
+                  description: 'Default: [] (no filter). Type filter inside each resolved span: user/developer match one message; assistant/error/letter match the whole unit (assistant message + its tool results). Cookie messages never match, even as user/developer. Matched units are hidden; the last matched unit is replaced by new_text. If omitted or empty, every message in the interval matches, cookies included.',
                 },
               },
               required: ['spans'],
@@ -447,11 +444,11 @@ export function apply(ctx, config) {
           option: {
             type: 'string',
             enum: ['set', 'execute'],
-            description: 'set = preview only, writes nothing. execute = commit at the next boundary.',
+            description: 'Required. set = preview only, writes nothing. execute = commit at the next boundary.',
           },
           also_execute_last_set: {
             type: 'boolean',
-            description: 'Optional with option:execute. When true, also commits the most recent unexecuted set.',
+            description: 'Default false. Only valid with option:execute. When true, also commits the most recent unexecuted set.',
           },
         },
         required: ['ops', 'option'],
@@ -532,7 +529,7 @@ export function apply(ctx, config) {
         properties: {
           generation: {
             oneOf: [{ type: 'integer' }, { type: 'string' }],
-            description: 'Past logical generation: absolute number (e.g. 3) or "self - N" (e.g. "self - 1"). Must be < self.',
+            description: 'Required. Past logical generation: absolute number (e.g. 3) or "self - N" (e.g. "self - 1"). Must be < self.',
           },
         },
         required: ['generation'],
@@ -554,7 +551,7 @@ export function apply(ctx, config) {
       parameters: {
         type: 'object',
         properties: {
-          text: { type: 'string', description: 'The note to leave. One letter per call.' },
+          text: { type: 'string', description: 'Required. The note to leave. One letter per call.' },
         },
         required: ['text'],
       },
