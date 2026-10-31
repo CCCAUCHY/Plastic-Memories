@@ -13,7 +13,7 @@
 import { assertSinglePendingPlasticize, logicalGenerationForCall, flush, flushUserOperations, pendingReport, assertResolvedUnlocked, installPrivateRecordAppender } from './engine.js';
 import { homedir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
-import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { registerCommands } from './commands.js';
 import { GENERATIONS_KEY, generationProjection } from './generations.js';
@@ -68,31 +68,54 @@ const KNOWN_CONFIG_KEYS = new Set(['trace', 'autoHide', 'uiHost', 'captureMessag
  * @param {object} ctx - 插件上下文。
  * @returns {string|undefined} .pm 目录。
  */
-function resolveProfileStateDir(ctx) {
+function profileHomes() {
+  const homes = new Set();
+  if (typeof process.env.DSH_HOME === 'string' && process.env.DSH_HOME.length > 0) homes.add(process.env.DSH_HOME);
+  try { homes.add(join(homedir(), '.dsh')); } catch { /* no home */ }
+  try {
+    const apps = join(homedir(), '.var', 'app');
+    for (const entry of readdirSync(apps, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const candidate = join(apps, entry.name, 'data', '.dsh');
+      if (existsSync(candidate)) homes.add(candidate);
+    }
+  } catch { /* no flatpak dirs */ }
+  return [...homes];
+}
+function profileStateCandidates() {
+  const pluginDir = (() => {
+    try { return realpathSync(fileURLToPath(new URL('.', import.meta.url))); } catch { return undefined; }
+  })();
+  const out = [];
+  for (const home of profileHomes()) {
+    const profilesDir = join(home, 'profiles');
+    let entries;
+    try { entries = readdirSync(profilesDir, { withFileTypes: true }); } catch { continue; }
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const profileDir = join(profilesDir, entry.name);
+      if (pluginDir !== undefined) {
+        try {
+          const linked = realpathSync(join(profileDir, 'node_modules', 'dsh-plugin-plastic-memories-h0'));
+          if (linked !== pluginDir) continue;
+        } catch { continue; }
+      }
+      out.push(profileDir);
+    }
+  }
+  return out;
+}
+export function resolveProfileStateDir(ctx) {
   let profileDir;
   try {
     const fromService = ctx.get('pluginPackages')?.resolution?.profileDir;
     if (typeof fromService === 'string' && fromService.length > 0) profileDir = fromService;
   } catch { /* fallback below */ }
   if (profileDir === undefined) {
-    // Fallback: match the profile whose node_modules/<pkg> resolves to this plugin directory.
-    try {
-      const thisDir = realpathSync(fileURLToPath(new URL('.', import.meta.url)));
-      const dshHome = process.env.DSH_HOME || join(homedir(), '.dsh');
-      const profilesDir = join(dshHome, 'profiles');
-      const candidates = [];
-      for (const entry of readdirSync(profilesDir, { withFileTypes: true })) {
-        if (!entry.isDirectory()) continue;
-        const candidate = join(profilesDir, entry.name);
-        try {
-          const linked = realpathSync(join(candidate, 'node_modules', 'dsh-plugin-plastic-memories-h0'));
-          if (linked === thisDir) candidates.push(candidate);
-        } catch { /* no plugin link */ }
-      }
-      const preferred = process.env.DSH_PROFILE === undefined ? undefined : candidates.find((candidate) => candidate.endsWith('/' + process.env.DSH_PROFILE));
-      if (preferred !== undefined) profileDir = preferred;
-      else if (candidates.length === 1) profileDir = candidates[0];
-    } catch { /* no fallback */ }
+    const candidates = profileStateCandidates();
+    const preferred = process.env.DSH_PROFILE === undefined ? undefined : candidates.find((candidate) => candidate.endsWith('/' + process.env.DSH_PROFILE));
+    if (preferred !== undefined) profileDir = preferred;
+    else if (candidates.length === 1) profileDir = candidates[0];
   }
   if (profileDir === undefined) return undefined;
   try {
@@ -102,6 +125,27 @@ function resolveProfileStateDir(ctx) {
   } catch {
     return undefined;
   }
+}
+/**
+ * Write .pm/status.json once at startup so the user can verify which profile config was read.
+ * @param {string} stateDir - .pm directory.
+ * @param {object} options - resolved config.
+ * @param {string} captureDir - capture destination.
+ */
+function writeStateStatus(stateDir, options, captureDir) {
+  try {
+    let version = null;
+    try { version = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')).version; } catch { /* optional */ }
+    writeFileSync(join(stateDir, 'status.json'), JSON.stringify({
+      time: Date.now(),
+      version,
+      role: options.uiHost === true ? 'ui-host' : 'preset',
+      captureMessages: options.captureMessages,
+      captureDir,
+      configFile: join(stateDir, 'config.json'),
+    }, null, 2) + String.fromCharCode(10));
+    if (options.captureMessages) mkdirSync(captureDir, { recursive: true });
+  } catch { /* diagnostics only */ }
 }
 
 /**
@@ -220,6 +264,11 @@ export function apply(ctx, config) {
   const stateDir = resolveProfileStateDir(ctx);
   const userConfig = stateDir === undefined ? {} : readProfileUserConfig(stateDir, ctx.logger);
   const options = normalizeConfig({ ...config, ...userConfig }, ctx.logger);
+  const baseDir = stateDir ?? join(process.env.DSH_HOME || join(homedir(), '.dsh'), 'pm');
+  const captureDir = options.captureDir.length === 0
+    ? join(baseDir, 'captures')
+    : (isAbsolute(options.captureDir) ? options.captureDir : resolve(baseDir, options.captureDir));
+  if (stateDir !== undefined) writeStateStatus(stateDir, options, captureDir);
 
   // bundle 级「UI 宿主」行：只做世代投影 + 让 web 客户端发现本包的 client 半身。
   // （PM 会话模式之外的模式里：没有工具、没有命令、没有任何 surface 改写。）
@@ -229,15 +278,14 @@ export function apply(ctx, config) {
   }
 
   if (options.captureMessages) {
-    const baseDir = stateDir ?? join(process.env.DSH_HOME || join(homedir(), '.dsh'), 'pm');
-    const captureDir = options.captureDir.length === 0
-      ? join(baseDir, 'captures')
-      : (isAbsolute(options.captureDir) ? options.captureDir : resolve(baseDir, options.captureDir));
     const capture = createMessageCapture({ dir: captureDir, logger: ctx.logger });
     ctx.on('llm/stream', (request, next) => {
       try {
-        const session = typeof request?.sessionId === 'string' ? ctx.sessions.get(request.sessionId) : undefined;
-        if (session !== undefined) void capture(session, request);
+        const sessionId = typeof request?.sessionId === 'string' ? request.sessionId : undefined;
+        if (sessionId !== undefined) {
+          const session = ctx.sessions.get(sessionId);
+          void capture(session ?? { id: sessionId, header: {} }, request);
+        }
       } catch (error) {
         ctx.logger?.warn?.('[pm-h0] message capture failed: ' + String(error?.message ?? error));
       }

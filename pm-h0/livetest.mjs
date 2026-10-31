@@ -19,7 +19,7 @@ import { initState, applyEvent, viewOf } from './generations.js';
 import { retrospect } from './retrospect.js';
 import { createMessageCapture } from './capture.js';
 import { normalizeOp, OP_DEFAULTS } from './plasticize.js';
-import { readProfileUserConfig } from './index.js';
+import { readProfileUserConfig, resolveProfileStateDir } from './index.js';
 
 const NL = String.fromCharCode(10);
 const { ok, done } = makeCounter('livetest');
@@ -377,6 +377,27 @@ console.log(NL + '⓪.4 工具 op 默认值集中在一处');
   const op = normalizeOp({ spans: ['3'] }, 0);
   ok(op.new_text === OP_DEFAULTS.new_text && op.lock_this === OP_DEFAULTS.lock_this && Array.isArray(op.types) && op.types.length === 0,
     '省略 new_text/lock_this/types 时取统一默认值', JSON.stringify({ new_text: op.new_text, lock_this: op.lock_this, types: op.types }));
+}
+
+console.log(NL + '⓪.44 profile .pm 目录：service 不可用时按磁盘链接回退');
+{
+  const { mkdtemp, mkdir, symlink, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { fileURLToPath } = await import('node:url');
+  const home = await mkdtemp(join(tmpdir(), 'pm-home-'));
+  const profile = join(home, 'profiles', 'web2');
+  await mkdir(join(profile, 'node_modules'), { recursive: true });
+  await symlink(fileURLToPath(new URL('.', import.meta.url)), join(profile, 'node_modules', 'dsh-plugin-plastic-memories-h0'));
+  const previousHome = process.env.DSH_HOME;
+  const previousProfile = process.env.DSH_PROFILE;
+  process.env.DSH_HOME = home;
+  process.env.DSH_PROFILE = 'web2';
+  const resolved = resolveProfileStateDir({ get: () => undefined });
+  ok(resolved === join(profile, '.pm'), '磁盘 fallback 定位到 web2/.pm', String(resolved));
+  if (previousHome === undefined) delete process.env.DSH_HOME; else process.env.DSH_HOME = previousHome;
+  if (previousProfile === undefined) delete process.env.DSH_PROFILE; else process.env.DSH_PROFILE = previousProfile;
+  await rm(home, { recursive: true, force: true });
 }
 
 console.log(NL + '⓪.45 profile .pm/config.json：用户配置覆盖 preset');
