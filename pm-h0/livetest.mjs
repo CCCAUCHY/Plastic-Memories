@@ -17,6 +17,7 @@ import { appendPluginRecord, snapshotSessionEvent } from '/var/data/.npm/_npx/1e
 import { flush, stageUserOperation, flushUserOperations, clearStagedOperations, countLogicalGenerations, logicalGenerationForCall, assertSinglePendingPlasticize, assertResolvedUnlocked, installPrivateRecordAppender, lockedSeqs, safetyZoneIntervals } from './engine.js';
 import { initState, applyEvent, viewOf } from './generations.js';
 import { retrospect } from './retrospect.js';
+import { createMessageCapture } from './capture.js';
 
 const NL = String.fromCharCode(10);
 const { ok, done } = makeCounter('livetest');
@@ -367,6 +368,23 @@ console.log(NL + '⑥.8 all / prelock / lock_this 与区间描述');
   const replacement = s.snapshotEvents().find((event) => event.surfaceOp?.op === 'replace' && event.data?.message?.source?.op === 'stabilize');
   ok(replacement !== undefined && lockedSeqs(s).has(replacement.seq), 'lock_this 把替代文本自身纳入安全区', String(replacement?.seq));
   ok(safetyZoneIntervals(s).includes('孤立消息'), '孤立锁定点用文本锚描述', safetyZoneIntervals(s).slice(0, 80));
+}
+
+console.log(NL + '⓪.5 只读抓取：模型实际收到的 messages 原样落盘');
+{
+  const { mkdtemp, readFile, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const dir = await mkdtemp(join(tmpdir(), 'pm-capture-'));
+  const s = mk();
+  const capture = createMessageCapture({ dir });
+  const request = { provider: 'probe-provider', model: 'probe-model', messages: [{ role: 'user', content: [{ type: 'text', text: 'CAPTURE-XYZ' }] }] };
+  await capture(s, request);
+  await capture(s, { ...request, messages: [...request.messages, { role: 'assistant', content: [{ type: 'text', text: 'CAPTURE-2' }] }] });
+  const lines = (await readFile(join(dir, s.id + '.jsonl'), 'utf8')).trim().split(NL).map((line) => JSON.parse(line));
+  ok(lines.length === 2 && lines[0].messages[0].content[0].text === 'CAPTURE-XYZ' && lines[1].messages.length === 2, '两次请求各追加一行，messages 原样保留', JSON.stringify(lines.map((line) => line.messages.length)));
+  ok(lines[0].provider === 'probe-provider' && lines[0].model === 'probe-model' && Number.isSafeInteger(lines[0].time), '日志带 provider/model/time', JSON.stringify({ provider: lines[0].provider, model: lines[0].model }));
+  await rm(dir, { recursive: true, force: true });
 }
 
 console.log(NL + '⑧ 旧 pm_* 会话仍可读（向后兼容）');

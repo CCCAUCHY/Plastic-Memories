@@ -19,6 +19,7 @@ import { retrospect } from './retrospect.js';
 import { COOKIE_KIND, bracketUserMessages, cookieMessage, cookieText, nextCookieId, planCookie } from './cookie.js';
 import { openSetProfile } from './grouping.js';
 import { compileArgsValidator, ToolArgsError } from './schema.js';
+import { createMessageCapture } from './capture.js';
 
 // 插件记录必须走 appendPluginRecord（event.ignorable=true），否则导出/持久化会拒绝该日志。
 // 从宿主 CLI 的模块解析位置找到 dsh-session；测试环境找不到时保留 fallback。
@@ -55,7 +56,7 @@ export const name = 'plastic-memories-h0';
 export const inject = ['tools'];
 
 /** 允许的配置键（全部是诊断/呈现用途，不改变投影语义）。 */
-const KNOWN_CONFIG_KEYS = new Set(['trace', 'probeImports', 'autoHide', 'uiHost']);
+const KNOWN_CONFIG_KEYS = new Set(['trace', 'probeImports', 'autoHide', 'uiHost', 'captureMessages', 'captureDir']);
 
 /**
  * 归一化配置。
@@ -76,6 +77,9 @@ function normalizeConfig(raw, logger) {
     // UI 宿主行（bundle 级）：只注册世代投影并让浏览器发现客户端半身；
     // 不注册工具/命令 —— 那是 PM 会话模式（preset 行）的事。
     uiHost: cfg.uiHost === true,
+    // 测试证据：把每次真实请求的 messages 追加到 <session.cwd>/.pm-capture/<sessionId>.jsonl。
+    captureMessages: cfg.captureMessages !== false,
+    captureDir: typeof cfg.captureDir === 'string' && cfg.captureDir.length > 0 ? cfg.captureDir : '.pm-capture',
   };
 }
 
@@ -171,6 +175,19 @@ export function apply(ctx, config) {
   if (options.uiHost) {
     registerGenerationProjection(ctx);
     return;
+  }
+
+  if (options.captureMessages) {
+    const capture = createMessageCapture({ dir: options.captureDir, logger: ctx.logger });
+    ctx.on('llm/stream', (request, next) => {
+      try {
+        const session = typeof request?.sessionId === 'string' ? ctx.sessions.get(request.sessionId) : undefined;
+        if (session !== undefined) void capture(session, request);
+      } catch (error) {
+        ctx.logger?.warn?.('[pm-h0] message capture failed: ' + String(error?.message ?? error));
+      }
+      return next();
+    }, { global: true });
   }
 
   if (options.probeImports) probeRuntimeImports(ctx);
