@@ -52,7 +52,7 @@ const cutsOf = (reg) => {
 console.log(NL + '① 默认注册表只有 tool-call 组合');
 {
   ok(GROUPINGS.has('tool-call'), 'tool-call 已注册');
-  ok(describeGroupings().includes('工具调用'), 'describe 可用于错误信息', describeGroupings());
+  ok(describeGroupings().includes('tool call'), 'describe 可用于错误信息', describeGroupings());
   ok(cutsOf(GROUPINGS).length > 1, '存在多个合法切口', String(cutsOf(GROUPINGS).length));
 }
 

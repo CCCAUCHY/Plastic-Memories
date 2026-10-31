@@ -221,7 +221,7 @@ export function resolveOps(session, rawOps, here) {
     for (let k = 1; k < ranges.length; k++) {
       if (ranges[k][0] <= ranges[k - 1][1]) {
         throw new Error('op #' + i + ' has overlapping spans (#' + ranges[k - 1][0] + '..#' + ranges[k - 1][1] +
-          ' 与 #' + ranges[k][0] + '..#' + ranges[k][1] + '）');
+          ' and #' + ranges[k][0] + '..#' + ranges[k][1] + ')');
       }
     }
     for (let k = 0; k < ranges.length; k++) {

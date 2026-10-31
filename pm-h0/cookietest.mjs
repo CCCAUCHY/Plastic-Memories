@@ -157,7 +157,7 @@ console.log(NL + '④ 解析成工作面下标：开闭决定是否含 cookie �
 
   let msg;
   try { resolveSpan(view, '99', here); } catch (e) { msg = e.message; }
-  ok(typeof msg === 'string' && msg.includes('99'), '引用不存在的编号会报错', String(msg).slice(0, 60));
+  ok(typeof msg === 'string' && msg.includes('99') && msg.includes('not found') && !/[一-龥]/.test(msg), '引用不存在的编号会报英文错误', String(msg).slice(0, 80));
 
   const idx = cookieIndex(view, 2);
   ok(idx !== undefined && idx.index === 4, 'cookieIndex 定位到第二条 cookie', JSON.stringify(idx));

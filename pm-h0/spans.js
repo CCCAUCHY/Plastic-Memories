@@ -110,7 +110,7 @@ function resolveOne(view, tok, here) {
   const found = cookieIndex(view, tok);
   if (found === undefined) {
     throw new Error('cookie ' + tok + ' not found. The largest visible cookie number is ' + maxVisibleCookieId(view) +
-      ' —— 编号按日志顺序自增，它可能已被投影遮蔽（或者根本还没被插入）。');
+      ' (cookie numbers grow in log order; it may have been hidden by the projection, or not inserted yet).');
   }
   return { index: found.index, isSelf: false };
 }

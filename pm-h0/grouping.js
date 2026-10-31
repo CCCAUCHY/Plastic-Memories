@@ -42,7 +42,7 @@ const NL = String.fromCharCode(10);
  */
 export const TOOL_CALL = {
   id: 'tool-call',
-  describe: '一次工具调用与它的全部结果',
+  describe: 'one tool call and all of its results',
 
   /**
    * @param {object} event - 会话事件。
