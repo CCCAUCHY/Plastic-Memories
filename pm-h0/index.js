@@ -13,7 +13,8 @@
 import { assertSinglePendingPlasticize, logicalGenerationForCall, flush, flushUserOperations, pendingReport, assertResolvedUnlocked, installPrivateRecordAppender } from './engine.js';
 import { homedir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { registerCommands } from './commands.js';
 import { GENERATIONS_KEY, generationProjection } from './generations.js';
 import { stepGroup, surfaceNodes } from './coords.js';
@@ -68,9 +69,33 @@ const KNOWN_CONFIG_KEYS = new Set(['trace', 'autoHide', 'uiHost', 'captureMessag
  * @returns {string|undefined} .pm 目录。
  */
 function resolveProfileStateDir(ctx) {
+  let profileDir;
   try {
-    const profileDir = ctx.get('pluginPackages')?.resolution?.profileDir;
-    if (typeof profileDir !== 'string' || profileDir.length === 0) return undefined;
+    const fromService = ctx.get('pluginPackages')?.resolution?.profileDir;
+    if (typeof fromService === 'string' && fromService.length > 0) profileDir = fromService;
+  } catch { /* fallback below */ }
+  if (profileDir === undefined) {
+    // Fallback: match the profile whose node_modules/<pkg> resolves to this plugin directory.
+    try {
+      const thisDir = realpathSync(fileURLToPath(new URL('.', import.meta.url)));
+      const dshHome = process.env.DSH_HOME || join(homedir(), '.dsh');
+      const profilesDir = join(dshHome, 'profiles');
+      const candidates = [];
+      for (const entry of readdirSync(profilesDir, { withFileTypes: true })) {
+        if (!entry.isDirectory()) continue;
+        const candidate = join(profilesDir, entry.name);
+        try {
+          const linked = realpathSync(join(candidate, 'node_modules', 'dsh-plugin-plastic-memories-h0'));
+          if (linked === thisDir) candidates.push(candidate);
+        } catch { /* no plugin link */ }
+      }
+      const preferred = process.env.DSH_PROFILE === undefined ? undefined : candidates.find((candidate) => candidate.endsWith('/' + process.env.DSH_PROFILE));
+      if (preferred !== undefined) profileDir = preferred;
+      else if (candidates.length === 1) profileDir = candidates[0];
+    } catch { /* no fallback */ }
+  }
+  if (profileDir === undefined) return undefined;
+  try {
     const stateDir = join(profileDir, '.pm');
     mkdirSync(stateDir, { recursive: true });
     return stateDir;
