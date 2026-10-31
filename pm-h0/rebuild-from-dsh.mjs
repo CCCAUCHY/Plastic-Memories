@@ -103,7 +103,6 @@ function derivePmPreset(ptcText, version) {
     '            config:',
     '              trace: false',
     '              probeImports: false',
-    '              autoHide: true',
     '',
   ].join('\n');
   const toolPresentation = '          - id: tool-presentation\n';

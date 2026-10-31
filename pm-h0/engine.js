@@ -376,7 +376,7 @@ function autoHideTargets(session, state, claimed, settledBefore, locks) {
  * @param {Array<object>} declarations - 本批声明（日志顺序）。
  * @param {object|undefined} open - 当前打开的 step。
  * @param {object} state - 派生缓存。
- * @param {{autoHide?: boolean}} [options] - 开关。
+ * @param {{appliedBefore?: boolean, appliedExecuteSeq?: number}} [options] - 边界状态。
  * @returns {{explicit: number, auto: number, applied: number, failed: Array<object>}} 结果。
  */
 /**
@@ -670,7 +670,7 @@ function applyDeclarations(session, declarations, open, state, options = {}) {
     logicalOf.set(entry.declaration.callId, appliedExecutes + batchExecute - 1);
   }
   const batchLogical = appliedExecutes + batchExecute - 1;
-  const autoTargets = options.autoHide === true && (planned.length > 0 || options.appliedBefore === true)
+  const autoTargets = planned.length > 0 || options.appliedBefore === true
     ? autoHideTargets(session, state, claimed, settledBefore, locks)
     : [];
 
@@ -799,7 +799,7 @@ function findLastPendingSet(declarations, before) {
 /**
  * 提交边界：把待办声明写成投影。
  * @param {object} session - 目标会话。
- * @param {{openStep?: {turn: number, step: number}, autoHide?: boolean}} options - 边界参数。
+ * @param {{openStep?: {turn: number, step: number}}} options - 边界参数。
  * @param {object} [logger] - 日志器。
  * @returns {{applied: number, skipped: number, auto: number, generation: number}} 结果。
  */
@@ -807,7 +807,6 @@ const WARNED_STALE = new WeakSet();
 
 export function flush(session, options, logger) {
   const open = options?.openStep;
-  const autoHide = options?.autoHide !== false;
   const state = stateOf(session);
   scanNew(session, state);
   const zone = safetyZoneState(session);
@@ -841,12 +840,11 @@ export function flush(session, options, logger) {
   }
 
   // 自动隐藏可以在**没有待办**的边界上补做（例如上一个边界没有打开的 step）。
-  const hasExecute = todo.some((d) => d.args?.option === 'execute');
   const appliedBefore = state.declarations.some((d) => d.args?.option === 'execute' && state.appliedCallIds.has(d.callId));
   const appliedExecuteSeq = state.declarations
     .filter((d) => d.args?.option === 'execute' && state.appliedCallIds.has(d.callId))
     .reduce((max, d) => Math.max(max, d.seq), -1);
-  const autoOnly = todo.length === 0 && autoHide && open !== undefined && appliedBefore;
+  const autoOnly = todo.length === 0 && open !== undefined && appliedBefore;
   if (todo.length === 0 && !autoOnly) return { applied: 0, skipped: 0, auto: 0, generation: session.surface.replaceGeneration };
 
   let applied = 0;
@@ -856,7 +854,6 @@ export function flush(session, options, logger) {
   // 否则后一条会按前一条收缩后的工作面理解偏移。
   try {
     const written = applyDeclarations(session, todo, open, state, {
-      autoHide: autoHide && (hasExecute || appliedBefore),
       appliedBefore,
       appliedExecuteSeq,
     });

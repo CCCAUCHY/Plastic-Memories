@@ -199,7 +199,7 @@ console.log(NL + '③c 失败的 retrospect / letter 混合单元也会被自动
   ok(!textOf(s).includes('TASK-bad-retro') && !textOf(s).includes('TASK-bad-letter'), '同单元的 bash 成果一并隐藏');
 }
 
-console.log(NL + '④ autoHide:false 时完全不隐藏');
+console.log(NL + '④ 自动隐藏没有配置开关：即使传 autoHide:false 也照样隐藏');
 {
   const s = mk();
   plasticizeCall(s, { turn: 2, step: 1 }, 'ah-set4', { ops: [{ spans: ['(1,5)'], new_text: '⟨预览⟩' }], option: 'set' });
@@ -208,10 +208,10 @@ console.log(NL + '④ autoHide:false 时完全不隐藏');
   plasticizeCall(s, { turn: 2, step: 2 }, 'ah-exec4', { ops: [{ spans: ['(5,6)'], new_text: '⟨结论⟩' }], option: 'execute' });
   const r = flush(s, { openStep: { turn: 2, step: 2 }, autoHide: false }, quiet);
   ok(r.applied === 2, 'execute 默认连带兑现 set（2 条声明落地）', JSON.stringify(r));
-  ok(r.auto === 0, 'autoHide:false 时不自动隐藏', JSON.stringify(r));
-  ok(autoReps(s).length === 0, '没有自动隐藏事件', String(autoReps(s).length));
+  ok(r.auto === 1, '自动隐藏仍然执行', JSON.stringify(r));
+  ok(autoReps(s).length === 1, '有 1 条自动隐藏事件', String(autoReps(s).length));
   const setSeq = seqOfCall(s, 'ah-set4');
-  ok(s.surface.nodes.includes(setSeq), 'set 那一步仍留在工作面上', String(setSeq));
+  ok(!s.surface.nodes.includes(setSeq), 'set 那一步仍照常离开工作面', String(setSeq));
 }
 
 console.log(NL + '⑤ 幂等：重复 flush 不重复隐藏');

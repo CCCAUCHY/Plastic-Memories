@@ -56,13 +56,13 @@ export const name = 'plastic-memories-h0';
 export const inject = ['tools'];
 
 /** 允许的配置键（全部是诊断/呈现用途，不改变投影语义）。 */
-const KNOWN_CONFIG_KEYS = new Set(['trace', 'probeImports', 'autoHide', 'uiHost', 'captureMessages', 'captureDir']);
+const KNOWN_CONFIG_KEYS = new Set(['trace', 'probeImports', 'uiHost', 'captureMessages', 'captureDir']);
 
 /**
  * 归一化配置。
  * @param {object|undefined} raw - patch 行里的 config。
  * @param {object} logger - ctx.logger。
- * @returns {{trace: boolean, probeImports: boolean, autoHide: boolean, uiHost: boolean}} 配置。
+ * @returns {{trace: boolean, probeImports: boolean, uiHost: boolean, captureMessages: boolean, captureDir: string}} 配置。
  */
 function normalizeConfig(raw, logger) {
   const cfg = raw !== null && typeof raw === 'object' ? raw : {};
@@ -72,8 +72,6 @@ function normalizeConfig(raw, logger) {
   return {
     trace: cfg.trace === true,
     probeImports: cfg.probeImports === true,
-    // 默认开：execute 成功时顺手隐藏报错的 PM 步骤组与成功的 set 步骤组（见 engine.js）。
-    autoHide: cfg.autoHide !== false,
     // UI 宿主行（bundle 级）：只注册世代投影并让浏览器发现客户端半身；
     // 不注册工具/命令 —— 那是 PM 会话模式（preset 行）的事。
     uiHost: cfg.uiHost === true,
@@ -257,7 +255,7 @@ export function apply(ctx, config) {
       } catch (error) {
         ctx.logger?.warn?.('[pm-h0] ' + where + ' 用户 /plasticize 落盘失败（已降级）：' + String(error?.message ?? error));
       }
-      const result = flush(session, { openStep, autoHide: options.autoHide }, ctx.logger);
+      const result = flush(session, { openStep }, ctx.logger);
       if (userResult.projections > 0 || userResult.safety > 0) {
         ctx.logger?.info?.('[pm-h0] ' + where + ' 用户 /plasticize 落盘：投影 ' + String(userResult.projections) + '，安全区 ' + String(userResult.safety));
       }

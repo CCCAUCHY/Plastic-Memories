@@ -56,7 +56,7 @@
 
 ```bash
 dsh plugin --profile web2 add link:/绝对路径/可塑性记忆/pm-h0
-dsh plugin --profile web2 add file:/绝对路径/可塑性记忆/dist/dsh-plugin-plastic-memories-h0-0.47.0.tgz
+dsh plugin --profile web2 add file:/绝对路径/可塑性记忆/dist/dsh-plugin-plastic-memories-h0-0.48.0.tgz
 ```
 
 > ⚠️ **改了包内容必须冷启动**：宿主按裸包名缓存模块，热重载只换配置不换 JS。
@@ -148,7 +148,7 @@ dsh plugin --profile web2 add file:/绝对路径/可塑性记忆/dist/dsh-plugin
 - `captureDir` 指定目录（相对 session cwd）；
 - 日志含完整提示词，按敏感数据保存。
 
-## 「世代」选项卡：官方轨迹页面的私有化复刻（v0.47.0+）
+## 「世代」选项卡：官方轨迹页面的私有化复刻（v0.48.0+）
 
 会话主区域的视图选项卡里新增 **世代**，紧贴 **轨迹** 之后（`order = 9000`：官方 Chat=0、
 轨迹=10，未来任何插件选项卡 order < 9000 都落在轨迹与世代之间 —— 世代始终最后）。
@@ -178,7 +178,7 @@ loader bundle **逐字节复制**进本包（`trajectory-vendor.js`），由 `bu
 2. `node build-client.mjs` —— 每个私有化补丁都必须命中，否则直接抛错（不会静默生成半成品）；
 3. `node versioncheck.mjs` + `npm test`。
 
-### 第一层 PM 图层：世代选择（v0.47.0+）
+### 第一层 PM 图层：世代选择（v0.48.0+）
 
 工具栏（时长 / 轮次 / 调用 那一行）**最右侧、搜索框左边**新增论坛式世代选择：
 
@@ -208,7 +208,7 @@ loader bundle **逐字节复制**进本包（`trajectory-vendor.js`），由 `bu
 > asOfSeq」当作字典，对官方快照做展示层过滤。DSH 本身没有「按世代取快照」的官方函数
 > （世代是 PM 自己的概念），所以没有可直接复用的官方投影函数；但也没有第二套投影语义。
 
-### 事实源与一致性：日志 → 官方投影 → 真实上下文 → 轨迹（v0.47.0+）
+### 事实源与一致性：日志 → 官方投影 → 真实上下文 → 轨迹（v0.48.0+）
 
 按「不要发明第二套转换算法」的原则，世代轨迹现在**不再过滤官方快照**，而是走一条链：
 
@@ -248,7 +248,7 @@ loader bundle **逐字节复制**进本包（`trajectory-vendor.js`），由 `bu
 
 **性能**：切世代需要重装配整个已加载窗口，超长会话可能有一瞬卡顿。
 
-### 相邻世代差异：已塑形折叠（A 形态，v0.47.0+）
+### 相邻世代差异：已塑形折叠（A 形态，v0.48.0+）
 
 - 只展示当前代与上一代的差异；第 0 代没有已塑形；
 - 差异 = 相邻两代官方可见面直接 diff：上一代可见面 ∩ 本代 replace 的 [startSeq,endSeq]，
@@ -271,7 +271,7 @@ loader bundle **逐字节复制**进本包（`trajectory-vendor.js`），由 `bu
 > `config.uiHost: true`）让浏览器发现 `client.js`；它只注册世代投影，不注册工具/命令。
 > 改完插件后**重启 dsh + 刷新页面**（客户端 bundle 不在热重载范围内）。
 
-## 用户侧命令（v0.47.0+）
+## 用户侧命令（v0.48.0+）
 
 输入框里以 `/` 开头，参数与工具**逐字段相同**（同一套 spans / ops 语法）：
 
@@ -304,7 +304,7 @@ dsh --profile web2 --port 3081
 1. **没有** `Cannot find package` / `patch: entry ... not found` 之类的告警；
 2. 会话的工具列表里出现 **plasticize / retrospect / letter**（只有这三个）。
 
-会话模式选择器里应显示 **PM · 可塑记忆 v0.47.0**。机械验收步骤见 `../PM-机械测试脚本.md`。
+会话模式选择器里应显示 **PM · 可塑记忆 v0.48.0**。机械验收步骤见 `../PM-机械测试脚本.md`。
 
 ---
 
@@ -333,7 +333,7 @@ plasticize 的每个 op 可加 `types` 数组：`user` / `developer` / `assistan
 **规则一：提交边界的队尾永远保持一个 cookie。** 队尾不是 cookie 就补一个，是就什么都不做。
 它负责工具块之后的锚点，也负责「turn 末补一个 → 下一轮用户消息自然在它后面」。
 
-**规则二：每条用户主动发送的消息，前后各夹一条 cookie**（v0.47.0+）。
+**规则二：每条用户主动发送的消息，前后各夹一条 cookie**（v0.48.0+）。
 一次主动发送产生两条 cookie：
 
     … 助手回复 [cookie N] 用户亲口说的 [cookie N+1] 时间快照 助手 …
@@ -400,6 +400,18 @@ plasticize({
 **零点属于写下这条 ops 的那条 plasticize**：所以 set 之后用 execute **原样重传同一条 ops**，
 就会落实你看过的那个预览 —— 尤其是 `this`（execute 自己的 this 与 set 的 this 不是同一个位置）。
 
+### 配置项（只有诊断/装配，没有语义开关）
+
+| 键 | 默认值 | 作用 |
+|---|---|---|
+| `trace` | `false` | 每次边界后打一行摘要日志（诊断） |
+| `probeImports` | `false` | 启动时探测能否解析 @deepseek-ai 运行时包（诊断） |
+| `uiHost` | `false` | bundle 级 UI 宿主行：只注册世代投影，不注册工具/命令 |
+| `captureMessages` | `false` | 调试：把真实请求的 messages 追加到文件；默认关闭 |
+| `captureDir` | `.pm-capture` | `captureMessages` 的目录（相对 session cwd） |
+
+注意：`autoHide` 已移除；自动隐藏是固定行为，不能从 config 关闭。
+
 ### 自动隐藏
 
 execute **成功时**，插件为新世代隐藏排在这次 execute 之前的：
@@ -410,7 +422,6 @@ execute **成功时**，插件为新世代隐藏排在这次 execute 之前的�
 
 排在最近一次成功 execute **之后**的新 set / letter / 失败调用不动，等下一次 execute。
 混合步骤也会整体隐藏 —— 只要单元里含上述任一调用。execute 的「已登记」回执保留。
-可用 `autoHide: false` 关闭。
 
 ### 硬约束
 
@@ -440,7 +451,6 @@ execute **成功时**，插件为新世代隐藏排在这次 execute 之前的�
   config:
     trace: false          # 诊断：每次边界后打一行摘要
     probeImports: false   # 诊断：启动时探测能否解析 @deepseek-ai 运行时包
-    autoHide: true        # execute 成功时自动隐藏其前的 set / 成功 letter / 报错 PM 单元
 ```
 
 ---
@@ -464,7 +474,7 @@ cd pm-h0 && npm test
     zeroanchor     21  this 的零点属于 set；cookie 端点没有零点问题；去重后不重复执行
     groupingtest   13  组合抽象本身
     cookietest     59  cookie 编号 / 文本 / 按 ID 解析 / 身份不误认 / planCookie / 用户消息夹层
-    autohide       61  自动隐藏（其前所有 set / 成功 letter / 报错 PM；待决预览不吞）
+    autohide       61  自动隐藏（无开关；其前所有 set / 成功 letter / 报错 PM；待决预览不吞）
     uitest         89  vendored 轨迹私有化 / 世代选择 / 事件级过滤 / 已塑形差异 / 快照缓存 / 内嵌视图
     diffcheck       4  逐世代与官方 surface fold 差分校验（影子会话重放日志前缀）
     versioncheck   67  版本号演进 + 打包完整性 + 文档一致性 + 安装元数据 + 会话隔离 + 私有化轨迹 + PM 图层

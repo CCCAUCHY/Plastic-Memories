@@ -10,7 +10,7 @@
       name: '@deepseek-ai/dsh-agent-preset'
       config:
         id: pm
-        name: PM · 可塑记忆 v0.47.0
+        name: PM · 可塑记忆 v0.48.0
         description: >-
           以 ptc 为基线，去掉压缩组，并挂载 Plastic Memories 插件。
           模型可以主动改写自己过往的呈现方式：把已完成的工作压成结论、把无关段落隐去，底层轨迹一字不失（retrospect 可事后考古）。
@@ -116,7 +116,6 @@
             config:
               trace: false
               probeImports: false
-              autoHide: true
           - id: tool-presentation
             name: '@deepseek-ai/dsh-agent-tool-presentation'
             config:
