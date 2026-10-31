@@ -13,6 +13,7 @@
 import { assertSinglePendingPlasticize, logicalGenerationForCall, flush, flushUserOperations, pendingReport, assertResolvedUnlocked, installPrivateRecordAppender } from './engine.js';
 import { homedir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { registerCommands } from './commands.js';
 import { GENERATIONS_KEY, generationProjection } from './generations.js';
 import { stepGroup, surfaceNodes } from './coords.js';
@@ -58,13 +59,62 @@ export const name = 'plastic-memories-h0';
 export const inject = ['tools'];
 
 /** 允许的配置键（全部是诊断/呈现用途，不改变投影语义）。 */
-const KNOWN_CONFIG_KEYS = new Set(['trace', 'probeImports', 'autoHide', 'uiHost', 'captureMessages', 'captureDir']);
+const KNOWN_CONFIG_KEYS = new Set(['trace', 'autoHide', 'uiHost', 'captureMessages', 'captureDir']);
+
+/**
+ * Profile 级状态目录：$DSH_HOME/profiles/<profile>/.pm。
+ * profileDir 从 host 的 pluginPackages resolution 读取；测试/无该服务时返回 undefined。
+ * @param {object} ctx - 插件上下文。
+ * @returns {string|undefined} .pm 目录。
+ */
+function resolveProfileStateDir(ctx) {
+  try {
+    const profileDir = ctx.get('pluginPackages')?.resolution?.profileDir;
+    if (typeof profileDir !== 'string' || profileDir.length === 0) return undefined;
+    const stateDir = join(profileDir, '.pm');
+    mkdirSync(stateDir, { recursive: true });
+    return stateDir;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * 读取 profile 的 .pm/config.json；只接受用户可调键。
+ * @param {string} stateDir - .pm 目录。
+ * @param {object} logger - ctx.logger。
+ * @returns {object} 用户覆盖项。
+ */
+export function readProfileUserConfig(stateDir, logger) {
+  const filename = join(stateDir, 'config.json');
+  if (!existsSync(filename)) return {};
+  try {
+    const parsed = JSON.parse(readFileSync(filename, 'utf8'));
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      logger?.warn?.('[pm-h0] .pm/config.json must be a JSON object');
+      return {};
+    }
+    const allowed = new Set(['trace', 'autoHide', 'captureMessages', 'captureDir']);
+    const out = {};
+    for (const key of Object.keys(parsed)) {
+      if (!allowed.has(key)) {
+        logger?.warn?.('[pm-h0] .pm/config.json ignores unknown key ' + JSON.stringify(key));
+        continue;
+      }
+      out[key] = parsed[key];
+    }
+    return out;
+  } catch (error) {
+    logger?.warn?.('[pm-h0] failed to read .pm/config.json: ' + String(error?.message ?? error));
+    return {};
+  }
+}
 
 /**
  * 归一化配置。
  * @param {object|undefined} raw - patch 行里的 config。
  * @param {object} logger - ctx.logger。
- * @returns {{trace: boolean, probeImports: boolean, autoHide: boolean, uiHost: boolean}} 配置。
+ * @returns {{trace: boolean, autoHide: boolean, uiHost: boolean, captureMessages: boolean, captureDir: string}} 配置。
  */
 function normalizeConfig(raw, logger) {
   const cfg = raw !== null && typeof raw === 'object' ? raw : {};
@@ -73,13 +123,12 @@ function normalizeConfig(raw, logger) {
   }
   return {
     trace: cfg.trace === true,
-    probeImports: cfg.probeImports === true,
     // 默认开：execute 成功时顺手隐藏报错的 PM 步骤组与成功的 set 步骤组（见 engine.js）。
     autoHide: cfg.autoHide !== false,
     // UI 宿主行（bundle 级）：只注册世代投影并让浏览器发现客户端半身；
     // 不注册工具/命令 —— 那是 PM 会话模式（preset 行）的事。
     uiHost: cfg.uiHost === true,
-    // 调试选项（默认关闭）：把每次真实请求的 messages 追加到 <session.cwd>/.pm-capture/<sessionId>.jsonl。
+    // 调试选项（默认关闭）：把每次真实请求的 messages 追加到 profile 的 .pm/captures/<sessionId>.jsonl。
     captureMessages: cfg.captureMessages === true,
     captureDir: typeof cfg.captureDir === 'string' ? cfg.captureDir : '',
   };
@@ -138,39 +187,14 @@ function sessionOf(exec) {
 }
 
 /**
- * 可选启动自检：探测本 profile 能否解析 @deepseek-ai 运行时包。
- * @param {object} ctx - 插件上下文。
- */
-function probeRuntimeImports(ctx) {
-  const SPECIFIERS = [
-    '@deepseek-ai/dsh-tools',
-    '@deepseek-ai/dsh-llm',
-    '@deepseek-ai/dsh-session',
-    '@deepseek-ai/dsh-compaction',
-    '@deepseek-ai/schemastery',
-    'zod',
-  ];
-  void (async () => {
-    const lines = [];
-    for (const specifier of SPECIFIERS) {
-      try {
-        const mod = await import(specifier);
-        lines.push('  OK   ' + specifier + ' (' + Object.keys(mod).length + ' exports)');
-      } catch (error) {
-        lines.push('  FAIL ' + specifier + ' — ' + String(error?.code ?? error?.name ?? error));
-      }
-    }
-    ctx.logger?.info?.('[pm-h0] 运行时依赖探针（决定能否改用 @deepseek-ai 包）:\n' + lines.join('\n'));
-  })();
-}
-
-/**
  * 安装插件。
  * @param {object} ctx - 插件上下文。
  * @param {object|undefined} config - patch 行里的 config。
  */
 export function apply(ctx, config) {
-  const options = normalizeConfig(config, ctx.logger);
+  const stateDir = resolveProfileStateDir(ctx);
+  const userConfig = stateDir === undefined ? {} : readProfileUserConfig(stateDir, ctx.logger);
+  const options = normalizeConfig({ ...config, ...userConfig }, ctx.logger);
 
   // bundle 级「UI 宿主」行：只做世代投影 + 让 web 客户端发现本包的 client 半身。
   // （PM 会话模式之外的模式里：没有工具、没有命令、没有任何 surface 改写。）
@@ -180,10 +204,10 @@ export function apply(ctx, config) {
   }
 
   if (options.captureMessages) {
-    const dshHome = process.env.DSH_HOME || join(homedir(), '.dsh');
+    const baseDir = stateDir ?? join(process.env.DSH_HOME || join(homedir(), '.dsh'), 'pm');
     const captureDir = options.captureDir.length === 0
-      ? join(dshHome, 'pm-captures')
-      : (isAbsolute(options.captureDir) ? options.captureDir : resolve(dshHome, options.captureDir));
+      ? join(baseDir, 'captures')
+      : (isAbsolute(options.captureDir) ? options.captureDir : resolve(baseDir, options.captureDir));
     const capture = createMessageCapture({ dir: captureDir, logger: ctx.logger });
     ctx.on('llm/stream', (request, next) => {
       try {
@@ -195,8 +219,6 @@ export function apply(ctx, config) {
       return next();
     }, { global: true });
   }
-
-  if (options.probeImports) probeRuntimeImports(ctx);
 
   // 工具/hook 之外的两件装配：世代投影（轨迹世代选择的数据）与用户侧 slash 命令。
   let projectionService;

@@ -102,7 +102,6 @@ function derivePmPreset(ptcText, version) {
     '            name: dsh-plugin-plastic-memories-h0',
     '            config:',
     '              trace: false',
-    '              probeImports: false',
     '              autoHide: true',
     '',
   ].join('\n');

@@ -19,6 +19,7 @@ import { initState, applyEvent, viewOf } from './generations.js';
 import { retrospect } from './retrospect.js';
 import { createMessageCapture } from './capture.js';
 import { normalizeOp, OP_DEFAULTS } from './plasticize.js';
+import { readProfileUserConfig } from './index.js';
 
 const NL = String.fromCharCode(10);
 const { ok, done } = makeCounter('livetest');
@@ -376,6 +377,22 @@ console.log(NL + '⓪.4 工具 op 默认值集中在一处');
   const op = normalizeOp({ spans: ['3'] }, 0);
   ok(op.new_text === OP_DEFAULTS.new_text && op.lock_this === OP_DEFAULTS.lock_this && Array.isArray(op.types) && op.types.length === 0,
     '省略 new_text/lock_this/types 时取统一默认值', JSON.stringify({ new_text: op.new_text, lock_this: op.lock_this, types: op.types }));
+}
+
+console.log(NL + '⓪.45 profile .pm/config.json：用户配置覆盖 preset');
+{
+  const { mkdtemp, mkdir, writeFile, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const profile = await mkdtemp(join(tmpdir(), 'pm-profile-'));
+  const stateDir = join(profile, '.pm');
+  await mkdir(stateDir, { recursive: true });
+  await writeFile(join(stateDir, 'config.json'), JSON.stringify({ autoHide: false, captureMessages: true, probeImports: true }), 'utf8');
+  const warnings = [];
+  const user = readProfileUserConfig(stateDir, { warn: (message) => warnings.push(String(message)) });
+  ok(user.autoHide === false && user.captureMessages === true && !('probeImports' in user), '只接受用户可调键，忽略 probeImports', JSON.stringify(user));
+  ok(warnings.length === 1 && warnings[0].includes('probeImports'), '未知键告警', JSON.stringify(warnings));
+  await rm(profile, { recursive: true, force: true });
 }
 
 console.log(NL + '⓪.5 只读抓取：模型实际收到的 messages 原样落盘');
