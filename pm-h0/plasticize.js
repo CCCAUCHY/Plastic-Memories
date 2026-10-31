@@ -206,7 +206,7 @@ export function resolveOps(session, rawOps, here) {
         try {
           ranges.push(...typeRangesFor(session, view, startIndex, endIndex, op.types));
         } catch (error) {
-          throw new Error('段落 #' + i + '：' + error.message);
+          throw new Error('span #' + i + ': ' + error.message);
         }
       } else {
         // 滑到组合边界，保证不拆开工具对（组合边界永远是合法切口）。

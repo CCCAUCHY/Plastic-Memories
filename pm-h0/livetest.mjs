@@ -14,7 +14,7 @@ import SessionStore from '/var/data/.npm/_npx/1e7f6d9597241db0/node_modules/@dee
 import { makeCounter, fixture, cookieSeed, cookieNodes, cookieEvent, textOf, openStep, plasticizeCall, makeStore } from './testkit.mjs';
 import { pairingMaps, snapshotSurface, stepGroup, indexOfCall, checkBalanced } from './coords.js';
 import { appendPluginRecord, snapshotSessionEvent } from '/var/data/.npm/_npx/1e7f6d9597241db0/node_modules/@deepseek-ai/dsh-session/lib/index.js';
-import { flush, stageUserOperation, flushUserOperations, clearStagedOperations, countLogicalGenerations, assertSinglePendingPlasticize, installPrivateRecordAppender, lockedSeqs, safetyZoneIntervals } from './engine.js';
+import { flush, stageUserOperation, flushUserOperations, clearStagedOperations, countLogicalGenerations, assertSinglePendingPlasticize, assertResolvedUnlocked, installPrivateRecordAppender, lockedSeqs, safetyZoneIntervals } from './engine.js';
 import { initState, applyEvent, viewOf } from './generations.js';
 import { retrospect } from './retrospect.js';
 
@@ -275,6 +275,9 @@ console.log(NL + '⑥.5 安全区：lock 后 plasticize 不能命中锁定区间
   await flushUserOperations(s, { turn: 99, step: 1 }, quiet);
   const lockRecords = s.snapshotEvents().filter((event) => event.type === 'plugin:plastic-memories/locks');
   ok(lockRecords.some((event) => String(event.data?.comment ?? '').includes('/plasticize lock')), '私有记录保存当时的命令原文');
+  let toolSafety = null;
+  try { assertResolvedUnlocked(s, [{ shadowed: staged.shadowed }]); } catch (error) { toolSafety = error.message; }
+  ok(typeof toolSafety === 'string' && toolSafety.includes('safety zone') && /[A-Za-z]/.test(toolSafety), '工具执行前就报英文安全区错误', String(toolSafety).slice(0, 70));
   plasticizeCall(s, { turn: 99, step: 1 }, 'lock-exec', { ops: [{ spans: ['(3,4)'], new_text: '⟨不应命中⟩' }], option: 'execute' });
   const r = flush(s, { openStep: { turn: 99, step: 1 } }, quiet);
   ok(r.applied === 0 && r.skipped === 1, '命中安全区的 execute 被拒绝', JSON.stringify(r));

@@ -10,7 +10,7 @@
  * @module dsh-plugin-plastic-memories-h0
  */
 
-import { assertSinglePendingPlasticize, logicalGenerationForCall, flush, flushUserOperations, pendingReport } from './engine.js';
+import { assertSinglePendingPlasticize, logicalGenerationForCall, flush, flushUserOperations, pendingReport, assertResolvedUnlocked, installPrivateRecordAppender } from './engine.js';
 import { registerCommands } from './commands.js';
 import { GENERATIONS_KEY, generationProjection } from './generations.js';
 import { stepGroup, surfaceNodes } from './coords.js';
@@ -19,6 +19,34 @@ import { retrospect } from './retrospect.js';
 import { COOKIE_KIND, bracketUserMessages, cookieMessage, cookieText, nextCookieId, planCookie } from './cookie.js';
 import { openSetProfile } from './grouping.js';
 import { compileArgsValidator, ToolArgsError } from './schema.js';
+
+// 插件记录必须走 appendPluginRecord（event.ignorable=true），否则导出/持久化会拒绝该日志。
+// 从宿主 CLI 的模块解析位置找到 dsh-session；测试环境找不到时保留 fallback。
+let hostAppendPluginRecord;
+try {
+  const { createRequire } = await import('node:module');
+  const { pathToFileURL } = await import('node:url');
+  const candidates = [process.argv[1], process.cwd() + '/package.json', import.meta.url].filter((value) => typeof value === 'string');
+  let resolved;
+  for (const candidate of candidates) {
+    try {
+      const request = createRequire(candidate);
+      resolved = request.resolve('@deepseek-ai/dsh-session');
+      break;
+    } catch { /* try next */ }
+  }
+  if (resolved !== undefined) {
+    const module = await import(pathToFileURL(resolved).href);
+    if (typeof module.appendPluginRecord === 'function') hostAppendPluginRecord = module.appendPluginRecord;
+  }
+} catch { /* fallback below */ }
+if (hostAppendPluginRecord === undefined) {
+  try {
+    const module = await import('@deepseek-ai/dsh-session');
+    if (typeof module.appendPluginRecord === 'function') hostAppendPluginRecord = module.appendPluginRecord;
+  } catch { /* test environment */ }
+}
+if (hostAppendPluginRecord !== undefined) installPrivateRecordAppender(hostAppendPluginRecord);
 
 /** 插件名。 */
 export const name = 'plastic-memories-h0';
@@ -435,16 +463,20 @@ export function apply(ctx, config) {
             // 预览与落实必须同源，否则「看过的」和「落实的」不是同一个。
             const pendingGroup = stepGroupFor(session, { callId: pending.callId });
             batches.push({
-              from: '上次 set', callId: pending.callId, ops: pending.ops,
+              from: 'previous set', callId: pending.callId, ops: pending.ops,
               here: pendingGroup === undefined ? here : pendingGroup.here,
             });
           }
         }
-        batches.push({ from: '本次调用', callId: exec.callId, ops: args?.ops, here });
+        batches.push({ from: 'this call', callId: exec.callId, ops: args?.ops, here });
 
         if (option === 'set') {
           const flat = [];
-          for (const batch of batches) flat.push(...resolveOps(session, batch.ops, batch.here));
+          for (const batch of batches) {
+            const resolved = resolveOps(session, batch.ops, batch.here);
+            assertResolvedUnlocked(session, resolved);
+            flat.push(...resolved);
+          }
           const pv = previewOf(session, flat, exec.callId);
           parts.push('Preview only (not committed). The next generation would contain ' + pv.messageCount + ' messages:');
           parts.push(pv.text);
@@ -452,7 +484,11 @@ export function apply(ctx, config) {
         } else {
           // 只登记：真正写入由 flush 在提交边界做（见 engine.js 的说明）。
           let total = 0;
-          for (const batch of batches) total += resolveOps(session, batch.ops, batch.here).length;
+          for (const batch of batches) {
+            const resolved = resolveOps(session, batch.ops, batch.here);
+            assertResolvedUnlocked(session, resolved);
+            total += resolved.length;
+          }
           parts.push('Registered ' + total + ' segment(s); they will be written at the next submission boundary.');
           const logicalGeneration = logicalGenerationForCall(session, exec.callId);
           parts.push('Logical generation ' + logicalGeneration + ' (pm-logical-generation=' + logicalGeneration + ').');

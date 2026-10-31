@@ -252,7 +252,7 @@ export function closureViolations(view, seqs) {
  */
 export function describeGroupings(registry = GROUPINGS) {
   const names = [...registry.values()].map((t) => t.describe);
-  return names.length === 0 ? '（没有注册任何组合类型）' : names.join('；');
+  return names.length === 0 ? '(no grouping types registered)' : names.join('; ');
 }
 
 void NL;

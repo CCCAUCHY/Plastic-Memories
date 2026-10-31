@@ -292,7 +292,7 @@ export function checkBalanced(session, startIndex, endIndex) {
   const beforeOk = (before.get(startSeq) ?? 1) === 0;
   const afterOk = (after.get(endSeq) ?? 1) === 0;
   if (beforeOk && afterOk) return { ok: true };
-  const which = !beforeOk && !afterOk ? '两端' : beforeOk ? '终点之后' : '起点之前';
+  const which = !beforeOk && !afterOk ? 'both ends' : beforeOk ? 'after the end' : 'before the start';
   return {
     ok: false,
     // 按注册表说出**是哪种组合**被拆开 —— 不写死 tool-call，

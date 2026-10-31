@@ -113,7 +113,7 @@ console.log(NL + '④ 部分重叠（模型算错）必须被点名拒绝，而�
   const r = flush(s, { openStep: { turn: 2, step: 2 } }, { warn: (m) => warnings.push(String(m)), info: () => {} });
   ok(reps(s).length === 0, '一批里部分重叠 → 整批不写（工作面不被写坏）', String(reps(s).length));
   ok(r.skipped > 0, '被跳过', JSON.stringify(r));
-  ok(warnings.some((w) => w.includes('区间重叠')), '告警点名「区间重叠」', warnings.slice(0, 1).join('').slice(0, 80));
+  ok(warnings.some((w) => w.includes('overlap')), '告警点名 overlap', warnings.slice(0, 1).join('').slice(0, 80));
 }
 
 done();

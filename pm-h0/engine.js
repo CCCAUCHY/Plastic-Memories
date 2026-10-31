@@ -520,7 +520,7 @@ function assertNotLocked(session, locks, shadowed) {
   if (locks === undefined || locks.size === 0) return;
   const hit = shadowed.filter((seq) => locks.has(seq));
   if (hit.length > 0) {
-    throw new Error('区间命中安全区：seq ' + hit.slice(0, 8).join(',') + (hit.length > 8 ? '…' : '') + '；请先 /plasticize unlock 或换一个区间。' + safetyZoneNote(session, locks));
+    throw new Error('operation touches the safety zone (locked seqs: ' + hit.slice(0, 8).join(',') + (hit.length > 8 ? '…' : '') + '); unlock with /plasticize unlock or choose another range');
   }
 }
 function applyDeclarations(session, declarations, open, state, options = {}) {
@@ -547,15 +547,15 @@ function applyDeclarations(session, declarations, open, state, options = {}) {
       if (ops !== undefined && (!Array.isArray(ops) || ops.length === 0) && declaration.opsFrom !== 'set') {
         // 空 ops 是合法的：execute 只消费 set 时自身不带段落
       } else if (ops !== undefined && !Array.isArray(ops)) {
-        throw new Error('ops 必须是数组');
+        throw new Error('ops must be an array');
       }
       if (ops !== undefined && Array.isArray(ops) && ops.length === 0) {
         planned.push({ declaration, resolved: [], group: undefined });
         continue;
       }
       const group = stepGroup(session, declaration.ownerCallId);
-      if (group === undefined) throw new Error('找不到承载这条声明的消息');
-      if (!group.complete) throw new Error('本步的工具结果还没全部落地，等下一个边界');
+      if (group === undefined) throw new Error('could not locate the message carrying this declaration');
+      if (!group.complete) throw new Error('this step still has pending tool results; wait for the next boundary');
       // 用 set 的零点（若这条 execute 声明了 also_execute_last_set 且 set 在批里）
       let anchor = hereOf(group);
       if (declaration.opsAnchorCallId !== undefined) {
@@ -593,7 +593,7 @@ function applyDeclarations(session, declarations, open, state, options = {}) {
       .flatMap((entry) => entry.resolved.map((span) => ({ seqs: span.shadowed })));
     const overlap = findOverlap(overlapRanges);
     if (overlap !== undefined) {
-      throw new Error('本批声明之间区间重叠：有两条声明想遮蔽同一段历史。请分别换算各自的偏移，或合并成一条声明。');
+      throw new Error('declarations in this batch overlap: two of them try to shadow the same history. Recompute each offset or merge them into one declaration.');
     }
   }
 
@@ -617,9 +617,8 @@ function applyDeclarations(session, declarations, open, state, options = {}) {
       for (const seq of span.shadowed) {
         if (claimed.has(seq)) {
           throw new Error(
-            '本批声明之间区间重叠：有两条声明都想遮蔽同一段历史。' +
-            '每条声明以自己的承载消息为原点，所以隔了一步的两条声明即便写同样的偏移量，' +
-            '也会落到不同位置 —— 请分别换算各自的偏移，或合并成一条声明。',
+            'declarations in this batch overlap: two of them try to shadow the same history. ' +
+            'Offsets are relative to each declaring message, so two declarations in different steps land at different places even with the same offset - recompute each offset or merge them into one declaration.',
           );
         }
         claimed.add(seq);
@@ -669,7 +668,7 @@ function applyDeclarations(session, declarations, open, state, options = {}) {
       const span = resolved[k];
       const rawText = String(span.op.new_text ?? '');
       const isHole = rawText.length === 0;
-      if (isHole && open === undefined) throw new Error('没有打开的 step，纯空洞推迟到下一个边界');
+      if (isHole && open === undefined) throw new Error('no open step; a pure hole is postponed to the next boundary');
       const source = pmSource({
         op: isHole ? 'hide' : 'stabilize',
         callId: declaration.callId,
@@ -742,6 +741,20 @@ function applyDeclarations(session, declarations, open, state, options = {}) {
     } catch { /* 忽略持久化失败 */ }
   }
   return { explicit, auto, applied: planned.length, failed };
+}
+
+/**
+ * Tool-facing safety check: reject operations whose resolved spans touch locked messages.
+ * @param {object} session - target session.
+ * @param {Array<{shadowed:number[]}>} resolved - resolved spans.
+ */
+export function assertResolvedUnlocked(session, resolved) {
+  const locks = lockedSeqs(session);
+  for (const span of resolved) {
+    const hit = span.shadowed.filter((seq) => locks.has(seq));
+    if (hit.length === 0) continue;
+    throw new Error('operation touches the safety zone (locked seqs: ' + hit.slice(0, 8).join(',') + (hit.length > 8 ? '…' : '') + '); unlock with /plasticize unlock or choose another range');
+  }
 }
 
 /**
@@ -889,7 +902,10 @@ export function clearStagedOperations(session) {
 }
 
 function appendPrivateRecord(session, type, data) {
-  // 直接 append 到日志：非 surface 事件，不进模型上下文；DSH seed/validator 均接受。
+  if (typeof injectedPluginRecordAppender === 'function') {
+    return injectedPluginRecordAppender(session, type, data);
+  }
+  // 测试/无宿主注入时的回退：能跑，但不会被标记为 ignorable。
   return session.append(type, data);
 }
 
