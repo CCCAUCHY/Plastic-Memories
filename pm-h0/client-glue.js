@@ -533,7 +533,6 @@ window.__ModuleLoader__.load({
       return h(React.Fragment, null, ...tags, ...(safety === null ? [] : [safety]));
     }
     const PM_UI_CSS = [
-      'div:has(> table[data-scroll-ready="true"]){padding-bottom:calc(var(--dsh-trajectory-bottom-clearance,0px) + 58vh)!important}',
       '.pm-load-all{box-sizing:border-box;flex:none;margin-right:6px;height:22px;padding:0 8px;border:1px solid var(--dsw-alias-border-l3);border-radius:2px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);font:var(--dsw-font-xxs-12);cursor:pointer}',
       '.pm-load-all:disabled{opacity:.6;cursor:default}',
       '.pm-diff-badge{box-sizing:border-box;flex:none;margin-right:6px;height:19px;padding:0 5px;border:0;border-radius:var(--dsw-radius-xs);font-size:10px;font-weight:650;letter-spacing:.035em;line-height:16px;display:inline-flex;align-items:center;cursor:pointer}',
@@ -840,8 +839,6 @@ window.__ModuleLoader__.load({
         const seqs = Array.isArray(generations[gen]?.seqs) ? generations[gen].seqs : [];
         const index = seqs.indexOf(anchor.seq);
         if (index < 0) return;
-        const space = 'calc(var(--dsh-trajectory-bottom-clearance, 0px) + 60vh)';
-        if (pane.style.paddingBottom !== space) pane.style.paddingBottom = space;
         // 行高 30px；tabular header 约 30px，让目标行落在表头下方而不是被遮住。
         pane.scrollTop = Math.max(0, index * 30 - 30);
       };

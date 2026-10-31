@@ -278,6 +278,7 @@ console.log(NL + '⑨ 客户端半身（侧边栏世代视图）');
   for (const [label, needle] of overlay) ok(clientSource.includes(needle), 'PM 图层：' + label + ' = ' + needle);
 
   ok(!clientSource.includes('pm-blank'), '世代表底部没有追加空行', String(clientSource.includes('pm-blank')));
+  ok(!clientSource.includes('58vh') && !clientSource.includes('60vh'), '没有为差异跳转注入底部空白', String(clientSource.includes('58vh') || clientSource.includes('60vh')));
 
   // 生成物必须与 build-client.mjs 保持一致（改了 vendor 没重新 build 会报红）。
   let buildFresh = true;
