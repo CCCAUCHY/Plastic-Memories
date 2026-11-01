@@ -124,10 +124,11 @@ console.log(NL + '⑥ retrospect：只返回历史世代自己的上下文（结
   ok(!firstFrozen.messages.some((message) => message.role === 'developer' && message.text === ''), 'g0 上下文不含 execute 之后写出的替代消息');
   ok(firstFrozen.messages.some((message) => message.role === 'tool'), 'g0 上下文包含 execute 的 tool result');
 
-  // 第一次 execute 冻结逻辑世代 0，继续推理进入 self=1；当前世代 self 不允许查询。
-  let currentError = null;
-  try { retrospect(s, { generation: 1 }); } catch (error) { currentError = error.message; }
-  ok(typeof currentError === 'string' && currentError.includes('self'), '当前世代 self 拒绝查询', String(currentError).slice(0, 60));
+  // 第一次 execute 冻结逻辑世代 0，继续推理进入 self=1；当前世代现在可查。
+  const currentSelf = JSON.parse(retrospect(s, { generation: 'self' }));
+  const currentNumber = JSON.parse(retrospect(s, { generation: 1 }));
+  ok(currentSelf.logical === 1 && currentSelf.count === afterFirst.length, 'self 返回当前 surface', JSON.stringify({ logical: currentSelf.logical, count: currentSelf.count }));
+  ok(JSON.stringify(currentSelf) === JSON.stringify(currentNumber), 'self 与绝对当前世代号等价');
 
   // 第二代：先在第 0 代生命周期内留一条 letter（独立 step），再执行 execute。
   openStep(s, 99, 2);
@@ -167,12 +168,13 @@ console.log(NL + '⑥ retrospect：只返回历史世代自己的上下文（结
     && gen1.letter[1].index === ptcIndex && gen1.letter[1].text === 'L0: PTC 的话',
     '两个 execute 声明之间的 letter 属于下一个逻辑世代', JSON.stringify(gen1.letter));
 
-  let againError = null;
-  try { retrospect(s, { generation: 'self - 0' }); } catch (error) { againError = error.message; }
-  ok(typeof againError === 'string', 'self - 0（当前世代）被拒绝');
+  const againSelf = JSON.parse(retrospect(s, { generation: 'self - 0' }));
+  ok(againSelf.logical === 3, 'self - 0 也返回当前世代', String(againSelf.logical));
+  const preview = JSON.parse(retrospect(s, { generation: 0, preview: true }));
+  ok(preview.logical === 0 && preview.messages === undefined && typeof preview.preview === 'string' && preview.count === firstFrozen.count, 'preview=true 返回缩略文本而不是完整 messages', JSON.stringify({ logical: preview.logical, count: preview.count, hasPreview: typeof preview.preview }));
   let futureError = null;
-  try { retrospect(s, { generation: 3 }); } catch (error) { futureError = error.message; }
-  ok(typeof futureError === 'string', '当前/未来世代号被拒绝');
+  try { retrospect(s, { generation: 4 }); } catch (error) { futureError = error.message; }
+  ok(typeof futureError === 'string', '未来世代号被拒绝');
 }
 
 console.log(NL + '⑥.9 plasticize types：区间内按类型匹配，cookie 不参与');

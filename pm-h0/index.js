@@ -637,18 +637,22 @@ export function apply(ctx, config) {
     tool({
       name: 'retrospect',
       description: [
-        "Read the context of one PAST logical generation. Pure read.",
-        "Pass an absolute 0-based logical generation number or \"self - N\" (for example \"self - 1\", where self is the current logical generation number). The target must be less than self; the current generation is already visible and is rejected.",
+        "Read the context of a logical generation, past or current. Pure read.",
+        "Pass an absolute 0-based logical generation number, \"self\" (the current generation), or \"self - N\" (for example \"self - 1\"). Past generations are frozen; self returns the current surface as the model sees it now.",
         "A successful execute freezes logical generation N and returns N; continued reasoning belongs to generation N + 1, so generation N is immediately queryable with self - 1.",
-        "Returns compact JSON: {logical, messages, count, letter}. Each message is {role, text, time}; each letter is {index, text, time}. index is the message position inside that generation when the letter was written. time is the log epoch-millisecond timestamp, useful for staleness checks.",
-        "messages are that generation's input context: replayed through that generation's execute call and its tool result, before that execute's replacement/auto-hide writes. The material that generation hid belonged to the previous generation and is not included; read the previous generation to see it. A letter written between two execute declarations belongs to the later generation. Call once per generation; use a run_code program to iterate over several generations.",
+        "Returns compact JSON: {logical, count, letter} plus either messages or preview. messages is [{role, text, time}]; letter is [{index, text, time}]. preview=true returns one clipped preview line per message instead of the full messages array, reusing the set-preview renderer.",
+        "Messages are that generation's input context: replayed through that generation's execute call and its tool result, before that execute's replacement/auto-hide writes. The material that generation hid belonged to the previous generation and is not included; read the previous generation to see it. A letter written between two execute declarations belongs to the later generation. Call once per generation; use a run_code program to iterate over several generations.",
       ].join(String.fromCharCode(10) + String.fromCharCode(10)),
       parameters: {
         type: 'object',
         properties: {
           generation: {
             oneOf: [{ type: 'integer' }, { type: 'string' }],
-            description: 'Required. Past logical generation: absolute number (e.g. 3) or "self - N" (e.g. "self - 1"). Must be < self.',
+            description: 'Required. Logical generation: absolute number (e.g. 3), "self" (current), or "self - N" (e.g. "self - 1").',
+          },
+          preview: {
+            type: 'boolean',
+            description: 'Default false. When true, return a clipped preview text instead of the full messages array.',
           },
         },
         required: ['generation'],

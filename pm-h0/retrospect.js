@@ -1,11 +1,10 @@
 /**
- * PM · retrospect —— 只读查询**一个历史逻辑世代**的上下文。
+ * PM · retrospect —— 只读查询逻辑世代（历史或当前 self）的上下文。
  *
- * 当前世代 self 的上下文就是模型此刻看到的内容，查询它没有意义；因此
- * generation 必须严格小于 self。返回值是结构化 JSON（PTC 友好），
- * 由调用方在程序里自行筛选；一个世代一次调用。
+ * 历史世代回放到其 execute 调用及 tool result 为止；当前 self 直接返回
+ * 当前 surface。默认返回结构化 JSON（PTC 友好），preview:true 时复用
+ * set 预览渲染，返回缩略文本而不是完整 messages。
  *
- * 历史上下文通过回放日志到该逻辑世代最后一次写入点重建。
  * 被该世代隐藏掉的原文属于上一代，不在本工具的输出里。
  *
  * @module dsh-plugin-plastic-memories-h0/retrospect
@@ -13,6 +12,7 @@
 
 import { SURFACE_TYPES, derivedMessage, messageText } from './coords.js';
 import { logicalGenerations } from './engine.js';
+import { renderPreview } from './preview.js';
 
 /** 事件类型到角色名的兜底映射（正常消息直接读 message.role）。 */
 const ROLE_BY_TYPE = Object.freeze({
@@ -37,25 +37,31 @@ function eventText(event) {
  */
 function normalizeGeneration(value, self) {
   let target;
+  let current = false;
   if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) {
     target = value;
   } else if (typeof value === 'string') {
     const text = value.trim();
-    if (/^\d+$/.test(text)) {
+    if (/^self$/iu.test(text)) {
+      target = self;
+      current = true;
+    } else if (/^\d+$/.test(text)) {
       target = Number(text);
     } else {
       const match = /^self\s*-\s*(\d+)$/iu.exec(text);
-      if (match === null) throw new Error('generation must be an absolute logical generation number (e.g. 3) or "self - N" (e.g. "self - 1")');
+      if (match === null) throw new Error('generation must be an absolute logical generation number (e.g. 3), "self", or "self - N" (e.g. "self - 1")');
       const offset = Number(match[1]);
-      if (!Number.isSafeInteger(offset) || offset < 1) throw new Error('N in "self - N" must be a positive integer');
+      if (!Number.isSafeInteger(offset) || offset < 0) throw new Error('N in "self - N" must be a non-negative integer');
       target = self - offset;
+      if (offset === 0) current = true;
     }
   } else {
-    throw new Error('generation must be an integer or a "self - N" string');
+    throw new Error('generation must be an integer, "self", or a "self - N" string');
   }
   if (!Number.isSafeInteger(target) || target < 0) throw new Error('generation is out of range: the target must be >= 0');
-  if (target >= self) throw new Error('only past logical generations can be queried: the current generation self is already in the model input');
-  return target;
+  if (target > self) throw new Error('generation is in the future: the current generation is ' + String(self));
+  if (target === self) current = true;
+  return { target, current };
 }
 
 /**
@@ -69,8 +75,8 @@ function normalizeGeneration(value, self) {
  */
 export function retrospect(session, args) {
   const value = args?.generation;
-  if (value === undefined) throw new Error('retrospect requires generation (a past logical generation number or "self - N")');
-  return retrospectGeneration(session, value);
+  if (value === undefined) throw new Error('retrospect requires generation (a logical generation number, "self", or "self - N")');
+  return retrospectGeneration(session, value, args?.preview === true);
 }
 
 /**
@@ -96,12 +102,14 @@ function executeResultSeq(events, callId) {
   return found;
 }
 
-export function retrospectGeneration(session, generation) {
+export function retrospectGeneration(session, generation, preview = false) {
   const events = session.snapshotEvents();
   const info = logicalGenerations(session);
   info.byCallId = new Map(info.executes.map((entry) => [entry.callId, entry.logical]));
   const self = info.total;
-  const target = normalizeGeneration(generation, self);
+  const normalized = normalizeGeneration(generation, self);
+  const target = normalized.target;
+  const isCurrent = normalized.current;
 
   const bySeq = new Map(events.map((event) => [event.seq, event]));
   // 统一元数据来源：plugin:plastic-memories/logical；旧日志回退替代消息标记。
@@ -125,33 +133,40 @@ export function retrospectGeneration(session, generation) {
   }
   cutoffs.sort((left, right) => left.seq - right.seq);
 
-  // 目标世代自己的上下文 = 它的 execute 声明（assistant tool-call）出现时的 surface；
-  // 不含 execute 结果，更不含执行后的替代/auto-hide。
-  const ownExecute = info.executes.find((entry) => entry.logical === target);
-  // 世代上下文包含 execute 调用及其 tool result（UI 会显示这一行），
-  // 但不含 execute 之后写出的替代/auto-hide。
-  const executeResult = ownExecute === undefined ? undefined : executeResultSeq(events, ownExecute.callId);
-  let cutoff = ownExecute === undefined ? -1 : (executeResult ?? ownExecute.seq);
-  if (cutoff < 0) {
-    // 用户命令产生的逻辑世代没有 execute 声明：保留旧边界（私有逻辑事件）。
-    for (const marker of cutoffs) {
-      if (marker.logical === target) cutoff = Math.max(cutoff, marker.seq);
+  // 历史世代：上下文截止到该世代 execute 调用及其 tool result；
+  // 当前世代 self：直接用当前 surface。
+  let contextNodes;
+  if (isCurrent) {
+    contextNodes = [...session.surface.nodes];
+  } else {
+    const ownExecute = info.executes.find((entry) => entry.logical === target);
+    const executeResult = ownExecute === undefined ? undefined : executeResultSeq(events, ownExecute.callId);
+    let cutoff = ownExecute === undefined ? -1 : (executeResult ?? ownExecute.seq);
+    if (cutoff < 0) {
+      for (const marker of cutoffs) {
+        if (marker.logical === target) cutoff = Math.max(cutoff, marker.seq);
+      }
     }
+    if (cutoff < 0) throw new Error('no context found for logical generation ' + String(target) + ' (no write recorded for that generation)');
+    contextNodes = replaySurface(events, cutoff);
   }
-  if (cutoff < 0) throw new Error('no context found for logical generation ' + String(target) + ' (no write recorded for that generation)');
-  const contextNodes = replaySurface(events, cutoff);
   const messages = [];
+  const rawMessages = [];
   for (const seq of contextNodes) {
     const event = bySeq.get(seq);
     if (event === undefined) continue;
     const message = derivedMessage(session, event);
+    if (message !== undefined && message !== null) rawMessages.push(message);
     messages.push({
       role: message !== undefined && typeof message.role === 'string' ? String(message.role) : (ROLE_BY_TYPE[event.type] ?? String(event.type)),
       text: messageText(message),
       time: Number.isSafeInteger(event.time) ? event.time : null,
     });
   }
-  return JSON.stringify({ logical: target, count: messages.length, messages, letter: lettersOfGeneration(events, target, info, cutoffs) });
+  const logical = isCurrent ? self : target;
+  const letter = lettersOfGeneration(events, isCurrent ? Number.POSITIVE_INFINITY : target, info, cutoffs);
+  if (preview) return JSON.stringify({ logical, count: messages.length, preview: renderPreview(rawMessages), letter });
+  return JSON.stringify({ logical, count: messages.length, messages, letter });
 }
 
 /** 取某个逻辑世代生命周期内输入的全部 letter（按调用顺序，附消息序号）。 */
