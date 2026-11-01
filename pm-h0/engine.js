@@ -450,13 +450,26 @@ export function lockedSeqs(session) {
 }
 
 /**
- * 用**区间**描述当前安全区（模型看到的是 token 流，不容易用“消息条数”理解）。
- * 锚点用可见 cookie 编号；没有 cookie 时退化为“开头/结尾”。
+ * 用**区间**描述当前安全区（中文用户侧）。
  * @param {object} session - 目标会话。
- * @param {Set<number>} [locks] - 已算好的锁集合。
- * @returns {string} 形如 `(cookie 5, cookie 8)；[cookie 12, cookie 14]`；空安全区返回空串。
+ * @param {Set<number>} [locks] - 锁定 seq。
+ * @returns {string} 区间描述。
  */
 export function safetyZoneIntervals(session, locks) {
+  return safetyZoneIntervalsImpl(session, locks, false);
+}
+
+/**
+ * 英文区间描述（模型侧错误）。
+ * @param {object} session - 目标会话。
+ * @param {Set<number>} [locks] - 锁定 seq。
+ * @returns {string} English interval description.
+ */
+export function safetyZoneIntervalsEn(session, locks) {
+  return safetyZoneIntervalsImpl(session, locks, true);
+}
+
+function safetyZoneIntervalsImpl(session, locks, en) {
   const set = locks ?? lockedSeqs(session);
   if (set.size === 0) return '';
   const nodes = session.surface.nodes;
@@ -486,13 +499,13 @@ export function safetyZoneIntervals(session, locks) {
     for (let index = left; index >= 0; index -= 1) if (cookieAt.has(index)) { before = { index, number: cookieAt.get(index) }; break; }
     for (let index = right; index < nodes.length; index += 1) if (cookieAt.has(index)) { after = { index, number: cookieAt.get(index) }; break; }
     if (left === right) {
-      // 孤立点：cookie 无法表达单条消息，用文本锚（前/后 N 字符）。
       const snippet = textSnippet(messageTextAt(session, nodes[left]));
-      const label = snippet.length > 0 ? '孤立消息「' + snippet + '」' : '无文本的孤立消息';
-      // 孤立点也必须给出最近的前后 cookie 锚点，否则无法与其它空档区分。
-      const beforeLabel = before !== undefined ? 'cookie ' + String(before.number) : '开头';
-      const afterLabel = after !== undefined ? 'cookie ' + String(after.number) : '结尾';
-      parts.push(beforeLabel + ' 与 ' + afterLabel + ' 之间，' + label);
+      const label = en
+        ? (snippet.length > 0 ? 'isolated message "' + snippet + '"' : 'isolated message with no text')
+        : (snippet.length > 0 ? '孤立消息「' + snippet + '」' : '无文本的孤立消息');
+      const beforeLabel = before !== undefined ? 'cookie ' + String(before.number) : (en ? 'start' : '开头');
+      const afterLabel = after !== undefined ? 'cookie ' + String(after.number) : (en ? 'end' : '结尾');
+      parts.push(en ? 'between ' + beforeLabel + ' and ' + afterLabel + ', ' + label : beforeLabel + ' 与 ' + afterLabel + ' 之间，' + label);
       continue;
     }
     const leftBracket = before !== undefined && before.index === left ? '[' : '(';
@@ -501,24 +514,23 @@ export function safetyZoneIntervals(session, locks) {
     if (before !== undefined && after !== undefined) {
       zone = leftBracket + 'cookie ' + String(before.number) + ', cookie ' + String(after.number) + rightBracket;
     } else if (before !== undefined) {
-      zone = 'cookie ' + String(before.number) + ' 之后到结尾';
+      zone = en ? 'after cookie ' + String(before.number) + ' to the end' : 'cookie ' + String(before.number) + ' 之后到结尾';
     } else if (after !== undefined) {
-      zone = '开头到 cookie ' + String(after.number);
+      zone = en ? 'start to cookie ' + String(after.number) : '开头到 cookie ' + String(after.number);
     } else {
-      zone = '开头到结尾';
+      zone = en ? 'start to end' : '开头到结尾';
     }
-    // 两端若不是 cookie 边界，用文本锚注明真实起止，避免把中间的未锁定消息也读成锁定。
     if (leftBracket === '(') {
       const text = textSnippet(messageTextAt(session, nodes[left]));
-      if (text.length > 0) zone += '；左端「' + text + '」';
+      if (text.length > 0) zone += en ? '; left edge "' + text + '"' : '；左端「' + text + '」';
     }
     if (rightBracket === ')') {
       const text = textSnippet(messageTextAt(session, nodes[right]));
-      if (text.length > 0) zone += '；右端「' + text + '」';
+      if (text.length > 0) zone += en ? '; right edge "' + text + '"' : '；右端「' + text + '」';
     }
     parts.push(zone);
   }
-  return parts.join('；');
+  return parts.join(en ? '; ' : '；');
 }
 
 /** 安全区提示（易过时；报错时列表是准确的）。 */
@@ -542,7 +554,8 @@ function assertNotLocked(session, locks, shadowed) {
   if (locks === undefined || locks.size === 0) return;
   const hit = shadowed.filter((seq) => locks.has(seq));
   if (hit.length > 0) {
-    throw new Error('operation touches the safety zone (locked seqs: ' + hit.slice(0, 8).join(',') + (hit.length > 8 ? '…' : '') + '); unlock with /plasticize unlock or choose another range');
+    const zones = safetyZoneIntervalsEn(session, new Set(hit));
+    throw new Error('operation touches the safety zone: ' + (zones.length > 0 ? zones : hit.slice(0, 8).join(',')) + '; unlock with /plasticize unlock or choose another range');
   }
 }
 function applyDeclarations(session, declarations, open, state, options = {}) {
@@ -775,7 +788,8 @@ export function assertResolvedUnlocked(session, resolved) {
   for (const span of resolved) {
     const hit = span.shadowed.filter((seq) => locks.has(seq));
     if (hit.length === 0) continue;
-    throw new Error('operation touches the safety zone (locked seqs: ' + hit.slice(0, 8).join(',') + (hit.length > 8 ? '…' : '') + '); unlock with /plasticize unlock or choose another range');
+    const zones = safetyZoneIntervalsEn(session, new Set(hit));
+    throw new Error('operation touches the safety zone: ' + (zones.length > 0 ? zones : hit.slice(0, 8).join(',')) + '; unlock with /plasticize unlock or choose another range');
   }
 }
 
@@ -787,11 +801,14 @@ export function assertResolvedUnlocked(session, resolved) {
  * @param {object} before - 只取排在它之前的声明。
  * @returns {object|undefined} 待决的 set 声明。
  */
-function findLastPendingSet(declarations, before) {
+function findLastPendingSet(declarations, before, failedCallIds) {
   const cut = declarations.indexOf(before);
   let found;
   for (let i = 0; i < cut; i++) {
-    if (declarations[i].args?.option === 'set') found = declarations[i];
+    const declaration = declarations[i];
+    if (declaration.args?.option !== 'set') continue;
+    if (failedCallIds !== undefined && failedCallIds.has(declaration.callId)) continue;
+    found = declaration;
   }
   return found;
 }
@@ -829,7 +846,7 @@ export function flush(session, options, logger) {
     if (isDone(state, d)) continue;
     let anchor;
     if (d.args?.also_execute_last_set !== false) {
-      const pending = findLastPendingSet(state.declarations, d);
+      const pending = findLastPendingSet(state.declarations, d, state.failedCallIds);
       if (pending !== undefined && !isDone(state, pending)) {
         if (!todo.includes(pending)) todo.push(pending);
         // execute 重传的 ops 属于 set 那条消息 —— 零点也必须用 set 的。

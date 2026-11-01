@@ -313,6 +313,16 @@ export function findLastPendingSet(session) {
     const source = event.type === 'user/message' ? event.data?.source : event.data?.message?.source;
     for (const settled of pmSettledCallIds(source)) applied.add(settled);
   }
+  const failed = new Set();
+  for (const event of session.snapshotEvents()) {
+    if (event.type === 'tool/result' && event.data?.message?.isError === true) {
+      const message = event.data.message;
+      const callId = message.toolCallId ?? message.source?.callId;
+      if (typeof callId === 'string') failed.add(callId);
+    } else if (event.type === 'tool/ptc-dispatch' && event.data?.isError === true) {
+      if (typeof event.data?.subCallId === 'string') failed.add(event.data.subCallId);
+    }
+  }
   let found;
   for (const event of session.snapshotEvents()) {
     // native：assistant/message 里的 tool-call 块
@@ -323,7 +333,7 @@ export function findLastPendingSet(session) {
         try { args = typeof block.arguments === 'string' ? JSON.parse(block.arguments) : block.arguments; } catch { continue; }
         if (args?.option !== 'set') continue;
         const callId = block.id ?? block.callId;
-        if (typeof callId !== 'string' || applied.has(callId)) continue;
+        if (typeof callId !== 'string' || applied.has(callId) || failed.has(callId)) continue;
         found = { callId, ops: args.ops };
       }
       continue;
@@ -334,7 +344,7 @@ export function findLastPendingSet(session) {
       const args = event.data?.arguments ?? {};
       if (args?.option !== 'set') continue;
       const callId = event.data?.subCallId;
-      if (typeof callId !== 'string' || applied.has(callId)) continue;
+      if (typeof callId !== 'string' || applied.has(callId) || failed.has(callId)) continue;
       found = { callId, ops: args.ops };
     }
   }

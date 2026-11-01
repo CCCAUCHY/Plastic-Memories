@@ -18,7 +18,7 @@ import { flush, stageUserOperation, flushUserOperations, clearStagedOperations, 
 import { initState, applyEvent, viewOf } from './generations.js';
 import { retrospect } from './retrospect.js';
 import { createMessageCapture } from './capture.js';
-import { normalizeOp, OP_DEFAULTS } from './plasticize.js';
+import { normalizeOp, OP_DEFAULTS, findLastPendingSet } from './plasticize.js';
 import { readProfileUserConfig, resolveProfileStateDir } from './index.js';
 
 const NL = String.fromCharCode(10);
@@ -288,7 +288,7 @@ console.log(NL + '⑥.5 安全区：lock 后 plasticize 不能命中锁定区间
   ok(lockRecords.some((event) => String(event.data?.comment ?? '').includes('/plasticize lock')), '私有记录保存当时的命令原文');
   let toolSafety = null;
   try { assertResolvedUnlocked(s, [{ shadowed: staged.shadowed }]); } catch (error) { toolSafety = error.message; }
-  ok(typeof toolSafety === 'string' && toolSafety.includes('safety zone') && /[A-Za-z]/.test(toolSafety), '工具执行前就报英文安全区错误', String(toolSafety).slice(0, 70));
+  ok(typeof toolSafety === 'string' && toolSafety.includes('safety zone') && toolSafety.includes('cookie') && /[A-Za-z]/.test(toolSafety), '工具执行前报英文安全区错误，并用 cookie 区间描述', String(toolSafety).slice(0, 100));
   plasticizeCall(s, { turn: 99, step: 1 }, 'lock-exec', { ops: [{ spans: ['(3,4)'], new_text: '⟨不应命中⟩' }], option: 'execute' });
   const r = flush(s, { openStep: { turn: 99, step: 1 } }, quiet);
   ok(r.applied === 0 && r.skipped === 1, '命中安全区的 execute 被拒绝', JSON.stringify(r));
@@ -414,6 +414,19 @@ console.log(NL + '⓪.45 profile .pm/config.json：用户配置覆盖 preset');
   ok(user.autoHide === false && user.captureMessages === true && !('probeImports' in user), '只接受用户可调键，忽略 probeImports', JSON.stringify(user));
   ok(warnings.length === 1 && warnings[0].includes('probeImports'), '未知键告警', JSON.stringify(warnings));
   await rm(profile, { recursive: true, force: true });
+}
+
+console.log(NL + '⓪.46 失败的 set 不会被后续 execute 当作待决预览兑现');
+{
+  const s = mk();
+  openStep(s, 99, 1);
+  plasticizeCall(s, { turn: 99, step: 1 }, 'failed-set', { ops: [{ spans: ['(3,4)'], new_text: '⟨失败 set⟩' }], option: 'set' }, { isError: true, resultText: 'Error: safety zone' });
+  ok(findLastPendingSet(s) === undefined, '报错的 set 不算待决预览', JSON.stringify(findLastPendingSet(s)));
+  openStep(s, 99, 2);
+  plasticizeCall(s, { turn: 99, step: 2 }, 'after-failed-set', { ops: [{ spans: ['(5,6)'], new_text: '⟨正常 execute⟩' }], option: 'execute' });
+  ok(findLastPendingSet(s) === undefined, '后续 execute 不会重新捡起失败 set', JSON.stringify(findLastPendingSet(s)));
+  const r = flush(s, { openStep: { turn: 99, step: 2 } }, quiet);
+  ok(r.applied === 1 && r.skipped === 0, '只落地 execute，不被失败 set 污染', JSON.stringify(r));
 }
 
 console.log(NL + '⓪.5 只读抓取：模型实际收到的 messages 原样落盘');

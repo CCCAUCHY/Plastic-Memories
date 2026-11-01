@@ -6,7 +6,7 @@
  *
  * @module capture
  */
-import { appendFile, mkdir } from 'node:fs/promises';
+import { appendFileSync, mkdirSync } from 'node:fs';
 import { isAbsolute, join, resolve } from 'node:path';
 
 /**
@@ -26,7 +26,6 @@ function safeSegment(value) {
 export function createMessageCapture(options = {}) {
   const directory = typeof options.dir === 'string' && options.dir.length > 0 ? options.dir : '.pm-capture';
   const logger = options.logger;
-  let chain = Promise.resolve();
   let warned = false;
   const warnOnce = (error) => {
     if (warned) return;
@@ -37,9 +36,8 @@ export function createMessageCapture(options = {}) {
     const cwd = typeof session?.header?.cwd === 'string' && session.header.cwd.length > 0 ? session.header.cwd : process.cwd();
     const targetDir = isAbsolute(directory) ? directory : resolve(cwd, directory);
     const target = join(targetDir, safeSegment(session?.id ?? 'session') + '.jsonl');
-    let line;
     try {
-      line = JSON.stringify({
+      const line = JSON.stringify({
         time: Date.now(),
         sessionId: session?.id ?? null,
         sessionSeq: Number.isSafeInteger(session?.seq) ? session.seq : null,
@@ -48,16 +46,15 @@ export function createMessageCapture(options = {}) {
         messageCount: Array.isArray(request?.messages) ? request.messages.length : 0,
         messages: request?.messages ?? null,
       }) + String.fromCharCode(10);
+      mkdirSync(targetDir, { recursive: true });
+      appendFileSync(target, line, 'utf8');
     } catch (error) {
+      try {
+        mkdirSync(targetDir, { recursive: true });
+        appendFileSync(join(targetDir, '_capture-errors.log'), JSON.stringify({ time: Date.now(), message: String(error?.message ?? error) }) + String.fromCharCode(10));
+      } catch { /* diagnostics only */ }
       warnOnce(error);
-      return chain;
     }
-    chain = chain
-      .then(async () => {
-        await mkdir(targetDir, { recursive: true });
-        await appendFile(target, line, 'utf8');
-      })
-      .catch(warnOnce);
-    return chain;
+    return Promise.resolve();
   };
 }
