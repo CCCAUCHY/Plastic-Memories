@@ -110,10 +110,15 @@ export function retrospectGeneration(session, generation) {
   }
   cutoffs.sort((left, right) => left.seq - right.seq);
 
-  // 只查历史世代；normalizeGeneration 已拒绝当前/未来世代。
-  let cutoff = -1;
-  for (const marker of cutoffs) {
-    if (marker.logical === target) cutoff = Math.max(cutoff, marker.seq);
+  // 目标世代自己的上下文 = 它的 execute 声明（assistant tool-call）出现时的 surface；
+  // 不含 execute 结果，更不含执行后的替代/auto-hide。
+  const ownExecute = info.executes.find((entry) => entry.logical === target);
+  let cutoff = ownExecute === undefined ? -1 : ownExecute.seq;
+  if (cutoff < 0) {
+    // 用户命令产生的逻辑世代没有 execute 声明：保留旧边界（私有逻辑事件）。
+    for (const marker of cutoffs) {
+      if (marker.logical === target) cutoff = Math.max(cutoff, marker.seq);
+    }
   }
   if (cutoff < 0) throw new Error('no context found for logical generation ' + String(target) + ' (no write recorded for that generation)');
   const contextNodes = replaySurface(events, cutoff);
@@ -128,13 +133,20 @@ export function retrospectGeneration(session, generation) {
       time: Number.isSafeInteger(event.time) ? event.time : null,
     });
   }
-  return JSON.stringify({ logical: target, count: messages.length, messages, letter: lettersOfGeneration(events, target, cutoffs) });
+  return JSON.stringify({ logical: target, count: messages.length, messages, letter: lettersOfGeneration(events, target, info, cutoffs) });
 }
 
 /** 取某个逻辑世代生命周期内输入的全部 letter（按调用顺序，附消息序号）。 */
-function lettersOfGeneration(events, target, cutoffs) {
+function lettersOfGeneration(events, target, info, cutoffs) {
+  const executes = Array.isArray(info.executes) ? info.executes.slice().sort((left, right) => left.seq - right.seq) : [];
   const generationAt = (seq) => {
-    let logical = 0; // 第一次成功 execute 之前：归入第 0 代
+    // 新语义：逻辑世代 N 的上下文截止于 N 的 execute 声明；
+    // 两个 execute 声明之间写入的 letter 属于后一个 generation（N 的推理生命周期）。
+    if (executes.length > 0) {
+      const next = executes.find((entry) => entry.seq > seq);
+      return next === undefined ? Number.POSITIVE_INFINITY : next.logical;
+    }
+    let logical = 0;
     for (const cutoff of cutoffs) {
       if (cutoff.seq < seq) logical = cutoff.logical; else break;
     }
@@ -148,7 +160,6 @@ function lettersOfGeneration(events, target, cutoffs) {
       name = event.data?.name;
       raw = event.data?.arguments;
     } else if (event.type === 'tool/ptc-dispatch-start') {
-      // PTC 内层调用的 call 记在 dispatch-start 上，surface 上没有 tool/call。
       name = event.data?.name;
       raw = event.data?.arguments;
     } else continue;

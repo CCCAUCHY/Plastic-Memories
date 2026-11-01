@@ -641,7 +641,7 @@ export function apply(ctx, config) {
         "Pass an absolute 0-based logical generation number or \"self - N\" (for example \"self - 1\", where self is the current logical generation number). The target must be less than self; the current generation is already visible and is rejected.",
         "A successful execute freezes logical generation N and returns N; continued reasoning belongs to generation N + 1, so generation N is immediately queryable with self - 1.",
         "Returns compact JSON: {logical, messages, count, letter}. Each message is {role, text, time}; each letter is {index, text, time}. index is the message position inside that generation when the letter was written. time is the log epoch-millisecond timestamp, useful for staleness checks.",
-        "messages are that generation's surface context, replayed to that generation's last write. The material that generation hid belonged to the previous generation and is not included; read the previous generation to see it. Call once per generation; use a run_code program to iterate over several generations.",
+        "messages are that generation's input context: replayed to that generation's execute declaration (the assistant message carrying the execute call), before that execute's writes and tool result. The material that generation hid belonged to the previous generation and is not included; read the previous generation to see it. A letter written between two execute declarations belongs to the later generation. Call once per generation; use a run_code program to iterate over several generations.",
       ].join(String.fromCharCode(10) + String.fromCharCode(10)),
       parameters: {
         type: 'object',

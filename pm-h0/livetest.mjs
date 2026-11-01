@@ -113,12 +113,15 @@ console.log(NL + '⑥ retrospect：只返回历史世代自己的上下文（结
   ok(victim.type === 'user/message', '目标是时间快照那条消息', victim.type);
   const keyword = victim.data.content[0].text.slice(0, 12);
   plasticizeCall(s, { turn: 99, step: 1 }, 'hide-1', { ops: [{ spans: ['(3,4)'], new_text: '' }], option: 'execute' });
+  const beforeFirstCount = s.surface.nodes.length;
   const r = flush(s, { openStep: { turn: 99, step: 1 } }, quiet);
   ok(r.applied === 1, '空洞写入成功', JSON.stringify(r));
   ok(!s.surface.nodes.includes(6), '那条消息已离开工作面');
   const afterFirst = [...s.surface.nodes];
   const firstFrozen = JSON.parse(retrospect(s, { generation: 0 }));
-  ok(firstFrozen.logical === 0 && firstFrozen.count === afterFirst.length, '第一次 execute 冻结后，逻辑世代 0 立刻可查', JSON.stringify({ logical: firstFrozen.logical, count: firstFrozen.count }));
+  ok(firstFrozen.logical === 0 && firstFrozen.count === beforeFirstCount - 1, '第一次 execute 冻结后，逻辑世代 0 立刻可查', JSON.stringify({ logical: firstFrozen.logical, count: firstFrozen.count }));
+  ok(firstFrozen.messages.some((message) => String(message.text).includes(keyword)), 'g0 上下文 = 任何塑形操作之前的 surface', JSON.stringify({ keyword, count: firstFrozen.count }));
+  ok(!firstFrozen.messages.some((message) => message.role === 'developer' && message.text === ''), 'g0 上下文不含 execute 结果/替代消息');
 
   // 第一次 execute 冻结逻辑世代 0，继续推理进入 self=1；当前世代 self 不允许查询。
   let currentError = null;
@@ -140,14 +143,12 @@ console.log(NL + '⑥ retrospect：只返回历史世代自己的上下文（结
   const byLabel = JSON.parse(retrospect(s, { generation: 'self - 2' }));
   ok(byNumber.logical === 0, '返回 logical（历史世代号）', String(byNumber.logical));
   ok(JSON.stringify(byNumber) === JSON.stringify(byLabel), '绝对编号与 self - 2 写法返回完全一致');
-  ok(byNumber.count === afterFirst.length, '历史上下文 = 当时写入后的 surface', String(byNumber.count));
-  ok(!byNumber.messages.some((message) => String(message.text).includes(keyword)), '历史世代上下文不含它隐藏的上一代原文');
-  ok(byNumber.messages.some((message) => message.role === 'developer' && message.text === ''), '历史上下文包含该世代写出的空替代消息');
-  ok(byNumber.letter.length === 3
-    && byNumber.letter[0].index === preIndex && byNumber.letter[0].text === 'S: 第 0 代之前的话'
-    && byNumber.letter[1].index === zeroIndex && byNumber.letter[1].text === 'L0: 第 0 代的话'
-    && byNumber.letter[2].index === ptcIndex && byNumber.letter[2].text === 'L0: PTC 的话',
-    'letter 只含第 0 代生命周期内的输入（含 PTC 内层 letter）且带消息序号', JSON.stringify(byNumber.letter));
+  ok(byNumber.count === beforeFirstCount - 1, '历史上下文 = execute 声明时的 surface（不含结果）', String(byNumber.count));
+  ok(byNumber.messages.some((message) => String(message.text).includes(keyword)), '历史世代上下文包含当时的原文');
+  ok(!byNumber.messages.some((message) => message.role === 'developer' && message.text === ''), '历史上下文不含 execute 结果写出的空替代消息');
+  ok(byNumber.letter.length === 1
+    && byNumber.letter[0].index === preIndex && byNumber.letter[0].text === 'S: 第 0 代之前的话',
+    'letter 只含第 0 代生命周期内的输入且带消息序号', JSON.stringify(byNumber.letter));
   ok(byNumber.messages.every((message) => Number.isSafeInteger(message.time)), 'messages 每项带底层日志时间');
   ok(byNumber.letter.every((entry) => Number.isSafeInteger(entry.time)), 'letter 每项带底层日志时间');
 
@@ -160,7 +161,10 @@ console.log(NL + '⑥ retrospect：只返回历史世代自己的上下文（结
   const r3 = flush(s, { openStep: { turn: 99, step: 5 } }, quiet);
   ok(r3.applied === 1, '第三个逻辑世代写入成功', JSON.stringify(r3));
   const gen1 = JSON.parse(retrospect(s, { generation: 1 }));
-  ok(gen1.letter.length === 1 && gen1.letter[0].index === oneIndex && gen1.letter[0].text === 'L1: 第 1 代的话', 'letter 按逻辑世代归属，不跨代累积', JSON.stringify(gen1.letter));
+  ok(gen1.letter.length === 2
+    && gen1.letter[0].index === zeroIndex && gen1.letter[0].text === 'L0: 第 0 代的话'
+    && gen1.letter[1].index === ptcIndex && gen1.letter[1].text === 'L0: PTC 的话',
+    '两个 execute 声明之间的 letter 属于下一个逻辑世代', JSON.stringify(gen1.letter));
 
   let againError = null;
   try { retrospect(s, { generation: 'self - 0' }); } catch (error) { againError = error.message; }
