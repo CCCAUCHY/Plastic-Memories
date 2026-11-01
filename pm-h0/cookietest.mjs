@@ -199,16 +199,18 @@ console.log(NL + '⑥ planCookie：队尾规则');
   ok(planCookie(s) === undefined, '队尾已是 cookie → 不补');
 }
 
-console.log(NL + '⑦ bracketUserMessages：只补右端点（左端点由请求边界插入，编号预留防碰撞）');
+console.log(NL + '⑦ bracketUserMessages：首条用户消息补左端点 cookie1，其余只补右端点');
 {
   const s = ctx.sessions.create('ct-bracket', {});
   const U = (text, kind = 'user') => ({ id: 'u-' + text, role: 'user', content: [{ type: 'text', text }], source: { kind } });
 
   const first = bracketUserMessages(s, [U('第一条')]);
-  ok(first.length === 2, '决策里只有 user + 右端点（左端点由 request 边界插入）', String(first.length));
-  ok(first[0].source.kind === 'user' && first[1].source.kind === COOKIE_KIND,
-    '顺序 = 用户 / cookie', JSON.stringify(first.map((m) => m.source.kind)));
-  ok(first[1].source.id === 2, '右端点预留 request 边界要用的编号（next + 1）', String(first[1].source.id));
+  ok(first.length === 3, '首条用户消息 = 左端点 + user + 右端点', String(first.length));
+  ok(first[0].source.kind === COOKIE_KIND && first[0].source.id === 1,
+    '左端点 cookie1 在用户消息前', String(first[0].source.id));
+  ok(first[1].source.kind === 'user' && first[2].source.kind === COOKIE_KIND,
+    '顺序 = cookie / user / cookie', JSON.stringify(first.map((m) => m.source.kind)));
+  ok(first[2].source.id === 2, '右端点编号 2', String(first[2].source.id));
 
   for (const message of first) s.append('user/message', message, { surfaceOp: 'append' });
   const second = bracketUserMessages(s, [U('第二条')]);

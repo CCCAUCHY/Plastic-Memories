@@ -251,14 +251,23 @@ export function bracketUserMessages(session, messages, contextPercent) {
   // 预留右侧 cookie 的编号：边界会占用 next；若队尾已是 cookie，边界不会再插，
   // 右端点就用 next 本身。
   const boundaryWillInsert = !tailIsCookie;
+  const noCookies = listCookies(session).length === 0;
   let next = nextCookieId(session);
   let reserve = boundaryWillInsert ? 1 : 0;
+  let leftAdded = false;
   const out = [];
   for (const message of messages) {
     const human = message !== null && typeof message === 'object' && message.source?.kind === 'user';
     if (!human) {
       out.push(message);
       continue;
+    }
+    // Session 的第一次用户消息之前没有上一轮边界 cookie；补上左端点 cookie 1。
+    if (!leftAdded && noCookies && next === 1 && reserve === 1) {
+      out.push(cookieMessage(1, 'user', contextPercent));
+      next = 2;
+      reserve = 0;
+      leftAdded = true;
     }
     out.push(message);
     out.push(cookieMessage(next + reserve, 'user', contextPercent));
