@@ -31,7 +31,7 @@
 export const GENERATIONS_KEY = 'pmGenerations';
 
 /** 状态版本：字段或 fold 语义变了就 bump（持久化缓存据此丢弃旧行）。 */
-export const GENERATIONS_STATE_VERSION = 5;
+export const GENERATIONS_STATE_VERSION = 6;
 
 /**
  * 鸭子类型的 schema 替身。
@@ -151,7 +151,8 @@ export function applyEvent(state, event) {
     if (!Number.isSafeInteger(logical) || !Number.isSafeInteger(physical)) return state;
     const previousPages = Array.isArray(state.logicalPages) ? state.logicalPages : [];
     if (previousPages.some((page) => page.logical === logical)) return state;
-    return { ...state, logicalPages: [...previousPages, { logical, physical }] };
+    // 私有事件记录的是 1 起的冻结物理页；UI 页码是 0 起，这里统一减 1。
+    return { ...state, logicalPages: [...previousPages, { logical, physical: Math.max(0, physical - 1) }] };
   }
 
   if (event?.type === 'plugin:plastic-memories/locks') {
@@ -194,7 +195,7 @@ export function applyEvent(state, event) {
   const logical = source?.kind === 'pm-surface' && Number.isSafeInteger(source.logicalGeneration) ? source.logicalGeneration : undefined;
   const previousPages = Array.isArray(state.logicalPages) ? state.logicalPages : [];
   const logicalPages = logical !== undefined && !previousPages.some((page) => page.logical === logical)
-    ? [...previousPages, { logical, physical: state.gen + 1 }]
+    ? [...previousPages, { logical, physical: state.gen }]
     : previousPages;
   return {
     gen: state.gen + 1,
@@ -220,6 +221,15 @@ export function applyEvent(state, event) {
  */
 export function viewOf(state) {
   const generations = [...state.gens, { gen: state.gen, asOfSeq: state.asOfSeq, seqs: state.seqs }];
+  const frozenPages = Array.isArray(state.logicalPages) ? state.logicalPages : [];
+  let logicalPages = frozenPages;
+  if (frozenPages.length > 0) {
+    const currentLogical = Math.max(...frozenPages.map((page) => page.logical)) + 1;
+    if (!frozenPages.some((page) => page.logical === currentLogical)) {
+      // 已冻结逻辑页 + 1：当前推理中的逻辑页，指向最新物理页。
+      logicalPages = [...frozenPages, { logical: currentLogical, physical: state.gen, current: true }];
+    }
+  }
   return {
     current: state.gen,
     asOfSeq: state.asOfSeq,
@@ -228,7 +238,7 @@ export function viewOf(state) {
     raw: state.raw,
     replacements: state.reps,
     safety: Array.isArray(state.safety) ? state.safety : [],
-    logicalPages: Array.isArray(state.logicalPages) ? state.logicalPages : [],
+    logicalPages,
   };
 }
 

@@ -234,7 +234,7 @@ console.log(NL + '⑥.10 逻辑世代标记：同号物理世代成组，第一�
   let state = initState();
   for (const event of s.snapshotEvents()) state = applyEvent(state, event);
   const pages = viewOf(state).logicalPages;
-  ok(JSON.stringify(pages) === JSON.stringify([{ logical: 0, physical: 1 }]), '逻辑页码：逻辑 0 指向第一个物理页', JSON.stringify(pages));
+  ok(JSON.stringify(pages) === JSON.stringify([{ logical: 0, physical: 0 }, { logical: 1, physical: 2, current: true }]), '逻辑页码：冻结页 0 起 + 当前逻辑页指向最新物理页', JSON.stringify(pages));
   ok(countLogicalGenerations(s) === 1, '逻辑世代数为 1', String(countLogicalGenerations(s)));
   const freezeEvents = s.snapshotEvents().filter((e) => e.type === 'plugin:plastic-memories/logical' && e.data?.kind === 'execute');
   ok(freezeEvents.length === 1 && freezeEvents[0].data.logical === 0 && freezeEvents[0].data.physical === 1, 'execute 冻结写入私有 logical 事件（logical=0, physical=1）', JSON.stringify(freezeEvents.map((e) => e.data)));
@@ -246,7 +246,7 @@ console.log(NL + '⑥.10 逻辑世代标记：同号物理世代成组，第一�
   state = initState();
   for (const event of s.snapshotEvents()) state = applyEvent(state, event);
   const pages2 = viewOf(state).logicalPages;
-  ok(JSON.stringify(pages2) === JSON.stringify([{ logical: 0, physical: 1 }, { logical: 1, physical: 3 }]), '逻辑页码：中间物理世代不生成新逻辑页', JSON.stringify(pages2));
+  ok(JSON.stringify(pages2) === JSON.stringify([{ logical: 0, physical: 0 }, { logical: 1, physical: 2 }, { logical: 2, physical: 3, current: true }]), '逻辑页码：中间物理世代不生成新逻辑页，当前页跟随最新物理页', JSON.stringify(pages2));
   ok(countLogicalGenerations(s) === 2, '逻辑世代数递增到 2', String(countLogicalGenerations(s)));
   openStep(s, 99, 3);
   plasticizeCall(s, { turn: 99, step: 3 }, 'lg-set', { ops: [{ spans: ['(3,4)'], new_text: '⟨SET⟩' }], option: 'set' });

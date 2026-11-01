@@ -704,16 +704,18 @@ function applyDeclarations(session, declarations, open, state, options = {}) {
       const rawText = String(span.op.new_text ?? '');
       const isHole = rawText.length === 0;
       if (isHole && open === undefined) throw new Error('no open step; a pure hole is postponed to the next boundary');
+      const flattened = flatSeqList(span.shadowed);
+      const startSeq = flattened[0];
+      const endSeq = flattened[flattened.length - 1];
+      const refs = surfaceRangeSeqs(session, startSeq, endSeq, flattened);
       const source = pmSource({
         op: isHole ? 'hide' : 'stabilize',
         callId: declaration.callId,
         generation,
-        refs: [...span.shadowed],
+        refs,
         ...(consumed.length === 0 ? {} : { consumed }),
       });
-      const startSeq = span.shadowed[0];
-      const endSeq = span.shadowed[span.shadowed.length - 1];
-      const mark = { surfaceOp: { op: 'replace', startSeq, endSeq }, sourceEventSeqs: [...span.shadowed] };
+      const mark = { surfaceOp: { op: 'replace', startSeq, endSeq }, sourceEventSeqs: refs };
       const messageId = 'pm-surface-' + String(declaration.callId) + '-' + String(k);
       // 控制变量实验：所有替代文本（stabilize 与 hide）都写 developer/message。
       const devMessage = {
@@ -737,10 +739,11 @@ function applyDeclarations(session, declarations, open, state, options = {}) {
   if (open !== undefined) {
     for (const target of autoTargets) {
       const generation = session.surface.replaceGeneration + 1;
+      const autoSeqs = surfaceRangeSeqs(session, target.shadowed[0], target.shadowed[target.shadowed.length - 1], target.shadowed);
       const source = pmSource({
         op: 'hide',
         generation,
-        refs: [...target.shadowed],
+        refs: autoSeqs,
         note: 'auto-hide:' + target.reason,
       });
       session.append('developer/message', {
@@ -754,8 +757,8 @@ function applyDeclarations(session, declarations, open, state, options = {}) {
           source,
         },
       }, {
-        surfaceOp: { op: 'replace', startSeq: target.shadowed[0], endSeq: target.shadowed[target.shadowed.length - 1] },
-        sourceEventSeqs: [...target.shadowed],
+        surfaceOp: { op: 'replace', startSeq: autoSeqs[0], endSeq: autoSeqs[autoSeqs.length - 1] },
+        sourceEventSeqs: autoSeqs,
       });
       auto++;
     }
@@ -789,7 +792,7 @@ export function assertResolvedUnlocked(session, resolved) {
     const hit = span.shadowed.filter((seq) => locks.has(seq));
     if (hit.length === 0) continue;
     const zones = safetyZoneIntervalsEn(session, new Set(hit));
-    throw new Error('operation touches the safety zone: ' + (zones.length > 0 ? zones : hit.slice(0, 8).join(',')) + '; unlock with /plasticize unlock or choose another range');
+    throw new Error('operation touches the safety zone (approximate range: ' + (zones.length > 0 ? zones : hit.slice(0, 8).join(',')) + '). Only the user can unlock it; do not retry this range until the user does.');
   }
 }
 
@@ -938,6 +941,26 @@ export function clearStagedOperations(session) {
   const list = PENDING_USER_OPS.get(session) ?? [];
   PENDING_USER_OPS.delete(session);
   return list.length;
+}
+
+/** Flatten a seq list defensively (nested arrays from older resolutions). */
+function flatSeqList(value) {
+  const out = [];
+  const walk = (item) => {
+    if (Number.isSafeInteger(item)) { out.push(item); return; }
+    if (Array.isArray(item)) for (const child of item) walk(child);
+  };
+  walk(value);
+  return [...new Set(out)].sort((left, right) => left - right);
+}
+
+/** Authoritative surface slice for a replacement range; fallback to resolved seqs. */
+function surfaceRangeSeqs(session, startSeq, endSeq, fallback) {
+  const nodes = surfaceNodes(session);
+  const start = nodes.indexOf(startSeq);
+  const end = nodes.indexOf(endSeq);
+  if (start >= 0 && end >= start) return nodes.slice(start, end + 1);
+  return flatSeqList(fallback);
 }
 
 function appendPrivateRecord(session, type, data) {

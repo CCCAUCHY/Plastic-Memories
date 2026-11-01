@@ -289,8 +289,13 @@ export function apply(ctx, config) {
         }) + String.fromCharCode(10));
         const sessionId = typeof request?.sessionId === 'string' ? request.sessionId : undefined;
         if (sessionId !== undefined) {
-          const session = ctx.sessions.get(sessionId);
-          void capture(session ?? { id: sessionId, header: {} }, request);
+          let session = { id: sessionId, header: {} };
+          try {
+            const sessions = ctx.get?.('sessions');
+            const found = sessions?.get?.(sessionId);
+            if (found !== undefined) session = found;
+          } catch { /* fallback to request identity */ }
+          void capture(session, request);
         }
       } catch (error) {
         ctx.logger?.warn?.('[pm-h0] message capture failed: ' + String(error?.message ?? error));
