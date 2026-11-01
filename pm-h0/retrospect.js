@@ -81,6 +81,21 @@ export function retrospect(session, args) {
  * @param {number} generation - 逻辑世代号（0 起，与 self - k 标签里的「逻辑」一致）。
  * @returns {string} JSON 文本。
  */
+/** Find the surface tool/result seq belonging to an execute call (PTC uses the root run_code result). */
+function executeResultSeq(events, callId) {
+  if (typeof callId !== 'string') return undefined;
+  const cut = callId.indexOf(':ptc:');
+  const owner = cut === -1 ? callId : callId.slice(0, cut);
+  let found;
+  for (const event of events) {
+    if (event.type !== 'tool/result') continue;
+    const message = event.data?.message;
+    const id = message?.toolCallId ?? message?.source?.callId;
+    if (id === callId || id === owner) found = event.seq;
+  }
+  return found;
+}
+
 export function retrospectGeneration(session, generation) {
   const events = session.snapshotEvents();
   const info = logicalGenerations(session);
@@ -113,7 +128,10 @@ export function retrospectGeneration(session, generation) {
   // 目标世代自己的上下文 = 它的 execute 声明（assistant tool-call）出现时的 surface；
   // 不含 execute 结果，更不含执行后的替代/auto-hide。
   const ownExecute = info.executes.find((entry) => entry.logical === target);
-  let cutoff = ownExecute === undefined ? -1 : ownExecute.seq;
+  // 世代上下文包含 execute 调用及其 tool result（UI 会显示这一行），
+  // 但不含 execute 之后写出的替代/auto-hide。
+  const executeResult = ownExecute === undefined ? undefined : executeResultSeq(events, ownExecute.callId);
+  let cutoff = ownExecute === undefined ? -1 : (executeResult ?? ownExecute.seq);
   if (cutoff < 0) {
     // 用户命令产生的逻辑世代没有 execute 声明：保留旧边界（私有逻辑事件）。
     for (const marker of cutoffs) {

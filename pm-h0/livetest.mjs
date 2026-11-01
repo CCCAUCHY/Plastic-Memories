@@ -119,9 +119,10 @@ console.log(NL + '⑥ retrospect：只返回历史世代自己的上下文（结
   ok(!s.surface.nodes.includes(6), '那条消息已离开工作面');
   const afterFirst = [...s.surface.nodes];
   const firstFrozen = JSON.parse(retrospect(s, { generation: 0 }));
-  ok(firstFrozen.logical === 0 && firstFrozen.count === beforeFirstCount - 1, '第一次 execute 冻结后，逻辑世代 0 立刻可查', JSON.stringify({ logical: firstFrozen.logical, count: firstFrozen.count }));
+  ok(firstFrozen.logical === 0 && firstFrozen.count === beforeFirstCount, '第一次 execute 冻结后，逻辑世代 0 立刻可查', JSON.stringify({ logical: firstFrozen.logical, count: firstFrozen.count }));
   ok(firstFrozen.messages.some((message) => String(message.text).includes(keyword)), 'g0 上下文 = 任何塑形操作之前的 surface', JSON.stringify({ keyword, count: firstFrozen.count }));
-  ok(!firstFrozen.messages.some((message) => message.role === 'developer' && message.text === ''), 'g0 上下文不含 execute 结果/替代消息');
+  ok(!firstFrozen.messages.some((message) => message.role === 'developer' && message.text === ''), 'g0 上下文不含 execute 之后写出的替代消息');
+  ok(firstFrozen.messages.some((message) => message.role === 'tool'), 'g0 上下文包含 execute 的 tool result');
 
   // 第一次 execute 冻结逻辑世代 0，继续推理进入 self=1；当前世代 self 不允许查询。
   let currentError = null;
@@ -143,7 +144,7 @@ console.log(NL + '⑥ retrospect：只返回历史世代自己的上下文（结
   const byLabel = JSON.parse(retrospect(s, { generation: 'self - 2' }));
   ok(byNumber.logical === 0, '返回 logical（历史世代号）', String(byNumber.logical));
   ok(JSON.stringify(byNumber) === JSON.stringify(byLabel), '绝对编号与 self - 2 写法返回完全一致');
-  ok(byNumber.count === beforeFirstCount - 1, '历史上下文 = execute 声明时的 surface（不含结果）', String(byNumber.count));
+  ok(byNumber.count === beforeFirstCount, '历史上下文 = execute 调用 + tool result（不含替代）', String(byNumber.count));
   ok(byNumber.messages.some((message) => String(message.text).includes(keyword)), '历史世代上下文包含当时的原文');
   ok(!byNumber.messages.some((message) => message.role === 'developer' && message.text === ''), '历史上下文不含 execute 结果写出的空替代消息');
   ok(byNumber.letter.length === 1
