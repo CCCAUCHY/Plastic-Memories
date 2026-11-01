@@ -139,6 +139,8 @@ console.log(NL + '④ 客户端 bundle 与命令解析');
   ok(parsePlasticizeCommand('lock [3,4]').kind === 'lock', 'lock <区间>');
   ok(parsePlasticizeCommand('unlock [3,4]').kind === 'unlock', 'unlock <区间>');
   ok(parsePlasticizeCommand('lock all').mode === 'all' && parsePlasticizeCommand('unlock all').mode === 'all', 'lock/unlock all');
+  ok(parsePlasticizeCommand('lock all\n').mode === 'all' && parsePlasticizeCommand('unlock all  ').mode === 'all', 'lock/unlock all 容忍尾随空白');
+  ok(parsePlasticizeCommand('lock all\n').mode === 'all' && parsePlasticizeCommand('unlock all  ').mode === 'all', 'lock/unlock all 容忍尾随空白');
   ok(parsePlasticizeCommand('prelock').mode === 'prelock', 'prelock');
   ok(parsePlasticizeCommand('clear').action === 'clear', 'clear');
   let bad;

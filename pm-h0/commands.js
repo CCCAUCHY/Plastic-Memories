@@ -29,14 +29,15 @@ export function parsePlasticizeCommand(rawInput, locale = 'zh') {
   const en = locale === 'en';
   const hint = en ? '<span> <replacement> | hide <span> | lock <span> | lock all | unlock <span> | unlock all | prelock | clear' : HINT;
   const text = String(rawInput ?? '').replace(/^\s+/, '');
-  if (text.length === 0) throw new Error((en ? 'Usage: /plasticize ' : '用法：/plasticize ') + hint);
-  if (text === 'clear') return { action: 'clear' };
-  if (text === 'prelock') return { action: 'stage', kind: 'lock', mode: 'prelock' };
-  if (text === 'lock all' || text === 'lock\tall') return { action: 'stage', kind: 'lock', mode: 'all' };
-  if (text === 'unlock all' || text === 'unlock\tall') return { action: 'stage', kind: 'unlock', mode: 'all' };
+  const command = text.replace(/[ \t\r\n]+$/, '');
+  if (command.length === 0) throw new Error((en ? 'Usage: /plasticize ' : '用法：/plasticize ') + hint);
+  if (command === 'clear') return { action: 'clear' };
+  if (command === 'prelock') return { action: 'stage', kind: 'lock', mode: 'prelock' };
+  if (command === 'lock all') return { action: 'stage', kind: 'lock', mode: 'all' };
+  if (command === 'unlock all') return { action: 'stage', kind: 'unlock', mode: 'all' };
   for (const kind of ['lock', 'unlock', 'hide']) {
-    if (text !== kind && !text.startsWith(kind + ' ') && !text.startsWith(kind + '\t')) continue;
-    const match = new RegExp('^' + kind + '[ \t]+(\\S+)[ \t]*$').exec(text);
+    if (command !== kind && !command.startsWith(kind + ' ') && !command.startsWith(kind + '\t')) continue;
+    const match = new RegExp('^' + kind + '[ \t]+(\\S+)[ \t]*$').exec(command);
     if (match === null) throw new Error(en ? '/plasticize ' + kind + ' must be followed by a span (or all).' : '/plasticize ' + kind + ' 后必须是一个区间（或 all）。');
     return { action: 'stage', kind: kind === 'hide' ? 'project' : kind, mode: 'range', interval: match[1], newText: '' };
   }
