@@ -144,12 +144,12 @@ dsh plugin --profile web2 add link:/var/data/dsh-workspace-Flatpak/可塑性记�
 npm test
 ```
 
-当前 **14 套 / 266 条**：
+当前 **14 套 / 268 条**：
 
 - selftest 61
 - integration 25
 - unitest 17
-- globaltest 3
+- globaltest 5
 - ptctest 43
 - multicall 20
 - balanced 19
