@@ -248,12 +248,20 @@ export function applyEvent(state, event) {
   const surfaceOp = event?.surfaceOp;
   if (surfaceOp === 'append') {
     if (!MESSAGE_EVENT_TYPES.has(event.type)) return state;
+    const nextSeqs = [...state.seqs, event.seq];
+    const nextGens = state.gens.length === 0
+      ? state.gens
+      : [
+          ...state.gens.slice(0, -1),
+          { ...state.gens[state.gens.length - 1], asOfSeq: event.seq, seqs: nextSeqs },
+        ];
     return {
       ...state,
       asOfSeq: event.seq,
-      seqs: [...state.seqs, event.seq],
+      seqs: nextSeqs,
       raw: [...state.raw, event.seq],
       meta: { ...state.meta, [String(event.seq)]: describeEvent(event) },
+      gens: nextGens,
       boundaries: Array.isArray(state.boundaries) ? state.boundaries : [],
       compactions: state.compactions ?? {},
     };
