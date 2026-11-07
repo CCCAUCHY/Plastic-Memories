@@ -10224,12 +10224,8 @@ window.__ModuleLoader__.load({
       if (t !== undefined && t !== null && t.__pmEmbedded === true) return null;
       const mark = diffMarkOf(cell);
       const unit = unitTag(cell);
-      const compaction = compactionBoundaryTag(cell);
-      if (mark === null) {
-        if (unit === null && compaction === null) return null;
-        return h(React.Fragment, null, ...(unit === null ? [] : [unit]), ...(compaction === null ? [] : [compaction]));
-      }
-      return h(React.Fragment, null, ...(unit === null ? [] : [unit]), ...(compaction === null ? [] : [compaction]), h('button', {
+      if (mark === null) return unit;
+      return h(React.Fragment, null, ...(unit === null ? [] : [unit]), h('button', {
         type: 'button',
         className: 'pm-diff-tag',
         title: pmUiText(t, mark.side === 'replacement' ? 'pm.typeReshaped' : 'pm.typeReshaping', mark.side === 'replacement' ? 'Reshaped area: jump to the previous generation' : 'This area will be reshaped by the next generation: jump to it'),
@@ -10638,7 +10634,7 @@ window.__ModuleLoader__.load({
       '.pm-pgs button.pm-pgs-current{background:var(--dsw-alias-state-business-tertiary);border-color:var(--dsw-alias-state-business-primary);color:var(--dsw-alias-state-business-primary);font-weight:600}',
       '.pm-pgs .pm-pgs-gap{color:var(--dsw-alias-label-tertiary);padding:0 2px}',
       '.pm-pgs .pm-pgs-physical{display:inline-flex;align-items:center;gap:3px}',
-      '.pm-pgs .pm-pgs-logical{display:inline-flex;align-items:center;gap:3px;margin-left:8px;padding-left:8px;border-left:1px solid var(--dsw-alias-border-l3)}',
+      '.pm-pgs .pm-pgs-ltag{margin-left:3px;color:var(--dsw-alias-label-tertiary);font-size:8px;line-height:10px}',
     ].join(String.fromCharCode(10));
     function generationButtons(current, last) {
       const out = [];
@@ -10716,44 +10712,26 @@ window.__ModuleLoader__.load({
       if (state === undefined || total < 2) return null;
       const current = effectiveGeneration(state);
       const last = total - 1;
-      const pages = Array.isArray(state.data.logicalPages) ? state.data.logicalPages : [];
-      const physicalItems = [h('span', { key: 'label', className: 'pm-pgs-label' }, pmUiText(t, 'pm.pagerLabel', 'Generations'))];
+      const logicalOfPhysical = state.data.logicalOfPhysical !== null && typeof state.data.logicalOfPhysical === 'object' ? state.data.logicalOfPhysical : {};
+      const items = [h('span', { key: 'label', className: 'pm-pgs-label' }, pmUiText(t, 'pm.pagerLabel', 'Generations'))];
       for (const [index, item] of generationButtons(current, last).entries()) {
         if (item === '…') {
-          physicalItems.push(h('span', { key: 'gap' + String(index), className: 'pm-pgs-gap' }, '…'));
+          items.push(h('span', { key: 'gap' + String(index), className: 'pm-pgs-gap' }, '…'));
           continue;
         }
         const gen = item;
         const isCurrent = gen === current;
-        physicalItems.push(h('button', {
+        const logical = logicalOfPhysical[String(gen)];
+        items.push(h('button', {
           key: 'g' + String(gen),
           type: 'button',
           className: isCurrent ? 'pm-pgs-current' : '',
           'aria-current': isCurrent ? 'true' : undefined,
-          title: pmUiText(t, 'pm.pagerTitle', 'Generation') + ' ' + String(gen),
+          title: pmUiText(t, 'pm.pagerTitle', 'Generation') + ' ' + String(gen) + (Number.isSafeInteger(logical) ? ' · logical ' + String(logical) : ''),
           onClick: () => setGeneration(gen === last ? null : gen),
-        }, String(gen)));
+        }, String(gen), Number.isSafeInteger(logical) ? h('span', { key: 'l', className: 'pm-pgs-ltag' }, 'L' + String(logical)) : null));
       }
-      const groups = [h('div', { key: 'physical', className: 'pm-pgs-physical' }, physicalItems)];
-      if (pages.length > 0) {
-        const logicalItems = [h('span', { key: 'llabel', className: 'pm-pgs-label' }, pmUiText(t, 'pm.logicalPagerLabel', 'Logical'))];
-        for (const page of pages) {
-          const isCurrent = page.physical === current;
-          const title = t === undefined || t === null
-            ? 'Logical generation ' + String(page.logical) + ' (physical page ' + String(page.physical) + ')'
-            : t('pm.logicalPageTitle', { logical: page.logical, physical: page.physical });
-          logicalItems.push(h('button', {
-            key: 'l' + String(page.logical),
-            type: 'button',
-            className: isCurrent ? 'pm-pgs-current' : '',
-            'aria-current': isCurrent ? 'true' : undefined,
-            title,
-            onClick: () => setGeneration(page.physical === last ? null : page.physical),
-          }, String(page.logical)));
-        }
-        groups.push(h('div', { key: 'logical', className: 'pm-pgs-logical' }, logicalItems));
-      }
-      return h('div', { className: 'pm-pgs', 'data-pm-pages': '' }, [h('style', { key: 'css' }, PAGER_CSS), ...groups]);
+      return h('div', { className: 'pm-pgs', 'data-pm-pages': '' }, [h('style', { key: 'css' }, PAGER_CSS), ...items]);
     }
 
     const bridge = {

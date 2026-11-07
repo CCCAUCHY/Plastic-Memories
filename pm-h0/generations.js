@@ -255,36 +255,21 @@ export function viewOf(state) {
     .sort((left, right) => left.seq - right.seq)
     .filter((entry, index, all) => index === 0 || entry.seq !== all[index - 1].seq)
     .map((entry, logical) => ({ ...entry, logical }));
-  const logicalPages = boundaries.map((entry) => ({
-    logical: entry.logical,
-    physical: entry.physical,
-    kind: entry.kind,
-    ...(entry.kind === 'compaction' ? { compaction: true } : {}),
-  }));
-  const lastBoundary = boundaries[boundaries.length - 1];
-  const pureCompaction = boundaries.length > 0 && boundaries.every((entry) => entry.kind === 'compaction');
-  if (lastBoundary === undefined) {
-    logicalPages.push({ logical: 0, physical: state.gen, current: true });
-  } else if (pureCompaction) {
-    // 传统会话：G0 = 初始 surface；每次成功压缩推进一代。
-    logicalPages.length = 0;
-    logicalPages.push({ logical: 0, physical: 0 });
-    for (let index = 0; index < boundaries.length; index += 1) {
-      logicalPages.push({ logical: index + 1, physical: boundaries[index].physical, kind: 'compaction', compaction: true });
-    }
-    const lastPage = logicalPages[logicalPages.length - 1];
-    if (lastPage !== undefined) {
-      lastPage.physical = state.gen;
-      lastPage.current = true;
-    }
-  } else if (lastBoundary.kind === 'compaction' && lastBoundary.physical >= state.gen) {
-    // 混合会话：压缩后没有新的物理页时不要造一个重复的下一逻辑页。
-    const lastPage = logicalPages[logicalPages.length - 1];
-    if (lastPage !== undefined) lastPage.current = true;
-  } else {
-    const currentLogical = boundaries.length;
-    logicalPages.push({ logical: currentLogical, physical: state.gen, current: true });
+  // 物理世代是唯一轴；逻辑世代只是某些物理页上的标签。
+  // G0 固定指向 physical 0；每次边界生成下一个逻辑号；最后一个逻辑页指向最新物理页。
+  const logicalLabels = [{ logical: 0, physical: 0 }];
+  for (const entry of boundaries) {
+    logicalLabels.push({ logical: logicalLabels.length, physical: entry.physical, kind: entry.kind });
   }
+  if (boundaries.length > 0) {
+    const last = logicalLabels[logicalLabels.length - 1];
+    if (last !== undefined) last.physical = state.gen;
+  }
+  const currentLabel = logicalLabels[logicalLabels.length - 1];
+  if (currentLabel !== undefined) currentLabel.current = true;
+  const logicalOfPhysical = {};
+  for (const label of logicalLabels) logicalOfPhysical[String(label.physical)] = label.logical;
+  const logicalPages = logicalLabels;
   const units = unitsFrom(state.seqs, state.meta);
   const unitOfSeq = {};
   for (const unit of units) for (const seq of unit.seqs) unitOfSeq[String(seq)] = unit.n;
@@ -297,6 +282,8 @@ export function viewOf(state) {
     replacements: state.reps,
     safety: Array.isArray(state.safety) ? state.safety : [],
     logicalPages,
+    logicalLabels,
+    logicalOfPhysical,
     boundaries,
     units,
     unitOfSeq,
