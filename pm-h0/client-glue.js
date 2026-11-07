@@ -757,7 +757,10 @@ window.__ModuleLoader__.load({
         return { node, pos, index };
       });
       decorated.sort((left, right) => (left.pos - right.pos) || (left.index - right.index));
-      return { ...snapshot, eventNodes: syncCompactionNode(decorated.map((entry) => entry.node)) };
+      const nodes = decorated.map((entry) => entry.node);
+      // 历史世代页只展示模型输入消息；compaction 是日志事件，不是消息。
+      // 官方轨迹页（未选历史世代）仍然保留它自己的 compaction 行。
+      return { ...snapshot, eventNodes: state.gen === null ? nodes : nodes.filter((node) => node === null || node === undefined || node.kind !== 'compaction') };
     }
     function wrapTargetSource(sessionId, delegate) {
       const rawDelegate = delegate;
