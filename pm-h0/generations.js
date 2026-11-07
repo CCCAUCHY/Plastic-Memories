@@ -31,7 +31,7 @@
 export const GENERATIONS_KEY = 'pmGenerations';
 
 /** 状态版本：字段或 fold 语义变了就 bump（持久化缓存据此丢弃旧行）。 */
-export const GENERATIONS_STATE_VERSION = 7;
+export const GENERATIONS_STATE_VERSION = 8;
 
 /**
  * 鸭子类型的 schema 替身。
@@ -135,7 +135,7 @@ export function initState() {
   // raw  = **未投影时**的原始工作面节点（全部 append 事件，按 seq）；
   // reps = 每次替换的历史：{ gen, shadowed:[被遮 seq], repl: 替代节点 seq }。
   // 客户端据此把每一代拼成「可见行 + 遮罩块」：遮罩里显示替代文本，可逐层展开。
-  return { gen: 0, asOfSeq: -1, seqs: [], meta: {}, gens: [], raw: [], reps: [], safety: [], logicalPages: [], boundaries: [], initialSeqs: null, initialAsOfSeq: -1 };
+  return { gen: 0, asOfSeq: -1, seqs: [], meta: {}, gens: [], raw: [], reps: [], safety: [], logicalPages: [], boundaries: [], compactions: {}, initialSeqs: null, initialAsOfSeq: -1 };
 }
 
 /**
@@ -159,6 +159,53 @@ export function applyEvent(state, event) {
       }],
     };
   }
+  if (event?.type === 'compaction/start' && typeof event.data?.compactionId === 'string') {
+    return {
+      ...state,
+      compactions: {
+        ...(state.compactions ?? {}),
+        [event.data.compactionId]: {
+          id: event.data.compactionId,
+          startSeq: event.seq,
+          turn: event.data.turn,
+          startedAt: event.time,
+        },
+      },
+    };
+  }
+  if (event?.type === 'compaction/summary' && typeof event.data?.compactionId === 'string') {
+    const previous = state.compactions?.[event.data.compactionId] ?? { id: event.data.compactionId };
+    return {
+      ...state,
+      compactions: {
+        ...(state.compactions ?? {}),
+        [event.data.compactionId]: {
+          ...previous,
+          summarySeq: event.seq,
+          summary: event.data.summary,
+          provider: event.data.provider,
+          model: event.data.model,
+          usage: event.data.usage,
+        },
+      },
+    };
+  }
+  if (event?.type === 'compaction/end' && typeof event.data?.compactionId === 'string') {
+    const previous = state.compactions?.[event.data.compactionId] ?? { id: event.data.compactionId };
+    return {
+      ...state,
+      compactions: {
+        ...(state.compactions ?? {}),
+        [event.data.compactionId]: {
+          ...previous,
+          endSeq: event.seq,
+          completedAt: event.time,
+          status: event.data.error === undefined ? 'complete' : 'error',
+          ...(event.data.error === undefined ? {} : { error: event.data.error }),
+        },
+      },
+    };
+  }
   if (event?.type === 'user/message' && event.data?.source?.kind === 'compact-checkpoint') {
     const boundaries = Array.isArray(state.boundaries) ? state.boundaries : [];
     if (!boundaries.some((entry) => entry.seq === event.seq)) {
@@ -172,6 +219,13 @@ export function applyEvent(state, event) {
           compactionId: event.data.source.compactionId,
           physical: state.gen + 1,
         }],
+        compactions: {
+          ...(state.compactions ?? {}),
+          [event.data.source.compactionId]: {
+            ...(state.compactions?.[event.data.source.compactionId] ?? {}),
+            checkpointSeq: event.seq,
+          },
+        },
       };
     }
   }
@@ -201,6 +255,7 @@ export function applyEvent(state, event) {
       raw: [...state.raw, event.seq],
       meta: { ...state.meta, [String(event.seq)]: describeEvent(event) },
       boundaries: Array.isArray(state.boundaries) ? state.boundaries : [],
+      compactions: state.compactions ?? {},
     };
   }
   if (surfaceOp === null || typeof surfaceOp !== 'object' || surfaceOp.op !== 'replace') return state;
@@ -232,6 +287,7 @@ export function applyEvent(state, event) {
     safety: Array.isArray(state.safety) ? state.safety : [],
     logicalPages,
     boundaries: Array.isArray(state.boundaries) ? state.boundaries : [],
+    compactions: state.compactions ?? {},
     initialSeqs,
     initialAsOfSeq,
   };
@@ -265,7 +321,7 @@ export function viewOf(state) {
   // G0 固定指向 physical 0；每次边界生成下一个逻辑号；最后一个逻辑页指向最新物理页。
   const logicalLabels = [{ logical: 0, physical: 0 }];
   for (const entry of boundaries) {
-    logicalLabels.push({ logical: logicalLabels.length, physical: entry.physical, kind: entry.kind });
+    logicalLabels.push({ logical: logicalLabels.length, physical: entry.physical, kind: entry.kind, compactionId: entry.compactionId });
   }
   if (boundaries.length > 0) {
     const last = logicalLabels[logicalLabels.length - 1];
@@ -290,6 +346,7 @@ export function viewOf(state) {
     logicalPages,
     logicalLabels,
     logicalOfPhysical,
+    compactions: state.compactions ?? {},
     boundaries,
     units,
     unitOfSeq,

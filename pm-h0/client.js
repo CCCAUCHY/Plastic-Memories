@@ -10439,6 +10439,48 @@ window.__ModuleLoader__.load({
       for (let index = 0; index < seqs.length; index += 1) order.set(seqs[index], index);
       globalThis.__PM_SEQ_ORDER__ = order;
     }
+    /** 用下一条 compaction 的生命周期替换官方页面里的 running 节点。 */
+    function syncCompactionNode(eventNodes) {
+      if (!Array.isArray(eventNodes)) return eventNodes;
+      const state = activeState;
+      if (state === undefined || state.data === null || state.data === undefined) return eventNodes;
+      const gen = effectiveGeneration(state);
+      const labels = Array.isArray(state.data.logicalLabels) ? state.data.logicalLabels : [];
+      const next = labels.find((entry) => entry.kind === 'compaction' && entry.physical > gen)
+        ?? labels.find((entry) => entry.kind === 'compaction' && entry.physical === gen);
+      if (next === undefined || typeof next.compactionId !== 'string') return eventNodes;
+      const comp = state.data.compactions?.[next.compactionId];
+      if (comp === undefined || !Array.isArray(comp.summary)) return eventNodes;
+      const index = eventNodes.findIndex((node) => node !== null && node !== undefined && node.kind === 'compaction');
+      if (index < 0) return eventNodes;
+      const template = eventNodes[index];
+      const oldRequest = template.data?.request ?? {};
+      const request = {
+        ...oldRequest,
+        startSeq: comp.startSeq,
+        turn: comp.turn,
+        startedAt: comp.startedAt,
+        completedAt: comp.completedAt ?? oldRequest.completedAt,
+        status: comp.status === 'error' ? 'error' : 'complete',
+        resultSeq: comp.summarySeq,
+        summary: comp.summary,
+        ...(comp.usage === undefined ? {} : { usage: comp.usage }),
+        providerMetadata: { provider: comp.provider, model: comp.model },
+        requestConfig: { ...(oldRequest.requestConfig ?? {}), provider: comp.provider, model: comp.model, purpose: 'compaction' },
+        ...(comp.checkpointSeq === undefined ? {} : { replacementSeq: comp.checkpointSeq }),
+        ...(comp.status === 'error' ? { error: comp.error } : {}),
+      };
+      const nextNode = {
+        ...template,
+        key: 'pm-compaction-' + next.compactionId,
+        id: 'pm-compaction-' + next.compactionId,
+        anchorSeq: comp.startSeq,
+        data: { ...(template.data ?? {}), request },
+      };
+      const copy = [...eventNodes];
+      copy[index] = nextNode;
+      return copy;
+    }
     function orderSnapshot(snapshot) {
       if (snapshot === null || snapshot === undefined) return snapshot;
       const state = activeState;
@@ -10456,7 +10498,7 @@ window.__ModuleLoader__.load({
         return { node, pos, index };
       });
       decorated.sort((left, right) => (left.pos - right.pos) || (left.index - right.index));
-      return { ...snapshot, eventNodes: decorated.map((entry) => entry.node) };
+      return { ...snapshot, eventNodes: syncCompactionNode(decorated.map((entry) => entry.node)) };
     }
     function wrapTargetSource(sessionId, delegate) {
       const rawDelegate = delegate;
