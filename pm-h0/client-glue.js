@@ -483,8 +483,12 @@ window.__ModuleLoader__.load({
       if (t !== undefined && t !== null && t.__pmEmbedded === true) return null;
       const mark = diffMarkOf(cell);
       const unit = unitTag(cell);
-      if (mark === null) return unit;
-      return h(React.Fragment, null, ...(unit === null ? [] : [unit]), h('button', {
+      const compaction = compactionBoundaryTag(cell);
+      if (mark === null) {
+        if (unit === null && compaction === null) return null;
+        return h(React.Fragment, null, ...(unit === null ? [] : [unit]), ...(compaction === null ? [] : [compaction]));
+      }
+      return h(React.Fragment, null, ...(unit === null ? [] : [unit]), ...(compaction === null ? [] : [compaction]), h('button', {
         type: 'button',
         className: 'pm-diff-tag',
         title: pmUiText(t, mark.side === 'replacement' ? 'pm.typeReshaped' : 'pm.typeReshaping', mark.side === 'replacement' ? 'Reshaped area: jump to the previous generation' : 'This area will be reshaped by the next generation: jump to it'),
