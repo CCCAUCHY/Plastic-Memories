@@ -10626,8 +10626,8 @@ window.__ModuleLoader__.load({
     let loadAllBusy = false;
     let lastDeliveredSnapshot;
     const PAGER_CSS = [
-      '.pm-pgs{flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:2px;margin-left:auto;font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-secondary)}',
-      '.pm-pgs .pm-pgs-row{display:flex;align-items:center;gap:3px}',
+      '.pm-pgs{flex:none;display:flex;align-items:center;gap:3px;margin-left:auto;font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-secondary)}',
+      '.pm-pgs .pm-pgs-logical{display:inline-flex;align-items:center;gap:3px;margin-left:8px;padding-left:8px;border-left:1px solid var(--dsw-alias-border-l3)}',
       '.pm-pgs + *{margin-left:8px!important}',
       '.pm-pgs .pm-pgs-label{padding:0 3px;color:var(--dsw-alias-label-tertiary)}',
       '.pm-pgs button{box-sizing:border-box;min-width:22px;height:22px;padding:0 6px;border:1px solid var(--dsw-alias-border-l3);border-radius:2px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);font:inherit;line-height:20px;cursor:pointer}',
@@ -10731,7 +10731,7 @@ window.__ModuleLoader__.load({
         }, String(gen)));
       }
       const labels = Array.isArray(state.data.logicalLabels) ? state.data.logicalLabels : [];
-      const rows = [h('div', { key: 'physical', className: 'pm-pgs-row' }, physicalItems)];
+      const items = [...physicalItems];
       if (labels.length > 0) {
         const logicalItems = [h('span', { key: 'llabel', className: 'pm-pgs-label' }, pmUiText(t, 'pm.logicalPagerLabel', 'Logical'))];
         for (const label of labels) {
@@ -10745,9 +10745,9 @@ window.__ModuleLoader__.load({
             onClick: () => setGeneration(label.physical === last ? null : label.physical),
           }, 'L' + String(label.logical)));
         }
-        rows.push(h('div', { key: 'logical', className: 'pm-pgs-row pm-pgs-logical' }, logicalItems));
+        items.push(h('div', { key: 'logical', className: 'pm-pgs-logical' }, logicalItems));
       }
-      return h('div', { className: 'pm-pgs', 'data-pm-pages': '' }, [h('style', { key: 'css' }, PAGER_CSS), ...rows]);
+      return h('div', { className: 'pm-pgs', 'data-pm-pages': '' }, [h('style', { key: 'css' }, PAGER_CSS), ...items]);
     }
 
     const bridge = {
