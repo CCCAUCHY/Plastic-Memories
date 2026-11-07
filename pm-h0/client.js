@@ -10626,7 +10626,8 @@ window.__ModuleLoader__.load({
     let loadAllBusy = false;
     let lastDeliveredSnapshot;
     const PAGER_CSS = [
-      '.pm-pgs{flex:none;display:flex;align-items:center;gap:3px;margin-left:auto;font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-secondary)}',
+      '.pm-pgs{flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:2px;margin-left:auto;font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-secondary)}',
+      '.pm-pgs .pm-pgs-row{display:flex;align-items:center;gap:3px}',
       '.pm-pgs + *{margin-left:8px!important}',
       '.pm-pgs .pm-pgs-label{padding:0 3px;color:var(--dsw-alias-label-tertiary)}',
       '.pm-pgs button{box-sizing:border-box;min-width:22px;height:22px;padding:0 6px;border:1px solid var(--dsw-alias-border-l3);border-radius:2px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);font:inherit;line-height:20px;cursor:pointer}',
@@ -10712,26 +10713,41 @@ window.__ModuleLoader__.load({
       if (state === undefined || total < 2) return null;
       const current = effectiveGeneration(state);
       const last = total - 1;
-      const logicalOfPhysical = state.data.logicalOfPhysical !== null && typeof state.data.logicalOfPhysical === 'object' ? state.data.logicalOfPhysical : {};
-      const items = [h('span', { key: 'label', className: 'pm-pgs-label' }, pmUiText(t, 'pm.pagerLabel', 'Generations'))];
+      const physicalItems = [h('span', { key: 'label', className: 'pm-pgs-label' }, pmUiText(t, 'pm.pagerLabel', 'Generations'))];
       for (const [index, item] of generationButtons(current, last).entries()) {
         if (item === '…') {
-          items.push(h('span', { key: 'gap' + String(index), className: 'pm-pgs-gap' }, '…'));
+          physicalItems.push(h('span', { key: 'gap' + String(index), className: 'pm-pgs-gap' }, '…'));
           continue;
         }
         const gen = item;
         const isCurrent = gen === current;
-        const logical = logicalOfPhysical[String(gen)];
-        items.push(h('button', {
+        physicalItems.push(h('button', {
           key: 'g' + String(gen),
           type: 'button',
           className: isCurrent ? 'pm-pgs-current' : '',
           'aria-current': isCurrent ? 'true' : undefined,
-          title: pmUiText(t, 'pm.pagerTitle', 'Generation') + ' ' + String(gen) + (Number.isSafeInteger(logical) ? ' · logical ' + String(logical) : ''),
+          title: pmUiText(t, 'pm.pagerTitle', 'Generation') + ' ' + String(gen),
           onClick: () => setGeneration(gen === last ? null : gen),
-        }, String(gen), Number.isSafeInteger(logical) ? h('span', { key: 'l', className: 'pm-pgs-ltag' }, 'L' + String(logical)) : null));
+        }, String(gen)));
       }
-      return h('div', { className: 'pm-pgs', 'data-pm-pages': '' }, [h('style', { key: 'css' }, PAGER_CSS), ...items]);
+      const labels = Array.isArray(state.data.logicalLabels) ? state.data.logicalLabels : [];
+      const rows = [h('div', { key: 'physical', className: 'pm-pgs-row' }, physicalItems)];
+      if (labels.length > 0) {
+        const logicalItems = [h('span', { key: 'llabel', className: 'pm-pgs-label' }, pmUiText(t, 'pm.logicalPagerLabel', 'Logical'))];
+        for (const label of labels) {
+          const isCurrent = label.physical === current;
+          logicalItems.push(h('button', {
+            key: 'l' + String(label.logical),
+            type: 'button',
+            className: isCurrent ? 'pm-pgs-current' : '',
+            'aria-current': isCurrent ? 'true' : undefined,
+            title: 'Logical generation ' + String(label.logical) + ' (physical page ' + String(label.physical) + ')',
+            onClick: () => setGeneration(label.physical === last ? null : label.physical),
+          }, 'L' + String(label.logical)));
+        }
+        rows.push(h('div', { key: 'logical', className: 'pm-pgs-row pm-pgs-logical' }, logicalItems));
+      }
+      return h('div', { className: 'pm-pgs', 'data-pm-pages': '' }, [h('style', { key: 'css' }, PAGER_CSS), ...rows]);
     }
 
     const bridge = {
