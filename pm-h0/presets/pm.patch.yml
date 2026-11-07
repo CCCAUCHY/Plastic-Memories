@@ -1,20 +1,16 @@
-# Agent preset pm：由 rebuild-from-dsh.mjs 从当前 DSH 的 PTC 基线生成。
-#
-# 与 ptc 的结构差异只有两处：
-#   1. 删除 compaction 组（PM 是会话内唯一的 surface 改写者，压缩会与它争用同一个 surface）；
-#   2. plugins 里增加 dsh-plugin-plastic-memories-h0（PM 工具）。
-#
-# 修改基线后请运行：node rebuild-from-dsh.mjs
+# Agent preset ptc: one `@deepseek-ai/dsh-agent-preset` declaration inserted
+# after the web patch. Edits saved from the Web editor override this row's
+# `config.plugins` by id from the profile patch.
 - insert:
     - id: preset-pm
       name: '@deepseek-ai/dsh-agent-preset'
       config:
         id: pm
-        name: PM · 可塑记忆 v0.50.0
+        name: PM · PTC 兼容（过渡）
         description: >-
-          以 ptc 为基线，去掉压缩组，并挂载 Plastic Memories 插件。
-          模型可以主动改写自己过往的呈现方式：把已完成的工作压成结论、把无关段落隐去，底层轨迹一字不失（retrospect 可事后考古）。
-        order: 5
+          PTC 兼容别名：不改变 PTC 工具/压缩配置，PM 工具由全局 bundle 提供。
+          旧 profile 的 selectedDefault: pm 可直接恢复；新会话请优先选择 ptc。
+        order: 2
         plugins:
           - id: persona
             name: '@deepseek-ai/dsh-persona'
@@ -34,6 +30,9 @@
             disabled: !!js process.platform !== 'win32'
           - id: tool-fs
             name: '@deepseek-ai/dsh-tool-fs'
+            config:
+              # Set true to add the apply_patch tool beside edit.
+              applyPatch: false
           - id: tool-fs-search
             name: '@deepseek-ai/dsh-tool-fs-search'
             config:
@@ -71,6 +70,23 @@
                     Make the plan decision-complete: state the goal and success criteria; group implementation changes by subsystem; identify public API, schema, and data-flow changes; cover edge cases, failure modes, tests, acceptance criteria, and explicit assumptions. Keep it concise enough to review but detailed enough that another engineer can implement it without making design decisions.
 
                     When ready, call exit_plan_mode with the complete plan markdown, starting with a # title. Make exit_plan_mode the only and final tool call in that assistant response: it presents the plan for approval, and implementation begins only in a later step after approval. Do not paste the final plan as a plain reply or ask "should I proceed?" through prose or ask_user_question. If review rejects it, incorporate the feedback and present again. If the review channel is unavailable or aborted, stay in plan mode and ask the user to switch modes manually; do not proceed with implementation.
+          - id: compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+              toolResultPruner: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+              - id: command-compact
+                name: '@deepseek-ai/dsh-command-compact'
+              - id: tool-result-pruner
+                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+                config:
+                  thresholdChars: 8192
+                  headChars: 4096
+                  tailChars: 1024
           - id: delegation
             name: cordis:group
             group: true
@@ -79,14 +95,13 @@
             config:
               - id: tool-subagent-control
                 name: '@deepseek-ai/dsh-tool-subagent-control'
-              - id: tool-subagent-list-agents
-                name: '@deepseek-ai/dsh-tool-subagent-control/list-agents'
               - id: tool-subagent
                 name: '@deepseek-ai/dsh-tool-subagent'
                 config:
                   provider: spawn
                   toolName: subagent
-                  modelSelectionSettings: true
+                  modelSelection: true
+                  modelDiscovery: true
               - id: tool-subagent-fork
                 name: '@deepseek-ai/dsh-tool-subagent'
                 config:
@@ -111,15 +126,8 @@
             config:
               fetch: true
               searchTimeoutMs: 60000
-          - id: plastic-memories-h0
-            name: dsh-plugin-plastic-memories-h0
-            config:
-              trace: false
-              autoHide: true
-          - id: tool-presentation
-            name: '@deepseek-ai/dsh-agent-tool-presentation'
-            config:
-              mode: ptc
+          - id: tool-executor-ptc
+            name: '@deepseek-ai/dsh-tool-executor-ptc'
           - id: present
             name: '@deepseek-ai/dsh-tool-present'
           - id: tool-plugin-manager

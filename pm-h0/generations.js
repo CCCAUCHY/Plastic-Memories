@@ -31,7 +31,7 @@
 export const GENERATIONS_KEY = 'pmGenerations';
 
 /** 状态版本：字段或 fold 语义变了就 bump（持久化缓存据此丢弃旧行）。 */
-export const GENERATIONS_STATE_VERSION = 6;
+export const GENERATIONS_STATE_VERSION = 7;
 
 /**
  * 鸭子类型的 schema 替身。
@@ -162,7 +162,9 @@ export function applyEvent(state, event) {
   if (event?.type === 'user/message' && event.data?.source?.kind === 'compact-checkpoint') {
     const boundaries = Array.isArray(state.boundaries) ? state.boundaries : [];
     if (!boundaries.some((entry) => entry.seq === event.seq)) {
-      return {
+      // 先记边界，再继续走 surfaceOp replace；不能在这里 return，否则
+      // checkpoint 不会进入 surface、gen 也不会递增。
+      state = {
         ...state,
         boundaries: [...boundaries, {
           seq: event.seq,
@@ -186,7 +188,7 @@ export function applyEvent(state, event) {
       if (!Number.isSafeInteger(seq)) continue;
       if (op === 'unlock') set.delete(seq); else set.add(seq);
     }
-    return { ...state, safety: [...set].sort((left, right) => left - right) };
+    return { ...state, safety: [...set].sort((left, right) => left - right), boundaries: Array.isArray(state.boundaries) ? state.boundaries : [] };
   }
 
   const surfaceOp = event?.surfaceOp;
@@ -198,6 +200,7 @@ export function applyEvent(state, event) {
       seqs: [...state.seqs, event.seq],
       raw: [...state.raw, event.seq],
       meta: { ...state.meta, [String(event.seq)]: describeEvent(event) },
+      boundaries: Array.isArray(state.boundaries) ? state.boundaries : [],
     };
   }
   if (surfaceOp === null || typeof surfaceOp !== 'object' || surfaceOp.op !== 'replace') return state;
@@ -226,6 +229,7 @@ export function applyEvent(state, event) {
     reps: [...state.reps, { gen: state.gen + 1, shadowed, repl: event.seq }],
     safety: Array.isArray(state.safety) ? state.safety : [],
     logicalPages,
+    boundaries: Array.isArray(state.boundaries) ? state.boundaries : [],
   };
 }
 

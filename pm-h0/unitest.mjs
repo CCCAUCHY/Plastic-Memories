@@ -6,6 +6,7 @@ import { flush, lockedSeqs, appendSafetyRecord } from './engine.js';
 import { currentUnits, renderUnitPreview } from './units.js';
 import { retrospectUnits } from './unitretro.js';
 import { replayCompactedSafety } from './safetyreplay.js';
+import { initState, applyEvent, viewOf } from './generations.js';
 
 const { ok, done } = makeCounter('unitest');
 const quiet = { warn: () => {}, info: () => {} };
@@ -93,5 +94,11 @@ srs.append('user/message', { content: [{ type: 'text', text: 'SUMMARY' }], sourc
 srs.append('compaction/end', { compactionId: cid, turn: 1 });
 const replayed = replayCompactedSafety(srs, { turn: 1, step: 1 });
 ok(replayed === 1 && currentUnits(srs).some((unit) => unit.text.includes('condensed summary appears earlier')), '压缩后安全区重放注入');
+
+// 压缩边界在后续 append 后仍保留（state.boundaries 不能被 surface 更新吞掉）
+let vst = initState();
+for (const event of srs.snapshotEvents()) vst = applyEvent(vst, event);
+const vv = viewOf(vst);
+ok(vv.logicalPages.length >= 2 && vv.logicalPages.some((page) => page.kind === 'compaction'), '压缩边界跨后续消息保留', JSON.stringify(vv.logicalPages));
 
 done();
