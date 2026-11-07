@@ -10265,6 +10265,23 @@ window.__ModuleLoader__.load({
       return h('span', { className: 'pm-unit-badge', title: 'Generation unit ' + String(n) }, '#' + String(n));
     }
 
+    /** 旧世代页末尾：下一次压缩事件（UI-only，不是模型上下文）。 */
+    function compactionBoundaryTag(cell) {
+      const state = activeState;
+      if (state === undefined || state.data === undefined || state.data === null) return null;
+      if (cell === undefined || cell === null || typeof cell.sourceSeq !== 'number') return null;
+      const gen = effectiveGeneration(state);
+      const pages = Array.isArray(state.data.generations) ? state.data.generations : [];
+      const page = pages[gen];
+      if (page === undefined || !Array.isArray(page.seqs) || page.seqs.length === 0) return null;
+      const boundary = (Array.isArray(state.data.boundaries) ? state.data.boundaries : []).find((entry) => entry.kind === 'compaction' && entry.physical === gen + 1);
+      if (boundary === undefined) return null;
+      const lastUnit = page.unitOfSeq?.[String(page.seqs[page.seqs.length - 1])];
+      const cellUnit = page.unitOfSeq?.[String(cell.sourceSeq)];
+      if (!Number.isSafeInteger(lastUnit) || lastUnit !== cellUnit) return null;
+      return h('span', { className: 'pm-compaction-badge', title: 'A compaction boundary follows this generation' }, '已压缩');
+    }
+
     /** 正文前的徽标：差异（被塑形/已塑形）在前，安全区在后。 */
     function diffNativeTag(cell, t) {
       if (cell === undefined || cell === null) return null;
@@ -10282,8 +10299,9 @@ window.__ModuleLoader__.load({
       }, mark.kind === 'reshaping' ? pmUiText(t, 'pm.reshaping', 'Being reshaped') : pmUiText(t, 'pm.reshaped', 'Reshaped')));
       const safety = safetyTag(cell, t);
       const unit = unitTag(cell);
-      if (tags.length === 0 && safety === null && unit === null) return null;
-      return h(React.Fragment, null, ...(unit === null ? [] : [unit]), ...tags, ...(safety === null ? [] : [safety]));
+      const compaction = compactionBoundaryTag(cell);
+      if (tags.length === 0 && safety === null && unit === null && compaction === null) return null;
+      return h(React.Fragment, null, ...(unit === null ? [] : [unit]), ...tags, ...(compaction === null ? [] : [compaction]), ...(safety === null ? [] : [safety]));
     }
     const PM_UI_CSS = [
       '.pm-load-all{box-sizing:border-box;flex:none;margin-right:6px;height:22px;padding:0 8px;border:1px solid var(--dsw-alias-border-l3);border-radius:2px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);font:var(--dsw-font-xxs-12);cursor:pointer}',
@@ -10293,6 +10311,7 @@ window.__ModuleLoader__.load({
       '.pm-diff-badge-reshaping{color:#FCE7F3;background:#C64F91}',
       '.pm-diff-badge.pm-safety-badge{color:#B42318;background:#FEE4E2;cursor:default}',
       '.pm-unit-badge{display:inline-flex;align-items:center;flex:none;margin-right:6px;height:19px;padding:0 5px;border-radius:var(--dsw-radius-xs);background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);font:600 10px/16px var(--dsw-font-mono,monospace)}',
+      '.pm-compaction-badge{display:inline-flex;align-items:center;flex:none;margin-right:6px;height:19px;padding:0 5px;border-radius:var(--dsw-radius-xs);background:#EEF2FF;color:#4338CA;font:600 10px/16px var(--dsw-font-xxs-12)}',
       '.pm-reshaped-tag{background:transparent!important;border-color:transparent!important;padding:0!important;height:auto!important;min-width:0!important}',
       '.pm-reshaped-static{color:#C64F91;background:#FCE7F3;border-radius:var(--dsw-radius-xs);display:inline-flex;align-items:center;height:19px;padding:0 5px;font-size:10px;font-weight:650;line-height:16px}',
     ].join(String.fromCharCode(10));
