@@ -408,6 +408,7 @@ export function apply(ctx, config) {
   // turn 末的兜底：只挂 agent/request 会漏掉「模型在本 turn 最后一个动作里调用 PM」。
   ctx.on('agent/turn-stopping', (payload) => {
     void safeFlush(payload?.agent?.session, 'turn-stopping', payload);
+    try { replayCompactedSafety(payload?.agent?.session, payload); } catch (error) { ctx.logger?.warn?.('[pm-h0] safety replay failed: ' + String(error?.message ?? error)); }
     checkSurfaceConsistency(payload?.agent?.session);
   });
 

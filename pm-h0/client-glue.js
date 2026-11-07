@@ -516,9 +516,12 @@ window.__ModuleLoader__.load({
     /** 当前世代单元序号徽标；与 retrospect 的 0 起 n 一致。 */
     function unitTag(cell) {
       const state = activeState;
-      const n = state?.data?.unitOfSeq?.[String(cell?.sourceSeq)];
+      if (state === undefined || state.data === undefined || state.data === null) return null;
+      const gen = effectiveGeneration(state);
+      const page = Array.isArray(state.data.generations) ? state.data.generations[gen] : undefined;
+      const n = page?.unitOfSeq?.[String(cell?.sourceSeq)] ?? state.data.unitOfSeq?.[String(cell?.sourceSeq)];
       if (!Number.isSafeInteger(n)) return null;
-      return h('span', { className: 'pm-unit-badge', title: 'Current-generation unit ' + String(n) }, '#' + String(n));
+      return h('span', { className: 'pm-unit-badge', title: 'Generation unit ' + String(n) }, '#' + String(n));
     }
 
     /** 正文前的徽标：差异（被塑形/已塑形）在前，安全区在后。 */

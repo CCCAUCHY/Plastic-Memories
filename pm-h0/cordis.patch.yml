@@ -15,5 +15,3 @@
 - insert:
     - id: plastic-memories-ui
       name: dsh-plugin-plastic-memories-h0
-      config:
-        global: true

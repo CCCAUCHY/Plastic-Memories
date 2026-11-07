@@ -76,7 +76,7 @@ function normalizeGeneration(value, self) {
 export function retrospect(session, args) {
   const value = args?.generation;
   if (value === undefined) throw new Error('retrospect requires generation (a logical generation number, "self", or "self - N")');
-  return retrospectGeneration(session, value, args?.preview === true);
+  return retrospectGeneration(session, value, args?.preview !== false);
 }
 
 /**

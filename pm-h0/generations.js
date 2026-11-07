@@ -239,7 +239,13 @@ export function applyEvent(state, event) {
  * @returns {{current: number, asOfSeq: number, generations: Array<object>, meta: object}} wire 值。
  */
 export function viewOf(state) {
-  const generations = [...state.gens, { gen: state.gen, asOfSeq: state.asOfSeq, seqs: state.seqs }];
+  const generations = [...state.gens, { gen: state.gen, asOfSeq: state.asOfSeq, seqs: state.seqs }]
+    .map((entry) => {
+      const pageUnits = unitsFrom(entry.seqs, state.meta);
+      const pageUnitOfSeq = {};
+      for (const unit of pageUnits) for (const seq of unit.seqs) pageUnitOfSeq[String(seq)] = unit.n;
+      return { ...entry, units: pageUnits, unitOfSeq: pageUnitOfSeq };
+    });
   const boundaries = (Array.isArray(state.boundaries) ? state.boundaries : [])
     .slice()
     .sort((left, right) => left.seq - right.seq)
