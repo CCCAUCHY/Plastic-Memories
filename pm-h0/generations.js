@@ -262,10 +262,23 @@ export function viewOf(state) {
     ...(entry.kind === 'compaction' ? { compaction: true } : {}),
   }));
   const lastBoundary = boundaries[boundaries.length - 1];
+  const pureCompaction = boundaries.length > 0 && boundaries.every((entry) => entry.kind === 'compaction');
   if (lastBoundary === undefined) {
     logicalPages.push({ logical: 0, physical: state.gen, current: true });
+  } else if (pureCompaction) {
+    // 传统会话：G0 = 初始 surface；每次成功压缩推进一代。
+    logicalPages.length = 0;
+    logicalPages.push({ logical: 0, physical: 0 });
+    for (let index = 0; index < boundaries.length; index += 1) {
+      logicalPages.push({ logical: index + 1, physical: boundaries[index].physical, kind: 'compaction', compaction: true });
+    }
+    const lastPage = logicalPages[logicalPages.length - 1];
+    if (lastPage !== undefined) {
+      lastPage.physical = state.gen;
+      lastPage.current = true;
+    }
   } else if (lastBoundary.kind === 'compaction' && lastBoundary.physical >= state.gen) {
-    // 压缩边界本身就是新世代；压缩后没有新的物理页时不要造一个重复的下一逻辑页。
+    // 混合会话：压缩后没有新的物理页时不要造一个重复的下一逻辑页。
     const lastPage = logicalPages[logicalPages.length - 1];
     if (lastPage !== undefined) lastPage.current = true;
   } else {
