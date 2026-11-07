@@ -22,12 +22,7 @@ console.log(NL + '② bundle patch 通用化');
   const pm = rows.find((row) => row.id === 'plastic-memories-ui');
   ok(pm !== undefined, 'bundle 里有全局插件行');
   ok(pm?.config?.uiHost !== true, '不再是 uiHost 空壳', JSON.stringify(pm?.config));
-  ok(pkg.dsh.bundle.patch.some((entry) => String(entry).includes('presets/pm.patch.yml')), '安装 pm 兼容别名', JSON.stringify(pkg.dsh.bundle.patch));
-  const presetDoc = yaml.load(readFileSync(new URL('./presets/pm.patch.yml', import.meta.url), 'utf8'), { schema: yaml.DEFAULT_SCHEMA.extend([JsTag]) });
-  const preset = presetDoc[0]?.insert?.[0]?.config;
-  ok(preset?.id === 'pm', '兼容 preset id = pm');
-  ok(!(preset?.plugins ?? []).some((row) => row.id === 'plastic-memories-h0'), '兼容 preset 不重复挂 PM 插件');
-  ok(!(preset?.plugins ?? []).some((row) => String(row.id).includes('compact')) === false, '兼容 preset 保留 compaction');
+  ok(!pkg.dsh.bundle.patch.some((entry) => String(entry).includes('presets/')), '不安装 PM preset', JSON.stringify(pkg.dsh.bundle.patch));
 }
 
 console.log(NL + '③ 打包完整性');

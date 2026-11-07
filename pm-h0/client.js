@@ -10223,8 +10223,9 @@ window.__ModuleLoader__.load({
     function reshapeTagLabel(cell, t) {
       if (t !== undefined && t !== null && t.__pmEmbedded === true) return null;
       const mark = diffMarkOf(cell);
-      if (mark === null) return null;
-      return h('button', {
+      const unit = unitTag(cell);
+      if (mark === null) return unit;
+      return h(React.Fragment, null, ...(unit === null ? [] : [unit]), h('button', {
         type: 'button',
         className: 'pm-diff-tag',
         title: pmUiText(t, mark.side === 'replacement' ? 'pm.typeReshaped' : 'pm.typeReshaping', mark.side === 'replacement' ? 'Reshaped area: jump to the previous generation' : 'This area will be reshaped by the next generation: jump to it'),
@@ -10233,7 +10234,7 @@ window.__ModuleLoader__.load({
           event.stopPropagation();
           navigateDiff(mark);
         },
-      }, pmUiText(t, 'pm.reshaped', 'Reshaped'));
+      }, pmUiText(t, 'pm.reshaped', 'Reshaped')));
     }
 
     /** 正文前的差异徽标：本代替代消息 = 已塑形（粉）；将被下一代覆盖 = 被塑形（反色）。 */
@@ -10629,6 +10630,7 @@ window.__ModuleLoader__.load({
       '.pm-pgs button:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}',
       '.pm-pgs button.pm-pgs-current{background:var(--dsw-alias-state-business-tertiary);border-color:var(--dsw-alias-state-business-primary);color:var(--dsw-alias-state-business-primary);font-weight:600}',
       '.pm-pgs .pm-pgs-gap{color:var(--dsw-alias-label-tertiary);padding:0 2px}',
+      '.pm-pgs .pm-pgs-physical{display:inline-flex;align-items:center;gap:3px}',
       '.pm-pgs .pm-pgs-logical{display:inline-flex;align-items:center;gap:3px;margin-left:8px;padding-left:8px;border-left:1px solid var(--dsw-alias-border-l3)}',
     ].join(String.fromCharCode(10));
     function generationButtons(current, last) {
@@ -10708,32 +10710,15 @@ window.__ModuleLoader__.load({
       const current = effectiveGeneration(state);
       const last = total - 1;
       const pages = Array.isArray(state.data.logicalPages) ? state.data.logicalPages : [];
-      const items = [h('span', { key: 'label', className: 'pm-pgs-label' }, pmUiText(t, 'pm.pagerLabel', 'Generations'))];
-      if (pages.length > 0) {
-        for (const page of pages) {
-          const isCurrent = page.physical === current;
-          const title = t === undefined || t === null
-            ? 'Logical generation ' + String(page.logical) + ' (physical page ' + String(page.physical) + ')'
-            : t('pm.logicalPageTitle', { logical: page.logical, physical: page.physical });
-          items.push(h('button', {
-            key: 'l' + String(page.logical),
-            type: 'button',
-            className: isCurrent ? 'pm-pgs-current' : '',
-            'aria-current': isCurrent ? 'true' : undefined,
-            title,
-            onClick: () => setGeneration(page.physical === last ? null : page.physical),
-          }, String(page.logical)));
-        }
-        return h('div', { className: 'pm-pgs', 'data-pm-pages': '' }, [h('style', { key: 'css' }, PAGER_CSS), ...items]);
-      }
+      const physicalItems = [h('span', { key: 'label', className: 'pm-pgs-label' }, pmUiText(t, 'pm.pagerLabel', 'Generations'))];
       for (const [index, item] of generationButtons(current, last).entries()) {
         if (item === '…') {
-          items.push(h('span', { key: 'gap' + String(index), className: 'pm-pgs-gap' }, '…'));
+          physicalItems.push(h('span', { key: 'gap' + String(index), className: 'pm-pgs-gap' }, '…'));
           continue;
         }
         const gen = item;
         const isCurrent = gen === current;
-        items.push(h('button', {
+        physicalItems.push(h('button', {
           key: 'g' + String(gen),
           type: 'button',
           className: isCurrent ? 'pm-pgs-current' : '',
@@ -10742,7 +10727,26 @@ window.__ModuleLoader__.load({
           onClick: () => setGeneration(gen === last ? null : gen),
         }, String(gen)));
       }
-      return h('div', { className: 'pm-pgs', 'data-pm-pages': '' }, [h('style', { key: 'css' }, PAGER_CSS), ...items]);
+      const groups = [h('div', { key: 'physical', className: 'pm-pgs-physical' }, physicalItems)];
+      if (pages.length > 0) {
+        const logicalItems = [h('span', { key: 'llabel', className: 'pm-pgs-label' }, pmUiText(t, 'pm.logicalPagerLabel', 'Logical'))];
+        for (const page of pages) {
+          const isCurrent = page.physical === current;
+          const title = t === undefined || t === null
+            ? 'Logical generation ' + String(page.logical) + ' (physical page ' + String(page.physical) + ')'
+            : t('pm.logicalPageTitle', { logical: page.logical, physical: page.physical });
+          logicalItems.push(h('button', {
+            key: 'l' + String(page.logical),
+            type: 'button',
+            className: isCurrent ? 'pm-pgs-current' : '',
+            'aria-current': isCurrent ? 'true' : undefined,
+            title,
+            onClick: () => setGeneration(page.physical === last ? null : page.physical),
+          }, String(page.logical)));
+        }
+        groups.push(h('div', { key: 'logical', className: 'pm-pgs-logical' }, logicalItems));
+      }
+      return h('div', { className: 'pm-pgs', 'data-pm-pages': '' }, [h('style', { key: 'css' }, PAGER_CSS), ...groups]);
     }
 
     const bridge = {

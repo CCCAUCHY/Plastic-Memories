@@ -261,12 +261,16 @@ export function viewOf(state) {
     kind: entry.kind,
     ...(entry.kind === 'compaction' ? { compaction: true } : {}),
   }));
-  const currentLogical = boundaries.length === 0 ? 0 : boundaries.length;
-  if (!logicalPages.some((page) => page.logical === currentLogical)) {
-    logicalPages.push({ logical: currentLogical, physical: state.gen, current: true });
+  const lastBoundary = boundaries[boundaries.length - 1];
+  if (lastBoundary === undefined) {
+    logicalPages.push({ logical: 0, physical: state.gen, current: true });
+  } else if (lastBoundary.kind === 'compaction' && lastBoundary.physical >= state.gen) {
+    // 压缩边界本身就是新世代；压缩后没有新的物理页时不要造一个重复的下一逻辑页。
+    const lastPage = logicalPages[logicalPages.length - 1];
+    if (lastPage !== undefined) lastPage.current = true;
   } else {
-    const last = logicalPages[logicalPages.length - 1];
-    if (last !== undefined && last.logical === currentLogical) last.current = true;
+    const currentLogical = boundaries.length;
+    logicalPages.push({ logical: currentLogical, physical: state.gen, current: true });
   }
   const units = unitsFrom(state.seqs, state.meta);
   const unitOfSeq = {};

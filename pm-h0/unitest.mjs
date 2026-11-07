@@ -99,6 +99,6 @@ ok(replayed === 1 && currentUnits(srs).some((unit) => unit.text.includes('conden
 let vst = initState();
 for (const event of srs.snapshotEvents()) vst = applyEvent(vst, event);
 const vv = viewOf(vst);
-ok(vv.logicalPages.length >= 2 && vv.logicalPages.some((page) => page.kind === 'compaction'), '压缩边界跨后续消息保留', JSON.stringify(vv.logicalPages));
+ok(vv.logicalPages.some((page) => page.kind === 'compaction') && vv.logicalPages.some((page) => page.current === true), '压缩边界跨后续消息保留', JSON.stringify(vv.logicalPages));
 
 done();
