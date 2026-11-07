@@ -18,7 +18,7 @@
 
 import { clearStagedOperations, pendingUserOperations, stageUserOperation } from './engine.js';
 
-const HINT = '<区间> <替代文本> | hide <区间> | lock <区间> | lock all | unlock <区间> | unlock all | prelock | clear';
+const HINT = '<单元序号或[起,止]> <替代文本> | hide <区间> | lock <区间> | unlock <区间> | prelock | clear';
 
 /**
  * 解析 /plasticize 输入。
@@ -33,17 +33,15 @@ export function parsePlasticizeCommand(rawInput, locale = 'zh') {
   if (command.length === 0) throw new Error((en ? 'Usage: /plasticize ' : '用法：/plasticize ') + hint);
   if (command === 'clear') return { action: 'clear' };
   if (command === 'prelock') return { action: 'stage', kind: 'lock', mode: 'prelock' };
-  if (command === 'lock all') return { action: 'stage', kind: 'lock', mode: 'all' };
-  if (command === 'unlock all') return { action: 'stage', kind: 'unlock', mode: 'all' };
   for (const kind of ['lock', 'unlock', 'hide']) {
     if (command !== kind && !command.startsWith(kind + ' ') && !command.startsWith(kind + '\t')) continue;
     const match = new RegExp('^' + kind + '[ \t]+(\\S+)[ \t]*$').exec(command);
     if (match === null) throw new Error(en ? '/plasticize ' + kind + ' must be followed by a span (or all).' : '/plasticize ' + kind + ' 后必须是一个区间（或 all）。');
-    return { action: 'stage', kind: kind === 'hide' ? 'project' : kind, mode: 'range', interval: match[1], newText: '' };
+    return { action: 'stage', kind: kind === 'hide' ? 'project' : kind, mode: 'range', interval: match[1], positions: [match[1]], newText: '' };
   }
   const match = /^(\S+)[ \t\r\n]+([\s\S]*)$/.exec(text);
   if (match === null) throw new Error((en ? 'Usage: /plasticize ' : '用法：/plasticize ') + hint);
-  return { action: 'stage', kind: 'project', mode: 'range', interval: match[1], newText: match[2] };
+  return { action: 'stage', kind: 'project', mode: 'range', interval: match[1], positions: [match[1]], newText: match[2] };
 }
 
 /**

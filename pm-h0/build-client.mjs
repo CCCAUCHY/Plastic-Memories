@@ -85,14 +85,19 @@ patched = replaceOnce(patched, 'const t = ctx.locale.bind(NS);',
   'reregister bridge');
 
 // ---- PM 图层补丁 4：TrajectoryView 接收 sessionId/useProjection 并发布世代数据 ----
-patched = replaceOnce(patched,
-  'function TrajectoryView({ useSession, usePmTrajectory, useDuration, loadOlder, loadImage, setActualDuration, viewRequest, completeViewRequest, renderSlot, t, jsonStringWrapping }) {',
-  `function TrajectoryView({ useSession, usePmTrajectory, useDuration, loadOlder, loadImage, setActualDuration, viewRequest, completeViewRequest, renderSlot, t, jsonStringWrapping, sessionId, useProjection }) {
-			const pmProjection = typeof useProjection === "function" ? useProjection("pmGenerations") : void 0;
-			react.useEffect(() => {
-				if (globalThis.__PM_UI__ !== void 0 && globalThis.__PM_UI__.publish !== void 0) globalThis.__PM_UI__.publish(sessionId, pmProjection);
-			}, [sessionId, pmProjection]);`,
-  'view projection bridge');
+{
+  const match = /function TrajectoryView\(\{([^}]*)\}\) \{/.exec(patched);
+  if (match === null) throw new Error('TrajectoryView signature not found; upstream changed');
+  const props = match[1].split(',').map((value) => value.trim()).filter(Boolean);
+  if (!props.includes('sessionId')) props.push('sessionId');
+  if (!props.includes('useProjection')) props.push('useProjection');
+  const replacement = 'function TrajectoryView({ ' + props.join(', ') + ' }) {\n' +
+    '\t\t\tconst pmProjection = typeof useProjection === "function" ? useProjection("pmGenerations") : void 0;\n' +
+    '\t\t\treact.useEffect(() => {\n' +
+    '\t\t\t\tif (globalThis.__PM_UI__ !== void 0 && globalThis.__PM_UI__.publish !== void 0) globalThis.__PM_UI__.publish(sessionId, pmProjection);\n' +
+    '\t\t\t}, [sessionId, pmProjection]);';
+  patched = patched.slice(0, match.index) + replacement + patched.slice(match.index + match[0].length);
+}
 
 // ---- PM 图层补丁 5：工具栏里、搜索框之前插入世代页码 ----
 patched = replaceOnce(patched, `					}), (0, react_jsx_runtime.jsxs)("div", {

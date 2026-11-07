@@ -20,7 +20,8 @@ import { GENERATIONS_KEY, generationProjection } from './generations.js';
 import { stepGroup, surfaceNodes } from './coords.js';
 import { resolveOps, previewOf, findLastPendingSet, normalizeOp } from './plasticize.js';
 import { retrospect } from './retrospect.js';
-import { COOKIE_KIND, bracketUserMessages, cookieMessage, cookieText, nextCookieId, planCookie } from './cookie.js';
+import { retrospectUnits } from './unitretro.js';
+import { replayCompactedSafety } from './safetyreplay.js';
 import { openSetProfile } from './grouping.js';
 import { compileArgsValidator, ToolArgsError } from './schema.js';
 import { createMessageCapture } from './capture.js';
@@ -252,6 +253,10 @@ function sessionOf(exec) {
   if (session === undefined || session === null) {
     throw new Error('this tool requires an agent session (exec.agent.session is unavailable)');
   }
+  const preset = session.header?.agentPreset;
+  if (typeof preset === 'string' && preset !== 'ptc') {
+    throw new Error('Plastic Memories requires the PTC preset (current preset: ' + preset + '); retrospect unit lookup depends on run_code filtering');
+  }
   return session;
 }
 
@@ -270,12 +275,8 @@ export function apply(ctx, config) {
     : (isAbsolute(options.captureDir) ? options.captureDir : resolve(baseDir, options.captureDir));
   if (stateDir !== undefined) writeStateStatus(stateDir, options, captureDir);
 
-  // bundle 级「UI 宿主」行：只做世代投影 + 让 web 客户端发现本包的 client 半身。
-  // （PM 会话模式之外的模式里：没有工具、没有命令、没有任何 surface 改写。）
-  if (options.uiHost) {
-    registerGenerationProjection(ctx);
-    return;
-  }
+  // 通用模式：不再要求 PM preset；bundle 行直接注册工具、命令、投影。
+  // 旧分支仍可通过 old 分支找回 PM 会话模式。
 
   if (options.captureMessages) {
     const capture = createMessageCapture({ dir: captureDir, logger: ctx.logger });
@@ -393,85 +394,11 @@ export function apply(ctx, config) {
     }
   };
 
-  /**
-   * 在提交边界**顺便**补插 cookie。
-   *
-   * 规则只有一条：**队尾永远保持一个 cookie**。
-   * 队尾不是 cookie 就补一个，是就什么都不做。
-   *
-   * 这一条覆盖了全部需要锚点的位置：
-   * - 工具块结束后（边界一到，队尾就是那个结果）
-   * - 用户主动发送的消息后
-   * - **最后一条 assistant 与下一条 user 之间** —— turn 末补一个，
-   *   下一轮用户消息落盘时它自然就在前面（日志仅追加，「前面」只能提前埋）
-   *
-   * **只能往后追加**：surfaceOp 只有 append 与 replace，而且不带 surfaceOp 的
-   * user/message 会被 DSH 直接拒绝（实测）。所以已经落盘的消息前面插不进东西。
-   *
-   * cookie 不标记任何东西 —— 它就是流里的一个可见锚点。
-   */
-  /** 当前上下文水位（百分比整数）；缺少 tokenMeter/contextWindow 时返回 undefined。 */
-  function contextUsagePercent(session) {
-    try {
-      const meter = ctx.get('tokenMeter');
-      if (meter === undefined || meter === null || typeof meter.measure !== 'function') return undefined;
-      let contextWindow;
-      const events = session.snapshotEvents();
-      for (let index = events.length - 1; index >= 0; index -= 1) {
-        const event = events[index];
-        if (event.type === 'request/context' && Number.isSafeInteger(event.data?.contextWindow) && event.data.contextWindow > 0) {
-          contextWindow = event.data.contextWindow;
-          break;
-        }
-      }
-      if (contextWindow === undefined) return undefined;
-      const measurement = meter.measure(session);
-      const used = Number.isFinite(measurement?.totalTokens) ? measurement.totalTokens : measurement?.surfaceTokens;
-      if (!Number.isFinite(used) || used < 0) return undefined;
-      return Math.round((used / contextWindow) * 100);
-    } catch {
-      return undefined;
-    }
-  }
-
-  const insertCookie = (session, payload, role = 'developer') => {
-    if (session === undefined || session === null) return 0;
-    try {
-      const plan = planCookie(session);
-      if (plan === undefined) return 0;
-      const id = nextCookieId(session);
-      const contextPercent = contextUsagePercent(session);
-      if (role === 'user') {
-        session.append('user/message', cookieMessage(id, 'user', contextPercent), { surfaceOp: 'append' });
-        return 1;
-      }
-      const message = cookieMessage(id, 'developer', contextPercent);
-      let turn = Number.isSafeInteger(payload?.turn) ? payload.turn : undefined;
-      let step = Number.isSafeInteger(payload?.step) ? payload.step : undefined;
-      if (turn === undefined || step === undefined) {
-        const events = session.snapshotEvents();
-        for (let index = events.length - 1; index >= 0; index -= 1) {
-          const event = events[index];
-          if (turn === undefined && event.type === 'turn/start' && Number.isSafeInteger(event.data?.turn)) turn = event.data.turn;
-          if (step === undefined && event.type === 'step/start' && Number.isSafeInteger(event.data?.step)) step = event.data.step;
-          if (turn !== undefined && step !== undefined) break;
-        }
-      }
-      if (!Number.isSafeInteger(turn)) return 0;
-      if (!Number.isSafeInteger(step)) step = 0;
-      session.append('developer/message', { turn, step, message }, { surfaceOp: 'append' });
-      return 1;
-    } catch (error) {
-      ctx.logger?.warn?.('[pm-h0] 插入 cookie 失败（已降级）：' + String(error?.message ?? error));
-      return 0;
-    }
-  };
-
   ctx.on(
     'agent/request',
     async (payload, next) => {
       await safeFlush(payload?.agent?.session, 'request', payload);
-      insertCookie(payload?.agent?.session, payload);
+      try { replayCompactedSafety(payload?.agent?.session, payload); } catch (error) { ctx.logger?.warn?.('[pm-h0] safety replay failed: ' + String(error?.message ?? error)); }
       checkSurfaceConsistency(payload?.agent?.session);
       return next();
     },
@@ -484,36 +411,6 @@ export function apply(ctx, config) {
     checkSurfaceConsistency(payload?.agent?.session);
   });
 
-  // ── 用户消息夹层 cookie ──────────────────────────────────────────────────
-  // 日志只能追加：消息一旦落盘，就没法在它**前面**补 cookie。
-  // 而 `agent/pre-step` 的 decision.messages 正是「还没落盘、即将按序追加」的那批消息 ——
-  // 在这里把 [cookie][用户消息][cookie] 摆进队列，模型看到的 token 流就是
-  //
-  //     … [cookie N] 用户消息 [cookie N+1] 时间快照 助手 …
-  //
-  // 于是「被两条 cookie 夹住的 = 用户亲口说的」与「系统注入的 user 消息」在流里可分，
-  // 不需要偏移量（模型数不准第几条消息）。
-  //
-  // prepend + 包住 next()：拿到**最终** decision 再改，其他 pre-step 监听器的贡献不会丢。
-  ctx.on(
-    'agent/pre-step',
-    async (payload, next) => {
-      const decision = await next();
-      if (decision === null || typeof decision !== 'object' || decision.kind !== 'enter') return decision;
-      const session = payload?.agent?.session;
-      if (session === undefined || session === null) return decision;
-      try {
-        const bracketed = bracketUserMessages(session, decision.messages, contextUsagePercent(session));
-        if (bracketed === undefined) return decision;
-        return { ...decision, messages: bracketed };
-      } catch (error) {
-        ctx.logger?.warn?.('[pm-h0] 用户消息夹层 cookie 插入失败（已降级）：' + String(error?.message ?? error));
-        return decision;
-      }
-    },
-    { prepend: true },
-  );
-
   // ── 工具 ────────────────────────────────────────────────────────────────
 
   ctx.tools.register(
@@ -521,10 +418,8 @@ export function apply(ctx, config) {
       name: 'plasticize',
       description: [
         "Reshape how your own past appears in this context. This is the only tool that changes the surface and starts a new logical generation. The trajectory is never deleted: hidden material remains in the session log and can be inspected with retrospect. Treat this as editing the context, not as a scratch pad.",
-        "SPANS. Cookie lines look like \"[xx% of context used][Plastic-Memories][cookie][N]\"; the percentage is a live context watermark. Use those numbers: \"3\" (one point), \"[3,4]\" (closed), \"(3,4)\" (open), \"[3,4)\" or \"(3,4]\" (one side excluded), or \"this\" (the assistant message that made this call plus all its tool results). Mixed forms such as \"[3,this]\" are allowed. Endpoints are unordered. Numbers that are no longer visible are rejected.",
-        "An assistant message and its tool results form one unit. A span that cuts through such a unit is widened to the unit boundary, so no orphan call or result is left; the replaced range may therefore be larger than the span you named.",
-        "OPS. Each op has spans and new_text. Every span is hidden except the last by position, which is replaced by new_text. An empty new_text is a pure hole (hide). One op may cover several disjoint ranges.",
-        "TYPES. An op may include types=[...] (user, developer, assistant, error, letter) to restrict matching inside the span. user and developer match one message; assistant, error and letter match the whole unit (assistant message plus its tool results). Cookie messages never match, even as user or developer. Matched units are hidden; the last matched unit is replaced by new_text. If types is omitted, every message in the interval matches, cookies included.",
+        "POSITIONS. Use the 0-based unit numbers returned by retrospect(self) or shown in the Generation tab. The system prompt is unit 0. An assistant message and its tool results are one unit; tool results are not addressed separately. Forms: 3, '[3,7]', 'this'. Hidden units are no longer part of the current generation and cannot be targeted.",
+        "OPS. Each op has positions and new_text. Every selected unit is hidden except the last by position, which is replaced by new_text. An empty new_text is a pure hole (hide). One op may cover several disjoint ranges.",
         "MODES. option:\"set\" previews and writes nothing. option:\"execute\" commits at the next submission boundary. Only ONE plasticize call is allowed per run_code program (or per assistant message); set and execute count the same. Do not issue two plasticize calls before the next boundary. also_execute_last_set defaults to true: an execute commits the most recent unexecuted set as well; pass false to leave it pending. The field is not valid on set. A set result states whether committing is available.",
         "lock_this:true locks the replacement message itself into the safety zone; default false.",
         "SAFETY ZONE. Locked messages cannot be reshaped. A span that intersects the safety zone fails and reports the locked region as cookie intervals; the user can unlock it with /plasticize unlock.",
@@ -545,10 +440,15 @@ export function apply(ctx, config) {
                 // 只认 type / properties / required / additionalProperties / items / enum / const / oneOf。
                 // minItems / maxItems 会直接被 assertSupportedJsonSchema 拒绝 —— 不要加。
                 // 数量约束（2..16）在 resolveEndpoint 里做。
+                positions: {
+                  type: 'array',
+                  items: { oneOf: [{ type: 'integer' }, { type: 'string' }] },
+                  description: "Current-generation unit numbers (0 = system prompt). Forms: 3, '[3,7]', 'this'. Every selected unit is hidden except the last, which is replaced by new_text. Tool results are part of the assistant unit and are not addressed separately.",
+                },
                 spans: {
                   type: 'array',
                   items: { type: 'string' },
-                  description: "Required. Cookie ranges. Forms: '3' (one point), '[3,4]' closed, '(3,4)' open, '[3,4)' or '(3,4]' half-open, 'this' (the assistant message that made this call plus its tool results). A span cutting an assistant-message-plus-tool-results unit is widened to the unit boundary. Every span is hidden except the last, which is replaced by new_text.",
+                  description: 'Deprecated migration form: cookie ranges. Use positions.',
                 },
                 new_text: { type: 'string', description: 'Default: "" (pure hole/hide). Placed at the LAST span: the replacement message. Earlier spans are hidden automatically.' },
                 lock_this: { type: 'boolean', description: 'Default false. If true, lock the replacement message itself into the safety zone (it can never be reshaped afterwards).' },
@@ -558,7 +458,8 @@ export function apply(ctx, config) {
                   description: 'Default: [] (no filter). Type filter inside each resolved span: user/developer match one message; assistant/error/letter match the whole unit (assistant message + its tool results). Cookie messages never match, even as user/developer. Matched units are hidden; the last matched unit is replaced by new_text. If omitted or empty, every message in the interval matches, cookies included.',
                 },
               },
-              required: ['spans'],
+              // positions 是新语法；spans 保留给旧测试/迁移期，工具层二选一校验。
+              required: [],
             },
           },
           option: {
@@ -652,14 +553,20 @@ export function apply(ctx, config) {
           },
           preview: {
             type: 'boolean',
-            description: 'Default false. When true, return a clipped preview text instead of the full messages array.',
+            description: 'Default true. When true, clip text in unit mode.',
+          },
+          units: {
+            type: 'boolean',
+            description: 'Internal migration flag: when true, return current-generation units with 0-based n.',
           },
         },
         required: ['generation'],
       },
       execute(args, exec) {
         const session = sessionOf(exec);
-        return Promise.resolve({ text: retrospect(session, args ?? {}) });
+        const generation = args?.generation;
+        const isSelf = typeof generation === 'string' && /^self(?:\s*-\s*0)?$/iu.test(generation.trim());
+        return Promise.resolve({ text: args?.units === true || isSelf ? retrospectUnits(session, args ?? {}) : retrospect(session, args ?? {}) });
       },
     }),
   );

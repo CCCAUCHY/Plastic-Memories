@@ -513,6 +513,14 @@ window.__ModuleLoader__.load({
         title: pmUiText(t, 'pm.safetyTitle', 'This message is in the safety zone and cannot be reshaped by plasticize'),
       }, pmUiText(t, 'pm.safeZone', 'Safety zone'));
     }
+    /** 当前世代单元序号徽标；与 retrospect 的 0 起 n 一致。 */
+    function unitTag(cell) {
+      const state = activeState;
+      const n = state?.data?.unitOfSeq?.[String(cell?.sourceSeq)];
+      if (!Number.isSafeInteger(n)) return null;
+      return h('span', { className: 'pm-unit-badge', title: 'Current-generation unit ' + String(n) }, '#' + String(n));
+    }
+
     /** 正文前的徽标：差异（被塑形/已塑形）在前，安全区在后。 */
     function diffNativeTag(cell, t) {
       if (cell === undefined || cell === null) return null;
@@ -529,8 +537,9 @@ window.__ModuleLoader__.load({
         },
       }, mark.kind === 'reshaping' ? pmUiText(t, 'pm.reshaping', 'Being reshaped') : pmUiText(t, 'pm.reshaped', 'Reshaped')));
       const safety = safetyTag(cell, t);
-      if (tags.length === 0 && safety === null) return null;
-      return h(React.Fragment, null, ...tags, ...(safety === null ? [] : [safety]));
+      const unit = unitTag(cell);
+      if (tags.length === 0 && safety === null && unit === null) return null;
+      return h(React.Fragment, null, ...(unit === null ? [] : [unit]), ...tags, ...(safety === null ? [] : [safety]));
     }
     const PM_UI_CSS = [
       '.pm-load-all{box-sizing:border-box;flex:none;margin-right:6px;height:22px;padding:0 8px;border:1px solid var(--dsw-alias-border-l3);border-radius:2px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);font:var(--dsw-font-xxs-12);cursor:pointer}',
@@ -539,6 +548,7 @@ window.__ModuleLoader__.load({
       '.pm-diff-badge-reshaped{color:#C64F91;background:#FCE7F3}',
       '.pm-diff-badge-reshaping{color:#FCE7F3;background:#C64F91}',
       '.pm-diff-badge.pm-safety-badge{color:#B42318;background:#FEE4E2;cursor:default}',
+      '.pm-unit-badge{display:inline-flex;align-items:center;flex:none;margin-right:6px;height:19px;padding:0 5px;border-radius:var(--dsw-radius-xs);background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);font:600 10px/16px var(--dsw-font-mono,monospace)}',
       '.pm-reshaped-tag{background:transparent!important;border-color:transparent!important;padding:0!important;height:auto!important;min-width:0!important}',
       '.pm-reshaped-static{color:#C64F91;background:#FCE7F3;border-radius:var(--dsw-radius-xs);display:inline-flex;align-items:center;height:19px;padding:0 5px;font-size:10px;font-weight:650;line-height:16px}',
     ].join(String.fromCharCode(10));
@@ -934,7 +944,25 @@ window.__ModuleLoader__.load({
       if (state === undefined || total < 2) return null;
       const current = effectiveGeneration(state);
       const last = total - 1;
+      const pages = Array.isArray(state.data.logicalPages) ? state.data.logicalPages : [];
       const items = [h('span', { key: 'label', className: 'pm-pgs-label' }, pmUiText(t, 'pm.pagerLabel', 'Generations'))];
+      if (pages.length > 0) {
+        for (const page of pages) {
+          const isCurrent = page.physical === current;
+          const title = t === undefined || t === null
+            ? 'Logical generation ' + String(page.logical) + ' (physical page ' + String(page.physical) + ')'
+            : t('pm.logicalPageTitle', { logical: page.logical, physical: page.physical });
+          items.push(h('button', {
+            key: 'l' + String(page.logical),
+            type: 'button',
+            className: isCurrent ? 'pm-pgs-current' : '',
+            'aria-current': isCurrent ? 'true' : undefined,
+            title,
+            onClick: () => setGeneration(page.physical === last ? null : page.physical),
+          }, String(page.logical)));
+        }
+        return h('div', { className: 'pm-pgs', 'data-pm-pages': '' }, [h('style', { key: 'css' }, PAGER_CSS), ...items]);
+      }
       for (const [index, item] of generationButtons(current, last).entries()) {
         if (item === '…') {
           items.push(h('span', { key: 'gap' + String(index), className: 'pm-pgs-gap' }, '…'));
@@ -950,25 +978,6 @@ window.__ModuleLoader__.load({
           title: pmUiText(t, 'pm.pagerTitle', 'Generation') + ' ' + String(gen),
           onClick: () => setGeneration(gen === last ? null : gen),
         }, String(gen)));
-      }
-      const pages = Array.isArray(state.data.logicalPages) ? state.data.logicalPages : [];
-      if (pages.length > 0) {
-        const logicalItems = [h('span', { key: 'llabel', className: 'pm-pgs-label' }, pmUiText(t, 'pm.logicalPagerLabel', 'Logical'))];
-        for (const page of pages) {
-          const isCurrent = page.physical === current;
-          const title = t === undefined || t === null
-            ? 'Logical generation ' + String(page.logical) + ' (physical page ' + String(page.physical) + ')'
-            : t('pm.logicalPageTitle', { logical: page.logical, physical: page.physical });
-          logicalItems.push(h('button', {
-            key: 'l' + String(page.logical),
-            type: 'button',
-            className: isCurrent ? 'pm-pgs-current' : '',
-            'aria-current': isCurrent ? 'true' : undefined,
-            title,
-            onClick: () => setGeneration(page.physical === last ? null : page.physical),
-          }, 'L' + String(page.logical)));
-        }
-        items.push(h('div', { key: 'logical', className: 'pm-pgs-logical' }, logicalItems));
       }
       return h('div', { className: 'pm-pgs', 'data-pm-pages': '' }, [h('style', { key: 'css' }, PAGER_CSS), ...items]);
     }

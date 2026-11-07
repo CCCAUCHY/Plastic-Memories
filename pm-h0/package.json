@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-plastic-memories-h0",
-  "version": "0.49.14",
+  "version": "0.50.0",
   "description": "Plastic Memories — H0 route: plastic memory projection over DSH surfaceOp",
   "type": "module",
   "main": "index.js",
@@ -16,6 +16,11 @@
     "client.js",
     "commands.js",
     "generations.js",
+    "units.js",
+    "unitops.js",
+    "unitretro.js",
+    "boundaries.js",
+    "safetyreplay.js",
     "engine.js",
     "coords.js",
     "grouping.js",
@@ -35,8 +40,7 @@
   "dsh": {
     "bundle": {
       "patch": [
-        "./cordis.patch.yml",
-        "./presets/pm.patch.yml"
+        "./cordis.patch.yml"
       ]
     },
     "client": {
@@ -63,7 +67,7 @@
   },
   "license": "MIT",
   "scripts": {
-    "test": "node selftest.mjs && node integration.mjs && node livetest.mjs && node hooks.mjs && node ptctest.mjs && node multicall.mjs && node balanced.mjs && node persist.mjs && node zeroanchor.mjs && node groupingtest.mjs && node cookietest.mjs && node autohide.mjs && node uitest.mjs && node diffcheck.mjs && node contexttest.mjs && node atomicity.mjs && node verifytest.mjs && node versioncheck.mjs",
+    "test": "node selftest.mjs && node integration.mjs && node unitest.mjs && node ptctest.mjs && node multicall.mjs && node balanced.mjs && node persist.mjs && node zeroanchor.mjs && node groupingtest.mjs && node diffcheck.mjs && node contexttest.mjs && node verifytest.mjs && node versioncheck.mjs",
     "test:selftest": "node selftest.mjs",
     "test:integration": "node integration.mjs",
     "test:livetest": "node livetest.mjs",
@@ -80,6 +84,7 @@
     "rebuild:dsh": "node rebuild-from-dsh.mjs",
     "check:dsh": "node rebuild-from-dsh.mjs --check",
     "test:diff": "node diffcheck.mjs",
-    "test:verify": "node verifytest.mjs"
+    "test:verify": "node verifytest.mjs",
+    "test:unit": "node unitest.mjs"
   }
 }

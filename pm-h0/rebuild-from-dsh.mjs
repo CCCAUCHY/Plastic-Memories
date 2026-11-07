@@ -149,11 +149,10 @@ const dshRoot = locateDshRoot();
 const dshVersion = readJson(join(dshRoot, 'dsh', 'package.json')).version;
 const version = readJson(join(here, 'package.json')).version;
 const ptcPath = locatePtcPreset(dshRoot);
-const ptcText = readFileSync(ptcPath, 'utf8');
-const derivedPreset = derivePmPreset(ptcText, version);
+// 通用版不再生成/挂载 PM preset；保留旧文件只供 old 分支参考，不参与 bundle。
 const presetPath = join(here, 'presets', 'pm.patch.yml');
-const currentPreset = readFileSync(presetPath, 'utf8');
-const presetDrift = currentPreset !== derivedPreset;
+const derivedPreset = existsSync(presetPath) ? readFileSync(presetPath, 'utf8') : '';
+const presetDrift = false;
 const trajectory = locateTrajectoryClient(dshRoot);
 const pluginPkgPath = join(here, 'package.json');
 const pluginPkg = readJson(pluginPkgPath);

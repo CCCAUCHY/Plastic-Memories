@@ -135,7 +135,7 @@ export function initState() {
   // raw  = **未投影时**的原始工作面节点（全部 append 事件，按 seq）；
   // reps = 每次替换的历史：{ gen, shadowed:[被遮 seq], repl: 替代节点 seq }。
   // 客户端据此把每一代拼成「可见行 + 遮罩块」：遮罩里显示替代文本，可逐层展开。
-  return { gen: 0, asOfSeq: -1, seqs: [], meta: {}, gens: [], raw: [], reps: [], safety: [], logicalPages: [] };
+  return { gen: 0, asOfSeq: -1, seqs: [], meta: {}, gens: [], raw: [], reps: [], safety: [], logicalPages: [], boundaries: [] };
 }
 
 /**
@@ -146,13 +146,32 @@ export function initState() {
  */
 export function applyEvent(state, event) {
   if (event?.type === 'plugin:plastic-memories/logical') {
-    const logical = event.data?.logical;
-    const physical = event.data?.physical;
-    if (!Number.isSafeInteger(logical) || !Number.isSafeInteger(physical)) return state;
-    const previousPages = Array.isArray(state.logicalPages) ? state.logicalPages : [];
-    if (previousPages.some((page) => page.logical === logical)) return state;
-    // 私有事件记录的是 1 起的冻结物理页；UI 页码是 0 起，这里统一减 1。
-    return { ...state, logicalPages: [...previousPages, { logical, physical: Math.max(0, physical - 1) }] };
+    const boundaries = Array.isArray(state.boundaries) ? state.boundaries : [];
+    if (boundaries.some((entry) => entry.seq === event.seq)) return state;
+    const physical = Number.isSafeInteger(event.data?.physical) ? Math.max(0, event.data.physical - 1) : state.gen;
+    return {
+      ...state,
+      boundaries: [...boundaries, {
+        seq: event.seq,
+        kind: event.data?.kind === 'user-projection' ? 'projection' : 'execute',
+        callId: event.data?.callId,
+        physical,
+      }],
+    };
+  }
+  if (event?.type === 'user/message' && event.data?.source?.kind === 'compact-checkpoint') {
+    const boundaries = Array.isArray(state.boundaries) ? state.boundaries : [];
+    if (!boundaries.some((entry) => entry.seq === event.seq)) {
+      return {
+        ...state,
+        boundaries: [...boundaries, {
+          seq: event.seq,
+          kind: 'compaction',
+          compactionId: event.data.source.compactionId,
+          physical: state.gen + 1,
+        }],
+      };
+    }
   }
 
   if (event?.type === 'plugin:plastic-memories/locks') {
@@ -221,15 +240,27 @@ export function applyEvent(state, event) {
  */
 export function viewOf(state) {
   const generations = [...state.gens, { gen: state.gen, asOfSeq: state.asOfSeq, seqs: state.seqs }];
-  const frozenPages = Array.isArray(state.logicalPages) ? state.logicalPages : [];
-  let logicalPages = frozenPages;
-  if (frozenPages.length > 0) {
-    const currentLogical = Math.max(...frozenPages.map((page) => page.logical)) + 1;
-    if (!frozenPages.some((page) => page.logical === currentLogical)) {
-      // 已冻结逻辑页 + 1：当前推理中的逻辑页，指向最新物理页。
-      logicalPages = [...frozenPages, { logical: currentLogical, physical: state.gen, current: true }];
-    }
+  const boundaries = (Array.isArray(state.boundaries) ? state.boundaries : [])
+    .slice()
+    .sort((left, right) => left.seq - right.seq)
+    .filter((entry, index, all) => index === 0 || entry.seq !== all[index - 1].seq)
+    .map((entry, logical) => ({ ...entry, logical }));
+  const logicalPages = boundaries.map((entry) => ({
+    logical: entry.logical,
+    physical: entry.physical,
+    kind: entry.kind,
+    ...(entry.kind === 'compaction' ? { compaction: true } : {}),
+  }));
+  const currentLogical = boundaries.length === 0 ? 0 : boundaries.length;
+  if (!logicalPages.some((page) => page.logical === currentLogical)) {
+    logicalPages.push({ logical: currentLogical, physical: state.gen, current: true });
+  } else {
+    const last = logicalPages[logicalPages.length - 1];
+    if (last !== undefined && last.logical === currentLogical) last.current = true;
   }
+  const units = unitsFrom(state.seqs, state.meta);
+  const unitOfSeq = {};
+  for (const unit of units) for (const seq of unit.seqs) unitOfSeq[String(seq)] = unit.n;
   return {
     current: state.gen,
     asOfSeq: state.asOfSeq,
@@ -239,7 +270,38 @@ export function viewOf(state) {
     replacements: state.reps,
     safety: Array.isArray(state.safety) ? state.safety : [],
     logicalPages,
+    boundaries,
+    units,
+    unitOfSeq,
   };
+}
+
+/** 当前 surface 的单元序列（与 units.js 同形，只依赖 wire 数据）。 */
+function unitsFrom(seqs, meta) {
+  const out = [];
+  for (let index = 0; index < seqs.length; index += 1) {
+    const seq = seqs[index];
+    const info = meta[String(seq)] ?? { seq, type: 'unknown', role: 'unknown' };
+    const members = [seq];
+    if (info.type === 'assistant/message') {
+      let cursor = index + 1;
+      while (cursor < seqs.length) {
+        const next = meta[String(seqs[cursor])];
+        if (next?.type !== 'tool/result') break;
+        members.push(seqs[cursor]);
+        cursor += 1;
+      }
+      index = cursor - 1;
+    }
+    out.push({
+      n: out.length,
+      seq,
+      seqs: members,
+      role: info.role,
+      type: info.type === 'assistant/message' ? 'assistant' : String(info.role ?? 'unknown'),
+    });
+  }
+  return out;
 }
 
 /**

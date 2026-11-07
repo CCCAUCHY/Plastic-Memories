@@ -31,6 +31,9 @@ import { initState, applyEvent } from './generations.js';
 import { findOverlap } from './overlap.js';
 import { pmSettledCallIds, pmSource } from './markers.js';
 import { resolveOps } from './plasticize.js';
+import { resolveUnitOps } from './unitops.js';
+import { currentUnits } from './units.js';
+import { logicalBoundaries } from './boundaries.js';
 import {
   SURFACE_TYPES,
   callIdOf,
@@ -285,9 +288,7 @@ function autoHideTargets(session, state, claimed, settledBefore, locks) {
     if (locks !== undefined && locks.size > 0 && seqs.some((seq) => locks.has(seq))) continue;
     if (seqs.some((seq) => claimed.has(seq))) continue;
     const errored = stepHasError(session, declaration, seqs);
-    // **只在 execute 成功时一起清理**：比最近一次成功 execute 更晚的东西一律不动。
-    if (declaration.seq > settledBefore) continue;
-    // 剩下的：成功的 set（已兑现）与报错的步骤组（纯噪音）。
+    // 新的自动隐藏规则：所有 set 都清理，不再要求已经兑现。
     if (!errored && option !== 'set') continue;
     seen.add(key);
     out.push({ shadowed: seqs, reason: errored ? 'error' : 'set', callId: declaration.callId });
@@ -315,13 +316,13 @@ function autoHideTargets(session, state, claimed, settledBefore, locks) {
       const callId = resultCallIdOf(event.data?.message ?? {});
       if (typeof callId === 'string') {
         if (event.data?.message?.isError === true) failures.push({ callId, seq: event.seq });
-        else if (callNames.get(callId) === 'letter') successes.push({ callId, seq: event.seq });
+        else if (callNames.get(callId) === 'letter' || callNames.get(callId) === 'retrospect') successes.push({ callId, seq: event.seq, name: callNames.get(callId) });
       }
     } else if (event.type === 'tool/ptc-dispatch') {
       if (typeof event.data?.subCallId === 'string') {
         if (typeof event.data?.name === 'string') callNames.set(event.data.subCallId, event.data.name);
         if (event.data?.isError === true) failures.push({ callId: event.data.subCallId, seq: event.seq });
-        else if (callNames.get(event.data.subCallId) === 'letter') successes.push({ callId: event.data.subCallId, seq: event.seq });
+        else if (callNames.get(event.data.subCallId) === 'letter' || callNames.get(event.data.subCallId) === 'retrospect') successes.push({ callId: event.data.subCallId, seq: event.seq, name: callNames.get(event.data.subCallId) });
       }
     }
   }
@@ -345,7 +346,6 @@ function autoHideTargets(session, state, claimed, settledBefore, locks) {
   }
   // successful letters are notes for future generations, not current context
   for (const success of successes) {
-    if (success.seq > settledBefore) continue;
     const owner = roots.get(success.callId) ?? splitCallId(success.callId).ownerCallId;
     const group = stepGroup(session, owner);
     if (group === undefined || group.complete !== true) continue;
@@ -357,7 +357,7 @@ function autoHideTargets(session, state, claimed, settledBefore, locks) {
     if (locks !== undefined && locks.size > 0 && seqs.some((seq) => locks.has(seq))) continue;
     if (seqs.some((seq) => claimed.has(seq))) continue;
     seen.add(key);
-    out.push({ shadowed: seqs, reason: 'letter', callId: success.callId });
+    out.push({ shadowed: seqs, reason: success.name === 'retrospect' ? 'retrospect' : 'letter', callId: success.callId });
     for (const seq of seqs) claimed.add(seq);
   }
   return out;
@@ -558,6 +558,13 @@ function assertNotLocked(session, locks, shadowed) {
     throw new Error('operation touches the safety zone: ' + (zones.length > 0 ? zones : hit.slice(0, 8).join(',')) + '; unlock with /plasticize unlock or choose another range');
   }
 }
+function resolveDeclarationOps(session, ops, here) {
+  if (Array.isArray(ops) && ops.some((op) => op !== null && typeof op === 'object' && Object.hasOwn(op, 'positions'))) {
+    return resolveUnitOps(session, ops, here);
+  }
+  return resolveOps(session, ops, here);
+}
+
 function applyDeclarations(session, declarations, open, state, options = {}) {
   const nodes = surfaceNodes(session);
   const locks = lockedSeqs(session);
@@ -597,7 +604,7 @@ function applyDeclarations(session, declarations, open, state, options = {}) {
         const anchorGroup = stepGroup(session, declaration.opsAnchorCallId);
         if (anchorGroup !== undefined && anchorGroup.complete) anchor = hereOf(anchorGroup);
       }
-      const resolved = ops === undefined ? [] : resolveOps(session, ops, anchor);
+      const resolved = ops === undefined ? [] : resolveDeclarationOps(session, ops, anchor);
       for (const span of resolved) assertNotLocked(session, locks, span.shadowed);
       planned.push({ declaration, resolved, group });
     } catch (error) {
@@ -990,14 +997,10 @@ export function stageUserOperation(session, op) {
     list.push({ kind: 'lock', mode: 'prelock', seqs: [], text: '', interval: '', atSeq: session.seq, comment });
     return { pending: list.length, shadowed: [], kind: 'lock', mode };
   }
-  if (mode === 'all') {
-    if (kind === 'project') throw new Error('稳定化不支持 all');
-    if (list.some((entry) => entry.mode !== 'prelock')) throw new Error('all 已经覆盖当前全部轨迹，不能再与其它待落盘操作混用。');
-    list.push({ kind, mode: 'all', seqs: [], text: '', interval: '', comment });
-    return { pending: list.length, shadowed: [], kind, mode };
-  }
+  if (mode === 'all') throw new Error('lock all / unlock all 已取消；请使用单元序号区间。');
   if (list.some((entry) => entry.mode === 'all')) throw new Error('已有 all 待落盘，不能再追加区间操作。');
-  const resolved = resolveOps(session, [{ spans: [op.interval], new_text: kind === 'project' ? String(op.newText ?? '') : 'x' }], undefined);
+  const selectors = Array.isArray(op.positions) ? op.positions : [op.interval];
+  const resolved = resolveUnitOps(session, [{ positions: selectors, new_text: kind === 'project' ? String(op.newText ?? '') : 'x' }], undefined);
   const seqs = resolved.flatMap((span) => span.shadowed);
   if (seqs.length === 0) throw new Error('区间解析后是空的');
   const ranges = list.filter((entry) => entry.mode === 'range').map((entry) => ({ seqs: entry.seqs }));
@@ -1008,6 +1011,11 @@ export function stageUserOperation(session, op) {
   }
   const locks = lockedSeqs(session);
   if (kind === 'lock') {
+    const units = currentUnits(session, { locks });
+    const selected = units.filter((unit) => unit.seqs.some((seq) => seqs.includes(seq)));
+    if (selected.length > 64) throw new Error('安全区最多锁定 64 个单元；当前选择 ' + String(selected.length) + ' 个。');
+    const auto = selected.find((unit) => unit.autoRefresh === true);
+    if (auto !== undefined) throw new Error('自动补充注入的单元不能锁定（unit ' + String(auto.n) + '）。');
     const hit = seqs.filter((seq) => locks.has(seq));
     if (hit.length > 0) throw new Error('lock 区间包含已在安全区内的消息。' + safetyZoneNote(session, locks));
   } else if (kind === 'unlock') {
@@ -1166,11 +1174,14 @@ export function logicalGenerations(session) {
   const state = stateOf(session);
   scanNew(session, state);
   const applied = state.appliedCallIds;
+  const info = logicalBoundaries(session.snapshotEvents());
+  const byCall = new Map();
+  for (const boundary of info.boundaries) if (boundary.kind === 'execute' && typeof boundary.callId === 'string') byCall.set(boundary.callId, boundary.logical);
   const executes = [];
   for (const declaration of state.declarations) {
     if (declaration.args?.option !== 'execute') continue;
     if (!applied.has(declaration.callId)) continue;
-    executes.push({ callId: declaration.callId, logical: executes.length, seq: declaration.seq });
+    executes.push({ callId: declaration.callId, logical: byCall.get(declaration.callId) ?? -1, seq: declaration.seq });
   }
   const count = countLogicalGenerations(session);
   // current logical generation = number of frozen logical generations.
@@ -1180,31 +1191,6 @@ export function logicalGenerations(session) {
 
 /** 已产生的逻辑世代总数（成功的 execute + 用户命令写入的逻辑世代事件）。 */
 export function countLogicalGenerations(session) {
-  let maxLogical = -1;
-  let maxMarker = -1;
-  let privateExecutes = 0;
-  let privateUsers = 0;
-  for (const event of session.snapshotEvents()) {
-    if (event.type === 'plugin:plastic-memories/logical' && Number.isSafeInteger(event.data?.logical)) {
-      if (event.data?.kind === 'execute') privateExecutes += 1; else privateUsers += 1;
-      if (event.data.logical > maxLogical) maxLogical = event.data.logical;
-      continue;
-    }
-    if (event.surfaceOp?.op !== 'replace') continue;
-    const source = event.type === 'user/message' ? event.data?.source : event.data?.message?.source;
-    if (source?.kind === 'pm-surface' && Number.isSafeInteger(source.logicalGeneration) && source.logicalGeneration > maxMarker) {
-      maxMarker = source.logicalGeneration;
-    }
-  }
-  // 新格式：每次 execute 冻结都有 kind=execute 的私有事件。
-  if (privateExecutes > 0) return Math.max(maxLogical, maxMarker) + 1;
-  // 旧日志回退：已落地 execute 数 + 旧的用户投影私有事件数；有旧标记时取更大者。
-  const state = stateOf(session);
-  scanNew(session, state);
-  let executes = 0;
-  for (const declaration of state.declarations) {
-    if (declaration.args?.option !== 'execute') continue;
-    if (state.appliedCallIds.has(declaration.callId)) executes += 1;
-  }
-  return Math.max(maxMarker + 1, executes + privateUsers);
+  // 统一逻辑边界：PM private events + 成功压缩 checkpoint。
+  return logicalBoundaries(session.snapshotEvents()).self;
 }

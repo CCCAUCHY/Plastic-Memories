@@ -17,7 +17,7 @@ import { isCookie } from './cookie.js';
 const NL = String.fromCharCode(10);
 
 /** 段落里允许出现的字段。 */
-const OP_FIELDS = new Set(['spans', 'new_text', 'lock_this', 'types']);
+const OP_FIELDS = new Set(['spans', 'positions', 'new_text', 'lock_this', 'types']);
 const TYPE_NAMES = new Set(['user', 'developer', 'assistant', 'error', 'letter']);
 
 /** 所有 op 可选字段的唯一默认值来源。 */
@@ -45,13 +45,27 @@ export function normalizeOp(raw, index) {
       throw new Error('op #' + index + ' has unknown field ' + JSON.stringify(key) + '; allowed: ' + [...OP_FIELDS].join(', '));
     }
   }
-  if (!Object.hasOwn(raw, 'spans')) throw new Error('op #' + index + ' is missing spans');
-  if (!Array.isArray(raw.spans) || raw.spans.length === 0) {
-    throw new Error('op #' + index + ' spans must be a non-empty array');
-  }
-  for (const one of raw.spans) {
-    if (typeof one !== 'string') {
-      throw new Error('op #' + index + ' spans entries must be strings (span text), got ' + JSON.stringify(one));
+  const hasSpans = Object.hasOwn(raw, 'spans');
+  const hasPositions = Object.hasOwn(raw, 'positions');
+  if (!hasSpans && !hasPositions) throw new Error('op #' + index + ' needs positions (or legacy spans)');
+  if (hasSpans && hasPositions) throw new Error('op #' + index + ' cannot mix spans and positions');
+  if (hasPositions) {
+    if (!Array.isArray(raw.positions) || raw.positions.length === 0) {
+      throw new Error('op #' + index + ' positions must be a non-empty array');
+    }
+    for (const one of raw.positions) {
+      if (typeof one !== 'string' && !(typeof one === 'number' && Number.isSafeInteger(one))) {
+        throw new Error('op #' + index + ' positions entries must be unit numbers or range strings');
+      }
+    }
+  } else {
+    if (!Array.isArray(raw.spans) || raw.spans.length === 0) {
+      throw new Error('op #' + index + ' spans must be a non-empty array');
+    }
+    for (const one of raw.spans) {
+      if (typeof one !== 'string') {
+        throw new Error('op #' + index + ' spans entries must be strings (span text), got ' + JSON.stringify(one));
+      }
     }
   }
   const newText = raw.new_text === undefined ? OP_DEFAULTS.new_text : raw.new_text;
@@ -66,7 +80,7 @@ export function normalizeOp(raw, index) {
       throw new Error('op #' + index + ' types contains unknown type ' + JSON.stringify(type) + '; allowed: ' + [...TYPE_NAMES].join(', '));
     }
   }
-  return { spans: [...raw.spans], new_text: newText, lock_this: lockThis, types };
+  return { ...(hasPositions ? { positions: [...raw.positions] } : { spans: [...raw.spans] }), new_text: newText, lock_this: lockThis, types };
 }
 
 /** 取消息纯文本。 */
