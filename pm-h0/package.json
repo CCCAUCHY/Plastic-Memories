@@ -67,7 +67,7 @@
   },
   "license": "MIT",
   "scripts": {
-    "test": "node selftest.mjs && node integration.mjs && node unitest.mjs && node ptctest.mjs && node multicall.mjs && node balanced.mjs && node persist.mjs && node zeroanchor.mjs && node groupingtest.mjs && node diffcheck.mjs && node contexttest.mjs && node verifytest.mjs && node versioncheck.mjs",
+    "test": "node selftest.mjs && node integration.mjs && node unitest.mjs && node globaltest.mjs && node ptctest.mjs && node multicall.mjs && node balanced.mjs && node persist.mjs && node zeroanchor.mjs && node groupingtest.mjs && node diffcheck.mjs && node contexttest.mjs && node verifytest.mjs && node versioncheck.mjs",
     "test:selftest": "node selftest.mjs",
     "test:integration": "node integration.mjs",
     "test:livetest": "node livetest.mjs",
@@ -85,6 +85,7 @@
     "check:dsh": "node rebuild-from-dsh.mjs --check",
     "test:diff": "node diffcheck.mjs",
     "test:verify": "node verifytest.mjs",
-    "test:unit": "node unitest.mjs"
+    "test:unit": "node unitest.mjs",
+    "test:global": "node globaltest.mjs"
   }
 }

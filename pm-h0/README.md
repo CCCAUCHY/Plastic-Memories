@@ -144,11 +144,12 @@ dsh plugin --profile web2 add link:/var/data/dsh-workspace-Flatpak/可塑性记�
 npm test
 ```
 
-当前 **13 套 / 263 条**：
+当前 **14 套 / 266 条**：
 
 - selftest 61
 - integration 25
 - unitest 17
+- globaltest 3
 - ptctest 43
 - multicall 20
 - balanced 19
@@ -165,4 +166,4 @@ npm test
 1. 安全区重放无法严格插在摘要和 retained tail 之间（DSH 无 insert）；
 2. 旧世代页末尾“已压缩”事件行仍未单独渲染；
 3. 旧 cookie / hooks / atomicity 测试属于 old 分支语义，不在新测试链；
-4. 实际 web2 冷启动加载验证尚未完成。
+4. 实际 web2 冷启动后的运行时工具挂载尚未验证（bundle config 已确认）。
