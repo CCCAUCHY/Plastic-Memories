@@ -135,7 +135,7 @@ export function initState() {
   // raw  = **未投影时**的原始工作面节点（全部 append 事件，按 seq）；
   // reps = 每次替换的历史：{ gen, shadowed:[被遮 seq], repl: 替代节点 seq }。
   // 客户端据此把每一代拼成「可见行 + 遮罩块」：遮罩里显示替代文本，可逐层展开。
-  return { gen: 0, asOfSeq: -1, seqs: [], meta: {}, gens: [], raw: [], reps: [], safety: [], logicalPages: [], boundaries: [] };
+  return { gen: 0, asOfSeq: -1, seqs: [], meta: {}, gens: [], raw: [], reps: [], safety: [], logicalPages: [], boundaries: [], initialSeqs: null, initialAsOfSeq: -1 };
 }
 
 /**
@@ -219,17 +219,21 @@ export function applyEvent(state, event) {
   const logicalPages = logical !== undefined && !previousPages.some((page) => page.logical === logical)
     ? [...previousPages, { logical, physical: state.gen }]
     : previousPages;
+  const initialSeqs = state.gen === 0 ? state.seqs : (state.initialSeqs ?? []);
+  const initialAsOfSeq = state.gen === 0 ? state.asOfSeq : (state.initialAsOfSeq ?? -1);
   return {
     gen: state.gen + 1,
     asOfSeq: event.seq,
     seqs,
     raw: state.raw,
     meta: { ...state.meta, [String(event.seq)]: describeEvent(event) },
-    gens: [...state.gens, { gen: state.gen, asOfSeq: state.asOfSeq, seqs: state.seqs }],
+    gens: [...state.gens, { gen: state.gen + 1, asOfSeq: event.seq, seqs }],
     reps: [...state.reps, { gen: state.gen + 1, shadowed, repl: event.seq }],
     safety: Array.isArray(state.safety) ? state.safety : [],
     logicalPages,
     boundaries: Array.isArray(state.boundaries) ? state.boundaries : [],
+    initialSeqs,
+    initialAsOfSeq,
   };
 }
 
@@ -243,7 +247,9 @@ export function applyEvent(state, event) {
  * @returns {{current: number, asOfSeq: number, generations: Array<object>, meta: object}} wire 值。
  */
 export function viewOf(state) {
-  const generations = [...state.gens, { gen: state.gen, asOfSeq: state.asOfSeq, seqs: state.seqs }]
+  const generations = (state.initialSeqs === null || state.initialSeqs === undefined
+    ? [{ gen: 0, asOfSeq: state.asOfSeq, seqs: state.seqs }]
+    : [{ gen: 0, asOfSeq: state.initialAsOfSeq, seqs: state.initialSeqs }, ...state.gens])
     .map((entry) => {
       const pageUnits = unitsFrom(entry.seqs, state.meta);
       const pageUnitOfSeq = {};

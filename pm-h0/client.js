@@ -9992,6 +9992,11 @@ window.__ModuleLoader__.load({
       if (state === undefined || event === null || typeof event !== 'object') return false;
       const filter = filterOf(state);
       if (filter === null) return false;
+      // compaction lifecycle 是官方 trajectory 节点，不是 surface 行；
+      // 不能被 hiddenSteps/替代区间当成普通消息隐藏。只按页面 cutoff 截断。
+      if (typeof event.seq === 'number' && String(event.type).startsWith('compaction/')) {
+        return event.seq > filter.cutoff;
+      }
       if (typeof event.seq === 'number') {
         if (event.seq > filter.cutoff || filter.hiddenSeqs.has(event.seq)) return true;
         const data = event.data;
@@ -10224,12 +10229,8 @@ window.__ModuleLoader__.load({
       if (t !== undefined && t !== null && t.__pmEmbedded === true) return null;
       const mark = diffMarkOf(cell);
       const unit = unitTag(cell);
-      const compaction = compactionBoundaryTag(cell);
-      if (mark === null) {
-        if (unit === null && compaction === null) return null;
-        return h(React.Fragment, null, ...(unit === null ? [] : [unit]), ...(compaction === null ? [] : [compaction]));
-      }
-      return h(React.Fragment, null, ...(unit === null ? [] : [unit]), ...(compaction === null ? [] : [compaction]), h('button', {
+      if (mark === null) return unit;
+      return h(React.Fragment, null, ...(unit === null ? [] : [unit]), h('button', {
         type: 'button',
         className: 'pm-diff-tag',
         title: pmUiText(t, mark.side === 'replacement' ? 'pm.typeReshaped' : 'pm.typeReshaping', mark.side === 'replacement' ? 'Reshaped area: jump to the previous generation' : 'This area will be reshaped by the next generation: jump to it'),
