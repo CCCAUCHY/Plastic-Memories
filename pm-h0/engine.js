@@ -275,6 +275,14 @@ function autoHideTargets(session, state, claimed, settledBefore, locks) {
   const visible = new Set(nodes);
   const out = [];
   const seen = new Set();
+  // 绝不隐藏「最新一条 assistant 所在的单元」：tool result 还没被模型消费。
+  // 否则 retrospect/set/error 的结果会在下一次请求前被 auto-hide 吃掉，
+  // 模型只能看到调用、看不到结果，于是无限重试。
+  let latestAssistantSeq = -1;
+  for (const event of session.snapshotEvents()) {
+    if (event.type === 'assistant/message' && event.seq > latestAssistantSeq) latestAssistantSeq = event.seq;
+  }
+  const canHide = (seqs) => !seqs.includes(latestAssistantSeq);
   for (const declaration of state.declarations) {
     const option = declaration.args?.option;
     if (option !== 'set' && option !== 'execute') continue;
@@ -290,6 +298,7 @@ function autoHideTargets(session, state, claimed, settledBefore, locks) {
     const errored = stepHasError(session, declaration, seqs);
     // 新的自动隐藏规则：所有 set 都清理，不再要求已经兑现。
     if (!errored && option !== 'set') continue;
+    if (!canHide(seqs)) continue;
     seen.add(key);
     out.push({ shadowed: seqs, reason: errored ? 'error' : 'set', callId: declaration.callId });
     for (const seq of seqs) claimed.add(seq);
@@ -340,6 +349,7 @@ function autoHideTargets(session, state, claimed, settledBefore, locks) {
     if (!seqs.every((seq) => visible.has(seq))) continue;
     if (locks !== undefined && locks.size > 0 && seqs.some((seq) => locks.has(seq))) continue;
     if (seqs.some((seq) => claimed.has(seq))) continue;
+    if (!canHide(seqs)) continue;
     seen.add(key);
     out.push({ shadowed: seqs, reason: 'error', callId: failure.callId });
     for (const seq of seqs) claimed.add(seq);
@@ -356,6 +366,7 @@ function autoHideTargets(session, state, claimed, settledBefore, locks) {
     if (!seqs.every((seq) => visible.has(seq))) continue;
     if (locks !== undefined && locks.size > 0 && seqs.some((seq) => locks.has(seq))) continue;
     if (seqs.some((seq) => claimed.has(seq))) continue;
+    if (!canHide(seqs)) continue;
     seen.add(key);
     out.push({ shadowed: seqs, reason: success.name === 'retrospect' ? 'retrospect' : 'letter', callId: success.callId });
     for (const seq of seqs) claimed.add(seq);
