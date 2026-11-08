@@ -128,7 +128,41 @@ window.__ModuleLoader__.load({
       return decorated.map((entry) => entry.record);
     }
     function applyReshapeVirtualRows(rows) {
-      return rows;
+      if (!Array.isArray(rows)) return rows;
+      const state = activeState;
+      if (state === undefined || state.data === null || state.data === undefined) return rows;
+      const generations = Array.isArray(state.data.generations) ? state.data.generations : [];
+      const page = generations[effectiveGeneration(state)];
+      if (page === undefined || !Array.isArray(page.seqs) || page.seqs.length === 0) return rows;
+      const unitOf = page.unitOfSeq ?? {};
+      const seqs = page.seqs;
+      const unitOfCell = (cell) => {
+        if (cell === null || cell === undefined || typeof cell.sourceSeq !== 'number') return undefined;
+        if (Number.isSafeInteger(unitOf[String(cell.sourceSeq)])) return unitOf[String(cell.sourceSeq)];
+        let best;
+        for (const seq of seqs) {
+          if (seq > cell.sourceSeq) break;
+          const n = unitOf[String(seq)];
+          if (Number.isSafeInteger(n)) best = n;
+        }
+        return best;
+      };
+      const decorated = rows.map((row, index) => {
+        const entries = Array.isArray(row.entries) ? row.entries : [];
+        let unit;
+        for (const entry of entries) {
+          const n = unitOfCell(entry?.record?.cell);
+          if (Number.isSafeInteger(n) && (unit === undefined || n < unit)) unit = n;
+        }
+        return { row, unit, index };
+      });
+      if (decorated.every((entry) => entry.unit === undefined)) return rows;
+      decorated.sort((left, right) => {
+        const a = left.unit ?? Number.MAX_SAFE_INTEGER;
+        const b = right.unit ?? Number.MAX_SAFE_INTEGER;
+        return a - b || left.index - right.index;
+      });
+      return decorated.map((entry) => entry.row);
     }
     function diffMarksOf(cell) {
       const state = activeState;
