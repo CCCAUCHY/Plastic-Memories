@@ -125,14 +125,7 @@ window.__ModuleLoader__.load({
           })),
         }));
       }
-      // 官方表格最终按 cell.index 的 firstCellIndex 排序 turns；只重排 records
-      // 不够，必须把新的 surface 顺序写回 cell.index，否则展示层会最后再排一次。
-      return decorated.map((entry, index) => {
-        const record = entry.record;
-        if (record === null || record === undefined) return record;
-        if (record.cell === null || record.cell === undefined) return record;
-        return { ...record, cell: { ...record.cell, index: index + 1 } };
-      });
+      return decorated.map((entry) => entry.record);
     }
     function applyReshapeVirtualRows(rows) {
       return rows;
@@ -149,7 +142,7 @@ window.__ModuleLoader__.load({
       if (next !== undefined && Array.isArray(next.shadowed) && next.shadowed.includes(cell.sourceSeq)) {
         marks.push({ kind: 'reshaping', targetGen: next.gen, targetSeq: next.repl });
       }
-      const own = replacements.find((entry) => entry.repl === cell.sourceSeq && entry.gen <= gen);
+      const own = replacements.find((entry) => entry.repl === cell.sourceSeq && entry.gen === gen);
       if (own !== undefined) {
         const first = Array.isArray(own.shadowed) && own.shadowed.length > 0 ? own.shadowed[0] : own.repl;
         marks.push({ kind: 'reshaped', targetGen: own.gen - 1, targetSeq: first });
@@ -494,9 +487,8 @@ window.__ModuleLoader__.load({
     function reshapeTagLabel(cell, t) {
       if (t !== undefined && t !== null && t.__pmEmbedded === true) return null;
       const mark = diffMarkOf(cell);
-      const unit = unitTag(cell);
-      if (mark === null) return unit;
-      return h(React.Fragment, null, ...(unit === null ? [] : [unit]), h('button', {
+      if (mark === null) return null;
+      return h('button', {
         type: 'button',
         className: 'pm-diff-tag',
         title: pmUiText(t, mark.side === 'replacement' ? 'pm.typeReshaped' : 'pm.typeReshaping', mark.side === 'replacement' ? 'Reshaped area: jump to the previous generation' : 'This area will be reshaped by the next generation: jump to it'),
@@ -505,7 +497,7 @@ window.__ModuleLoader__.load({
           event.stopPropagation();
           navigateDiff(mark);
         },
-      }, pmUiText(t, 'pm.reshaped', 'Reshaped')));
+      }, pmUiText(t, 'pm.reshaped', 'Reshaped'));
     }
 
     /** 正文前的差异徽标：本代替代消息 = 已塑形（粉）；将被下一代覆盖 = 被塑形（反色）。 */
@@ -535,19 +527,6 @@ window.__ModuleLoader__.load({
       const n = page?.unitOfSeq?.[String(cell?.sourceSeq)];
       if (!Number.isSafeInteger(n)) return null;
       return h('span', { className: 'pm-unit-badge', title: 'Generation unit ' + String(n) }, '#' + String(n));
-    }
-
-    /** 类型列专用：只显示差异徽标，官方类型文字保留。 */
-    function diffTypeTag(cell, t) {
-      const marks = diffMarksOf(cell);
-      if (marks.length === 0) return null;
-      return h(React.Fragment, null, ...marks.map((mark, index) => h('button', {
-        key: 'typetag' + mark.kind + String(index),
-        type: 'button',
-        className: mark.kind === 'reshaping' ? 'pm-diff-badge pm-diff-badge-reshaping' : 'pm-diff-badge pm-diff-badge-reshaped',
-        title: mark.kind === 'reshaping' ? pmUiText(t, 'pm.jumpReshaping', 'Jump to the pre-reshaping range') : pmUiText(t, 'pm.jumpReshaped', 'Jump to the corresponding reshaped message'),
-        onClick: (event) => { event.preventDefault(); event.stopPropagation(); jumpDiff(mark, event.currentTarget); },
-      }, mark.kind === 'reshaping' ? pmUiText(t, 'pm.reshaping', 'Being reshaped') : pmUiText(t, 'pm.reshaped', 'Reshaped'))));
     }
 
     /** 旧世代页末尾：下一次压缩事件（UI-only，不是模型上下文）。 */
@@ -778,13 +757,9 @@ window.__ModuleLoader__.load({
       });
       decorated.sort((left, right) => (left.pos - right.pos) || (left.index - right.index));
       const nodes = decorated.map((entry) => entry.node);
-      // 历史世代页只展示该页面 surface 的消息节点。
-      // 这样 UI 顺序、单元号、retrospect 和 API messages 是同一个序列。
+      // 历史世代页不显示 compaction 日志节点；其余保持官方装配器结果。
       if (state.gen === null) return { ...snapshot, eventNodes: nodes };
-      const page = generations[gen];
-      const wantedSeqs = Array.isArray(page?.seqs) ? page.seqs : [];
-      const wanted = new Set(wantedSeqs);
-      return { ...snapshot, eventNodes: nodes.filter((node) => node !== null && node !== undefined && wanted.has(node.seq)) };
+      return { ...snapshot, eventNodes: nodes.filter((node) => node === null || node === undefined || node.kind !== 'compaction') };
     }
     function wrapTargetSource(sessionId, delegate) {
       const rawDelegate = delegate;
@@ -1102,7 +1077,6 @@ window.__ModuleLoader__.load({
       hiddenLabel,
       isHiddenReplacement,
       diffNativeTag,
-      diffTypeTag,
       reshapeTagLabel,
       coveredNodesOf,
       pagination: (t) => (t !== undefined && t !== null && t.__pmEmbedded === true ? null : h(GenerationPagination, { t })),
