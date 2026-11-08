@@ -19,6 +19,7 @@ import { registerCommands } from './commands.js';
 import { GENERATIONS_KEY, generationProjection } from './generations.js';
 import { stepGroup, surfaceNodes } from './coords.js';
 import { resolveOps, previewOf, findLastPendingSet, normalizeOp } from './plasticize.js';
+import { resolveUnitOps } from './unitops.js';
 import { retrospect } from './retrospect.js';
 import { retrospectUnits } from './unitretro.js';
 import { replayCompactedSafety } from './safetyreplay.js';
@@ -508,7 +509,7 @@ export function apply(ctx, config) {
         if (option === 'set') {
           const flat = [];
           for (const batch of batches) {
-            const resolved = resolveOps(session, batch.ops, batch.here);
+            const resolved = resolveBatchOps(session, batch.ops, batch.here);
             assertResolvedUnlocked(session, resolved);
             flat.push(...resolved);
           }
@@ -520,7 +521,7 @@ export function apply(ctx, config) {
           // 只登记：真正写入由 flush 在提交边界做（见 engine.js 的说明）。
           let total = 0;
           for (const batch of batches) {
-            const resolved = resolveOps(session, batch.ops, batch.here);
+            const resolved = resolveBatchOps(session, batch.ops, batch.here);
             assertResolvedUnlocked(session, resolved);
             total += resolved.length;
           }
@@ -600,6 +601,12 @@ export function apply(ctx, config) {
    * @param {object} exec - 工具执行上下文。
    * @returns {object|undefined} 本步整组。
    */
+  function resolveBatchOps(session, ops, here) {
+    return Array.isArray(ops) && ops.some((op) => op !== null && typeof op === 'object' && Object.hasOwn(op, 'positions'))
+      ? resolveUnitOps(session, ops, here)
+      : resolveOps(session, ops, here);
+  }
+
   function stepGroupFor(session, exec) {
     const callId = exec?.callId;
     if (typeof callId !== 'string') return undefined;
