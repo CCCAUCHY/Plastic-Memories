@@ -149,7 +149,7 @@ window.__ModuleLoader__.load({
       if (next !== undefined && Array.isArray(next.shadowed) && next.shadowed.includes(cell.sourceSeq)) {
         marks.push({ kind: 'reshaping', targetGen: next.gen, targetSeq: next.repl });
       }
-      const own = replacements.find((entry) => entry.repl === cell.sourceSeq && entry.gen === gen);
+      const own = replacements.find((entry) => entry.repl === cell.sourceSeq && entry.gen <= gen);
       if (own !== undefined) {
         const first = Array.isArray(own.shadowed) && own.shadowed.length > 0 ? own.shadowed[0] : own.repl;
         marks.push({ kind: 'reshaped', targetGen: own.gen - 1, targetSeq: first });

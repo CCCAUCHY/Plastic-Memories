@@ -8667,7 +8667,7 @@ window.__ModuleLoader__.load({
 			if (schema === void 0) return;
 			laid.cell.schemaDetail = JSON.stringify(schema, null, 2);
 		}
-		function toTurnModel(turn, entry, t) {
+		function toTurnModel(turn, entry, t) { const pmTurnOrder = globalThis.__PM_SEQ_ORDER__; const pmTurnPos = (cell) => pmTurnOrder !== void 0 && pmTurnOrder !== null && typeof cell.sourceSeq === "number" && pmTurnOrder.has(cell.sourceSeq) ? pmTurnOrder.get(cell.sourceSeq) : cell.index; if (pmTurnOrder !== void 0 && pmTurnOrder !== null) entry = { ...entry, groups: entry.groups.map((group) => ({ ...group, laid: [...group.laid].sort((left, right) => pmTurnPos(left.cell) - pmTurnPos(right.cell)) })).sort((left, right) => Math.min(...left.laid.map((laid) => pmTurnPos(laid.cell))) - Math.min(...right.laid.map((laid) => pmTurnPos(laid.cell)))) };
 			return {
 				turn,
 				groups: entry.groups.map(({ title, laid }) => {
@@ -8682,7 +8682,7 @@ window.__ModuleLoader__.load({
 		}
 		/** Chronological section position from the fold's monotonically assigned cell indexes. */
 		function firstCellIndex(turn) {
-			return Math.min(...turn.groups.flatMap((group) => group.cells.map((cell) => cell.index)), Number.POSITIVE_INFINITY);
+			const pmFirstOrder = globalThis.__PM_SEQ_ORDER__; return Math.min(...turn.groups.flatMap((group) => group.cells.map((cell) => pmFirstOrder !== void 0 && pmFirstOrder !== null && typeof cell.sourceSeq === "number" && pmFirstOrder.has(cell.sourceSeq) ? pmFirstOrder.get(cell.sourceSeq) : cell.index)), Number.POSITIVE_INFINITY);
 		}
 		/** Wall-span duration + tool histogram, e.g. `1.5 s bash×6`. */
 		function groupDescription(laid, t) {
@@ -9890,7 +9890,7 @@ window.__ModuleLoader__.load({
       if (next !== undefined && Array.isArray(next.shadowed) && next.shadowed.includes(cell.sourceSeq)) {
         marks.push({ kind: 'reshaping', targetGen: next.gen, targetSeq: next.repl });
       }
-      const own = replacements.find((entry) => entry.repl === cell.sourceSeq && entry.gen === gen);
+      const own = replacements.find((entry) => entry.repl === cell.sourceSeq && entry.gen <= gen);
       if (own !== undefined) {
         const first = Array.isArray(own.shadowed) && own.shadowed.length > 0 ? own.shadowed[0] : own.repl;
         marks.push({ kind: 'reshaped', targetGen: own.gen - 1, targetSeq: first });
