@@ -878,14 +878,14 @@ export function flush(session, options, logger) {
     todo.push(anchor === undefined ? d : Object.assign(Object.create(Object.getPrototypeOf(d)), d, { opsAnchorCallId: anchor }));
   }
 
-  // 自动隐藏可以在**没有待办**的边界上补做（例如上一个边界没有打开的 step）。
   const hasExecute = todo.some((d) => d.args?.option === 'execute');
   const appliedBefore = state.declarations.some((d) => d.args?.option === 'execute' && state.appliedCallIds.has(d.callId));
   const appliedExecuteSeq = state.declarations
     .filter((d) => d.args?.option === 'execute' && state.appliedCallIds.has(d.callId))
     .reduce((max, d) => Math.max(max, d.seq), -1);
-  const autoOnly = todo.length === 0 && autoHide && open !== undefined && appliedBefore;
-  if (todo.length === 0 && !autoOnly) return { applied: 0, skipped: 0, auto: 0, generation: session.surface.replaceGeneration };
+  // 没有 plasticize 声明的边界不能触发 auto-hide；否则 retrospect/set 的
+  // tool result 会在模型消费之前被吞掉，模型只能看到调用看不到结果。
+  if (todo.length === 0) return { applied: 0, skipped: 0, auto: 0, generation: session.surface.replaceGeneration };
 
   let applied = 0;
   let skipped = 0;
@@ -894,7 +894,7 @@ export function flush(session, options, logger) {
   // 否则后一条会按前一条收缩后的工作面理解偏移。
   try {
     const written = applyDeclarations(session, todo, open, state, {
-      autoHide: autoHide && (hasExecute || appliedBefore),
+      autoHide: autoHide && hasExecute,
       appliedBefore,
       appliedExecuteSeq,
     });
