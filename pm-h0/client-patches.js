@@ -203,6 +203,16 @@ export function applyExtraPatches(patched) {
   const pmLayoutRepl = "if (entry.kind === \"system\" && entry.change.kind === \"initial\") return Number.NEGATIVE_INFINITY; const pmLayoutOrder = globalThis.__PM_SEQ_ORDER__; if (pmLayoutOrder !== void 0 && pmLayoutOrder !== null && pmLayoutOrder.has(entry.seq)) return pmLayoutOrder.get(entry.seq); return entry.seq;";
   if (text.split(pmLayoutFind).length - 1 !== 1) throw new Error('extra patch: layout order not found');
   text = text.split(pmLayoutFind).join(pmLayoutRepl);
+  // 16. turns 的最终排序与 turn 内 cells 的 surface 顺序。
+  const pmFirstFind = 'return Math.min(...turn.groups.flatMap((group) => group.cells.map((cell) => cell.index)), Number.POSITIVE_INFINITY);';
+  const pmFirstRepl = 'const pmFirstOrder = globalThis.__PM_SEQ_ORDER__; return Math.min(...turn.groups.flatMap((group) => group.cells.map((cell) => pmFirstOrder !== void 0 && pmFirstOrder !== null && typeof cell.sourceSeq === "number" && pmFirstOrder.has(cell.sourceSeq) ? pmFirstOrder.get(cell.sourceSeq) : cell.index)), Number.POSITIVE_INFINITY);';
+  if (text.split(pmFirstFind).length - 1 !== 1) throw new Error('extra patch: firstCellIndex order not found');
+  text = text.split(pmFirstFind).join(pmFirstRepl);
+  // 17. 同一 turn 内按 surface pos 重排 cells；跨 step 交错时拆分 group。
+  const pmTurnFind = 'function toTurnModel(turn, entry, t) {';
+  const pmTurnRepl = 'function toTurnModel(turn, entry, t) { const pmTurnOrder = globalThis.__PM_SEQ_ORDER__; if (pmTurnOrder !== void 0 && pmTurnOrder !== null) { const pmPos = (cell) => typeof cell.sourceSeq === "number" && pmTurnOrder.has(cell.sourceSeq) ? pmTurnOrder.get(cell.sourceSeq) : cell.index; const flat = entry.groups.flatMap((group) => group.laid.map((laid) => ({ title: group.title, laid }))).sort((left, right) => pmPos(left.laid.cell) - pmPos(right.laid.cell)); const rebuilt = []; for (const item of flat) { const last = rebuilt.at(-1); if (last !== void 0 && last.title === item.title) last.laid.push(item.laid); else rebuilt.push({ title: item.title, laid: [item.laid] }); } entry = { ...entry, groups: rebuilt }; }';
+  if (text.split(pmTurnFind).length - 1 !== 1) throw new Error('extra patch: toTurnModel order not found');
+  text = text.split(pmTurnFind).join(pmTurnRepl);
   // 15. 工具栏加载全部按钮 + 文案。
   const pmPager = 'globalThis.__PM_UI__ === void 0 || t.__pmEmbedded === true ? null : globalThis.__PM_UI__.pagination(t)';
   const pmPagerRepl = 'globalThis.__PM_UI__ === void 0 || t.__pmEmbedded === true ? null : (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [globalThis.__PM_UI__.pagination(t), globalThis.__PM_UI__.loadAllButton !== void 0 ? globalThis.__PM_UI__.loadAllButton(t) : null] })';

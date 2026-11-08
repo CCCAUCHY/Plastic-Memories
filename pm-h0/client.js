@@ -8667,7 +8667,7 @@ window.__ModuleLoader__.load({
 			if (schema === void 0) return;
 			laid.cell.schemaDetail = JSON.stringify(schema, null, 2);
 		}
-		function toTurnModel(turn, entry, t) {
+		function toTurnModel(turn, entry, t) { const pmTurnOrder = globalThis.__PM_SEQ_ORDER__; if (pmTurnOrder !== void 0 && pmTurnOrder !== null) { const pmPos = (cell) => typeof cell.sourceSeq === "number" && pmTurnOrder.has(cell.sourceSeq) ? pmTurnOrder.get(cell.sourceSeq) : cell.index; const flat = entry.groups.flatMap((group) => group.laid.map((laid) => ({ title: group.title, laid }))).sort((left, right) => pmPos(left.laid.cell) - pmPos(right.laid.cell)); const rebuilt = []; for (const item of flat) { const last = rebuilt.at(-1); if (last !== void 0 && last.title === item.title) last.laid.push(item.laid); else rebuilt.push({ title: item.title, laid: [item.laid] }); } entry = { ...entry, groups: rebuilt }; }
 			return {
 				turn,
 				groups: entry.groups.map(({ title, laid }) => {
@@ -8682,7 +8682,7 @@ window.__ModuleLoader__.load({
 		}
 		/** Chronological section position from the fold's monotonically assigned cell indexes. */
 		function firstCellIndex(turn) {
-			return Math.min(...turn.groups.flatMap((group) => group.cells.map((cell) => cell.index)), Number.POSITIVE_INFINITY);
+			const pmFirstOrder = globalThis.__PM_SEQ_ORDER__; return Math.min(...turn.groups.flatMap((group) => group.cells.map((cell) => pmFirstOrder !== void 0 && pmFirstOrder !== null && typeof cell.sourceSeq === "number" && pmFirstOrder.has(cell.sourceSeq) ? pmFirstOrder.get(cell.sourceSeq) : cell.index)), Number.POSITIVE_INFINITY);
 		}
 		/** Wall-span duration + tool histogram, e.g. `1.5 s bash×6`. */
 		function groupDescription(laid, t) {
