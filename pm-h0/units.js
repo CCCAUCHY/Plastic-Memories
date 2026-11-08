@@ -61,6 +61,14 @@ export function currentUnits(session, options = {}) {
     const seq = nodes[index];
     const event = session.eventAt(seq);
     if (event === undefined) continue;
+    // 自动隐藏/纯 hide 写出的空 developer 是 surface 空洞，不是模型消息；
+    // 它不参与单元编号，否则 retrospect(self) 的 count 会被空洞越撑越大。
+    if (event.type === 'developer/message') {
+      const hiddenMessage = session.deriveEventMessage(event);
+      const hiddenSource = hiddenMessage?.source ?? event.data?.message?.source;
+      const hiddenContent = Array.isArray(hiddenMessage?.content) ? hiddenMessage.content : [];
+      if (hiddenContent.length === 0 && (hiddenSource?.kind === 'pm-surface' || String(hiddenSource?.note ?? '').startsWith('auto-hide'))) continue;
+    }
     if (event.type === 'assistant/message') {
       const unitEvents = [{ seq, event }];
       let cursor = index + 1;

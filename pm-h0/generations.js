@@ -367,6 +367,7 @@ function unitsFrom(seqs, meta) {
   for (let index = 0; index < seqs.length; index += 1) {
     const seq = seqs[index];
     const info = meta[String(seq)] ?? { seq, type: 'unknown', role: 'unknown' };
+    if (info.hidden === true && info.role === 'developer') continue;
     const members = [seq];
     if (info.type === 'assistant/message') {
       let cursor = index + 1;
