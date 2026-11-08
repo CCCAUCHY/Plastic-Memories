@@ -1008,9 +1008,14 @@ export function stageUserOperation(session, op) {
     list.push({ kind: 'lock', mode: 'prelock', seqs: [], text: '', interval: '', atSeq: session.seq, comment });
     return { pending: list.length, shadowed: [], kind: 'lock', mode };
   }
-  if (mode === 'all') throw new Error('lock all / unlock all 已取消；请使用单元序号区间。');
+  if (mode === 'all') {
+    if (kind !== 'unlock') throw new Error('lock all 已取消；请逐个指定单元。');
+    if (list.length > 0) throw new Error('已有待落盘操作，不能追加 unlock all。');
+    list.push({ kind: 'unlock', mode: 'all', seqs: [], text: '', comment });
+    return { pending: list.length, shadowed: [], kind: 'unlock', mode };
+  }
   if (list.some((entry) => entry.mode === 'all')) throw new Error('已有 all 待落盘，不能再追加区间操作。');
-  const selectors = Array.isArray(op.positions) ? op.positions : [op.interval];
+  const selectors = Array.isArray(op.positions) ? op.positions : [];
   const resolved = resolveUnitOps(session, [{ positions: selectors, new_text: kind === 'project' ? String(op.newText ?? '') : 'x' }], undefined);
   const seqs = resolved.flatMap((span) => span.shadowed);
   if (seqs.length === 0) throw new Error('区间解析后是空的');
@@ -1036,7 +1041,7 @@ export function stageUserOperation(session, op) {
     const hit = seqs.filter((seq) => locks.has(seq));
     if (hit.length > 0) throw new Error('区间命中安全区；请先 /plasticize unlock。' + safetyZoneNote(session, locks));
   }
-  list.push({ kind, mode: 'range', seqs, text: kind === 'project' ? String(op.newText ?? '') : '', interval: String(op.interval), comment });
+  list.push({ kind, mode: 'range', seqs, text: kind === 'project' ? String(op.newText ?? '') : '', comment });
   return { pending: list.length, shadowed: seqs, kind, mode };
 }
 

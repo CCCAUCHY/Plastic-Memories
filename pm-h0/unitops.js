@@ -2,8 +2,8 @@
  * PM · 单元序号寻址。
  *
  * plasticize 的 ops[].positions：当前世代单元序号（0 起），支持
- * "3"、[3,7]、"this"。一个 op 里的多个区间沿用旧语义：前段隐藏，
- * new_text 落在最后一段。
+ * 3、"3"、"this"。多个 position 按单元顺序展开；前段隐藏，
+ * new_text 落在最后一个单元。
  *
  * @module dsh-plugin-plastic-memories-h0/unitops
  */

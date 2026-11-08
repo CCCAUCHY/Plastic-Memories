@@ -1,16 +1,15 @@
 /**
  * Plastic Memories — 用户侧 slash 命令（单一入口）。
  *
- *   /plasticize <区间> <替代文本>    稳定化（文本原样，可含换行；空 = 隐藏）
- *   /plasticize hide <区间>        隐藏
- *   /plasticize lock <区间>        纳入安全区
- *   /plasticize unlock <区间>      移出安全区
- *   /plasticize lock all           当前世代全部轨迹纳入安全区
+ *   /plasticize <unit> <替代文本>  稳定化（文本原样，可含换行；空 = 隐藏）
+ *   /plasticize hide <unit>        隐藏
+ *   /plasticize lock <unit>        纳入安全区
+ *   /plasticize unlock <unit>      移出安全区
  *   /plasticize unlock all         当前世代全部轨迹移出安全区
  *   /plasticize prelock             下一条用户消息（触发落盘的那条）纳入安全区
  *   /plasticize clear               清空当前全部待落盘操作
  *
- * 三类操作只要区间互不重叠就可交换；重叠检测与工具共用 overlap.js。
+ * 三类操作只要单元不重叠就可交换；重叠检测与工具共用 overlap.js。
  * 安全区/逻辑世代都以私有事件写入日志；待落盘集合是进程内状态，发送消息时才落盘。
  *
  * @module dsh-plugin-plastic-memories-h0/commands
@@ -18,7 +17,7 @@
 
 import { clearStagedOperations, pendingUserOperations, stageUserOperation } from './engine.js';
 
-const HINT = '<单元序号或[起,止]> <替代文本> | hide <区间> | lock <区间> | unlock <区间> | prelock | clear';
+const HINT = '<单元序号> <替代文本> | hide <单元序号> | lock <单元序号> | unlock <单元序号> | unlock all | prelock | clear';
 
 /**
  * 解析 /plasticize 输入。
@@ -27,7 +26,7 @@ const HINT = '<单元序号或[起,止]> <替代文本> | hide <区间> | lock <
  */
 export function parsePlasticizeCommand(rawInput, locale = 'zh') {
   const en = locale === 'en';
-  const hint = en ? '<span> <replacement> | hide <span> | lock <span> | lock all | unlock <span> | unlock all | prelock | clear' : HINT;
+  const hint = en ? '<unit> <replacement> | hide <unit> | lock <unit> | unlock <unit> | unlock all | prelock | clear' : HINT;
   const text = String(rawInput ?? '').replace(/^\s+/, '');
   const command = text.replace(/[ \t\r\n]+$/, '');
   if (command.length === 0) throw new Error((en ? 'Usage: /plasticize ' : '用法：/plasticize ') + hint);
@@ -36,12 +35,18 @@ export function parsePlasticizeCommand(rawInput, locale = 'zh') {
   for (const kind of ['lock', 'unlock', 'hide']) {
     if (command !== kind && !command.startsWith(kind + ' ') && !command.startsWith(kind + '\t')) continue;
     const match = new RegExp('^' + kind + '[ \t]+(\\S+)[ \t]*$').exec(command);
-    if (match === null) throw new Error(en ? '/plasticize ' + kind + ' must be followed by a span (or all).' : '/plasticize ' + kind + ' 后必须是一个区间（或 all）。');
-    return { action: 'stage', kind: kind === 'hide' ? 'project' : kind, mode: 'range', interval: match[1], positions: [match[1]], newText: '' };
+    if (match === null) throw new Error(en ? '/plasticize ' + kind + ' must be followed by a unit number.' : '/plasticize ' + kind + ' 后必须是一个单元序号。');
+    if (match[1] === 'all') {
+      if (kind !== 'unlock') throw new Error(en ? 'lock all is not supported; name units explicitly.' : 'lock all 已取消；请逐个指定单元。');
+      return { action: 'stage', kind: 'unlock', mode: 'all', newText: '' };
+    }
+    if (!/^(\d+|this)$/.test(match[1])) throw new Error(en ? 'unit must be a non-negative integer or this.' : '单元必须是非负整数或 this。');
+    return { action: 'stage', kind: kind === 'hide' ? 'project' : kind, mode: 'range', positions: [match[1]], newText: '' };
   }
   const match = /^(\S+)[ \t\r\n]+([\s\S]*)$/.exec(text);
   if (match === null) throw new Error((en ? 'Usage: /plasticize ' : '用法：/plasticize ') + hint);
-  return { action: 'stage', kind: 'project', mode: 'range', interval: match[1], positions: [match[1]], newText: match[2] };
+  if (!/^(\d+|this)$/.test(match[1])) throw new Error(en ? 'unit must be a non-negative integer or this.' : '单元必须是非负整数或 this。');
+  return { action: 'stage', kind: 'project', mode: 'range', positions: [match[1]], newText: match[2] };
 }
 
 /**
@@ -64,12 +69,12 @@ export function registerCommands(ctx, logger) {
   ctx.inject(['commands'], (commandCtx) => {
     const locale = currentLocale();
     const en = locale === 'en';
-    const hint = en ? '<span> <replacement> | hide <span> | lock <span> | lock all | unlock <span> | unlock all | prelock | clear' : HINT;
+    const hint = en ? '<unit> <replacement> | hide <unit> | lock <unit> | unlock <unit> | unlock all | prelock | clear' : HINT;
     const fail = (error) => ({ kind: 'error', text: String(error?.message ?? error) });
     const busyError = () => new Error(en ? 'Cannot run /plasticize while the model is running; wait for this inference to finish.' : '正在推理中，暂不能执行 /plasticize；请等本次推理结束后再试。');
     commandCtx.commands.register({
       name: 'plasticize',
-      description: en ? '/plasticize <span> <replacement> | hide/lock/unlock <span> | lock all | unlock all | prelock | clear' : '/plasticize <区间> <替代文本> | hide/lock/unlock <区间> | lock all | unlock all | prelock | clear',
+      description: en ? '/plasticize <unit> <replacement> | hide/lock/unlock <unit> | unlock all | prelock | clear' : '/plasticize <单元序号> <替代文本> | hide/lock/unlock <单元序号> | unlock all | prelock | clear',
       input: { hint },
       recordInput: false,
       handler: ({ agent, rawInput }) => {
