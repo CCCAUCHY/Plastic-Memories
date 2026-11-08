@@ -191,7 +191,7 @@ export function applyExtraPatches(patched) {
   text = insertPmLocale(text, '"view.trajectory": "Generations",', pmLocaleEn);
   // 类型列恢复原生标签（去掉粉色 class 与标签替换）。
   text = text.split('${globalThis.__PM_UI__ !== void 0 && globalThis.__PM_UI__.isReshapedCell !== void 0 && globalThis.__PM_UI__.isReshapedCell(record.cell, t) ? " pm-reshaped-tag" : ""} ').join('');
-  text = text.split('children: globalThis.__PM_UI__ !== void 0 && globalThis.__PM_UI__.reshapeTagLabel !== void 0 && globalThis.__PM_UI__.isReshapedCell !== void 0 && globalThis.__PM_UI__.isReshapedCell(record.cell, t) ? globalThis.__PM_UI__.reshapeTagLabel(record.cell, t) : t(KIND_LABEL_KEY[record.cell.kind])').join('children: t(KIND_LABEL_KEY[record.cell.kind])');
+  text = text.split('children: globalThis.__PM_UI__ !== void 0 && globalThis.__PM_UI__.reshapeTagLabel !== void 0 && globalThis.__PM_UI__.isReshapedCell !== void 0 && globalThis.__PM_UI__.isReshapedCell(record.cell, t) ? globalThis.__PM_UI__.reshapeTagLabel(record.cell, t) : t(KIND_LABEL_KEY[record.cell.kind])').join('children: [t(KIND_LABEL_KEY[record.cell.kind]), globalThis.__PM_UI__ !== void 0 && globalThis.__PM_UI__.diffTypeTag !== void 0 ? globalThis.__PM_UI__.diffTypeTag(record.cell, t) : null]');
   // 空替代文本：本地化「（已隐藏）」。
   text = text.split('children: "已隐藏"').join('children: globalThis.__PM_UI__ !== void 0 && globalThis.__PM_UI__.hiddenLabel !== void 0 ? globalThis.__PM_UI__.hiddenLabel(cell, t) : t("pm.hidden")');
   // 正文包装器把 t 传给差异徽标。

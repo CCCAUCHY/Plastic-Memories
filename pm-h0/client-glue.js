@@ -537,6 +537,19 @@ window.__ModuleLoader__.load({
       return h('span', { className: 'pm-unit-badge', title: 'Generation unit ' + String(n) }, '#' + String(n));
     }
 
+    /** 类型列专用：只显示差异徽标，官方类型文字保留。 */
+    function diffTypeTag(cell, t) {
+      const marks = diffMarksOf(cell);
+      if (marks.length === 0) return null;
+      return h(React.Fragment, null, ...marks.map((mark, index) => h('button', {
+        key: 'typetag' + mark.kind + String(index),
+        type: 'button',
+        className: mark.kind === 'reshaping' ? 'pm-diff-badge pm-diff-badge-reshaping' : 'pm-diff-badge pm-diff-badge-reshaped',
+        title: mark.kind === 'reshaping' ? pmUiText(t, 'pm.jumpReshaping', 'Jump to the pre-reshaping range') : pmUiText(t, 'pm.jumpReshaped', 'Jump to the corresponding reshaped message'),
+        onClick: (event) => { event.preventDefault(); event.stopPropagation(); jumpDiff(mark, event.currentTarget); },
+      }, mark.kind === 'reshaping' ? pmUiText(t, 'pm.reshaping', 'Being reshaped') : pmUiText(t, 'pm.reshaped', 'Reshaped'))));
+    }
+
     /** 旧世代页末尾：下一次压缩事件（UI-only，不是模型上下文）。 */
     function compactionBoundaryTag(cell) {
       const state = activeState;
@@ -1089,6 +1102,7 @@ window.__ModuleLoader__.load({
       hiddenLabel,
       isHiddenReplacement,
       diffNativeTag,
+      diffTypeTag,
       reshapeTagLabel,
       coveredNodesOf,
       pagination: (t) => (t !== undefined && t !== null && t.__pmEmbedded === true ? null : h(GenerationPagination, { t })),
