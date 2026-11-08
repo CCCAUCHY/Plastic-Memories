@@ -13,7 +13,7 @@
 import { SURFACE_TYPES, derivedMessage, messageText } from './coords.js';
 import { logicalGenerations } from './engine.js';
 import { logicalBoundaries } from './boundaries.js';
-import { messagesAt } from './messages.js';
+import { messagesAt, currentInputMessages } from './messages.js';
 import { renderPreview } from './preview.js';
 
 /** 事件类型到角色名的兜底映射（正常消息直接读 message.role）。 */
@@ -115,7 +115,7 @@ export function retrospectGeneration(session, generation, preview = false) {
 
   let rawMessages;
   if (isCurrent) {
-    rawMessages = session.deriveMessages();
+    rawMessages = currentInputMessages(session);
   } else {
     // 世代边界：优先该世代的 execute 声明，其次 compaction checkpoint。
     const execute = info.executes.find((entry) => entry.logical === target);

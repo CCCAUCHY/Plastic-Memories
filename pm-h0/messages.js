@@ -37,7 +37,7 @@ export function messagesAt(session, before) {
  * @param {boolean} [preview]
  */
 export function retrospectMessages(session, preview = false) {
-  const messages = messagesAt(session);
+  const messages = currentInputMessages(session);
   const logical = logicalGenerations(session).self;
   if (preview) {
     return { logical, count: messages.length, preview: true, messages: messages.map((message) => ({
@@ -46,4 +46,18 @@ export function retrospectMessages(session, preview = false) {
     })) };
   }
   return { logical, count: messages.length, preview: false, messages };
+}
+
+/**
+ * 当前这次请求真正提交给模型的输入：排除最新 assistant 输出。
+ * 工具执行时当前 assistant（含本次 tool call）已经在 surface 上，但它不是输入。
+ * @param {object} session
+ * @returns {Array<object>} DSH Message[]
+ */
+export function currentInputMessages(session) {
+  let cutoff;
+  for (const event of session.snapshotEvents()) {
+    if (event.type === 'assistant/message' && Number.isSafeInteger(event.seq)) cutoff = event.seq;
+  }
+  return cutoff === undefined ? session.deriveMessages() : messagesAt(session, cutoff);
 }
