@@ -525,7 +525,7 @@ window.__ModuleLoader__.load({
       if (state === undefined || state.data === undefined || state.data === null) return null;
       const gen = effectiveGeneration(state);
       const page = Array.isArray(state.data.generations) ? state.data.generations[gen] : undefined;
-      const n = page?.unitOfSeq?.[String(cell?.sourceSeq)] ?? state.data.unitOfSeq?.[String(cell?.sourceSeq)];
+      const n = page?.unitOfSeq?.[String(cell?.sourceSeq)];
       if (!Number.isSafeInteger(n)) return null;
       return h('span', { className: 'pm-unit-badge', title: 'Generation unit ' + String(n) }, '#' + String(n));
     }
@@ -758,9 +758,13 @@ window.__ModuleLoader__.load({
       });
       decorated.sort((left, right) => (left.pos - right.pos) || (left.index - right.index));
       const nodes = decorated.map((entry) => entry.node);
-      // 历史世代页只展示模型输入消息；compaction 是日志事件，不是消息。
-      // 官方轨迹页（未选历史世代）仍然保留它自己的 compaction 行。
-      return { ...snapshot, eventNodes: state.gen === null ? nodes : nodes.filter((node) => node === null || node === undefined || node.kind !== 'compaction') };
+      // 历史世代页只展示该页面 surface 的消息节点。
+      // 这样 UI 顺序、单元号、retrospect 和 API messages 是同一个序列。
+      if (state.gen === null) return { ...snapshot, eventNodes: nodes };
+      const page = generations[gen];
+      const wantedSeqs = Array.isArray(page?.seqs) ? page.seqs : [];
+      const wanted = new Set(wantedSeqs);
+      return { ...snapshot, eventNodes: nodes.filter((node) => node !== null && node !== undefined && wanted.has(node.seq)) };
     }
     function wrapTargetSource(sessionId, delegate) {
       const rawDelegate = delegate;
