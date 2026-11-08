@@ -9877,8 +9877,27 @@ window.__ModuleLoader__.load({
       if (page === undefined || !Array.isArray(page.seqs) || page.seqs.length === 0) return rows;
       const unitOf = page.unitOfSeq ?? {};
       const seqs = page.seqs;
+      const meta = state.data.meta ?? {};
+      const callUnit = new Map();
+      for (const seq of seqs) {
+        const n = unitOf[String(seq)];
+        if (!Number.isSafeInteger(n)) continue;
+        const info = meta[String(seq)];
+        for (const call of Array.isArray(info?.calls) ? info.calls : []) {
+          if (typeof call?.id === 'string') callUnit.set(call.id, n);
+        }
+      }
       const unitOfCell = (cell) => {
-        if (cell === null || cell === undefined || typeof cell.sourceSeq !== 'number') return undefined;
+        if (cell === null || cell === undefined) return undefined;
+        const callId = typeof cell.callId === 'string' ? cell.callId
+          : typeof cell.id === 'string' ? cell.id
+            : typeof cell.parentCallId === 'string' ? cell.parentCallId : undefined;
+        if (callId !== undefined) {
+          const root = callId.split(':ptc:')[0];
+          if (callUnit.has(root)) return callUnit.get(root);
+          if (callUnit.has(callId)) return callUnit.get(callId);
+        }
+        if (typeof cell.sourceSeq !== 'number') return undefined;
         if (Number.isSafeInteger(unitOf[String(cell.sourceSeq)])) return unitOf[String(cell.sourceSeq)];
         let best;
         for (const seq of seqs) {
