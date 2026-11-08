@@ -125,7 +125,14 @@ window.__ModuleLoader__.load({
           })),
         }));
       }
-      return decorated.map((entry) => entry.record);
+      // 官方表格最终按 cell.index 的 firstCellIndex 排序 turns；只重排 records
+      // 不够，必须把新的 surface 顺序写回 cell.index，否则展示层会最后再排一次。
+      return decorated.map((entry, index) => {
+        const record = entry.record;
+        if (record === null || record === undefined) return record;
+        if (record.cell === null || record.cell === undefined) return record;
+        return { ...record, cell: { ...record.cell, index: index + 1 } };
+      });
     }
     function applyReshapeVirtualRows(rows) {
       return rows;
