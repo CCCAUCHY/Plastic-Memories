@@ -520,7 +520,17 @@ window.__ModuleLoader__.load({
       if (state === undefined || state.data === undefined || state.data === null) return null;
       const gen = effectiveGeneration(state);
       const page = Array.isArray(state.data.generations) ? state.data.generations[gen] : undefined;
-      const n = page?.unitOfSeq?.[String(cell?.sourceSeq)];
+      let n = page?.unitOfSeq?.[String(cell?.sourceSeq)];
+      if (!Number.isSafeInteger(n) && Number.isSafeInteger(cell?.sourceSeq) && Array.isArray(page?.units)) {
+        let best;
+        for (const unit of page.units) {
+          const seqs = Array.isArray(unit.seqs) ? unit.seqs : [];
+          if (seqs.length === 0) continue;
+          const distance = Math.min(...seqs.map((seq) => Math.abs(seq - cell.sourceSeq)));
+          if (best === undefined || distance < best.distance) best = { n: unit.n, distance };
+        }
+        n = best?.n;
+      }
       if (!Number.isSafeInteger(n)) return null;
       return h('span', { className: 'pm-unit-badge', title: 'Generation unit ' + String(n) }, '#' + String(n));
     }
