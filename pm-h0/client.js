@@ -8667,7 +8667,7 @@ window.__ModuleLoader__.load({
 			if (schema === void 0) return;
 			laid.cell.schemaDetail = JSON.stringify(schema, null, 2);
 		}
-		function toTurnModel(turn, entry, t) { const pmTurnOrder = globalThis.__PM_SEQ_ORDER__; if (pmTurnOrder !== void 0 && pmTurnOrder !== null) { const pmEntries = [...pmTurnOrder.entries()].sort((left, right) => left[0] - right[0]); const pmPos = (cell) => { if (typeof cell.sourceSeq !== "number") return cell.index; if (pmTurnOrder.has(cell.sourceSeq)) return pmTurnOrder.get(cell.sourceSeq); let best = 0; for (const [seq, pos] of pmEntries) { if (seq > cell.sourceSeq) break; best = pos; } return best; }; const flat = entry.groups.flatMap((group) => group.laid.map((laid) => ({ title: group.title, laid }))).sort((left, right) => pmPos(left.laid.cell) - pmPos(right.laid.cell)); const rebuilt = []; for (const item of flat) { const last = rebuilt.at(-1); if (last !== void 0 && last.title === item.title) last.laid.push(item.laid); else rebuilt.push({ title: item.title, laid: [item.laid] }); } entry = { ...entry, groups: rebuilt }; }
+		function toTurnModel(turn, entry, t) {
 			return {
 				turn,
 				groups: entry.groups.map(({ title, laid }) => {
@@ -8682,7 +8682,7 @@ window.__ModuleLoader__.load({
 		}
 		/** Chronological section position from the fold's monotonically assigned cell indexes. */
 		function firstCellIndex(turn) {
-			const pmFirstOrder = globalThis.__PM_SEQ_ORDER__; return Math.min(...turn.groups.flatMap((group) => group.cells.map((cell) => pmFirstOrder !== void 0 && pmFirstOrder !== null && typeof cell.sourceSeq === "number" && pmFirstOrder.has(cell.sourceSeq) ? pmFirstOrder.get(cell.sourceSeq) : cell.index)), Number.POSITIVE_INFINITY);
+			return Math.min(...turn.groups.flatMap((group) => group.cells.map((cell) => cell.index)), Number.POSITIVE_INFINITY);
 		}
 		/** Wall-span duration + tool histogram, e.g. `1.5 s bash×6`. */
 		function groupDescription(laid, t) {
@@ -9869,60 +9869,7 @@ window.__ModuleLoader__.load({
       return decorated.map((entry) => entry.record);
     }
     function applyReshapeVirtualRows(rows) {
-      if (!Array.isArray(rows)) return rows;
-      const state = activeState;
-      if (state === undefined || state.data === null || state.data === undefined) return rows;
-      const generations = Array.isArray(state.data.generations) ? state.data.generations : [];
-      const page = generations[effectiveGeneration(state)];
-      if (page === undefined || !Array.isArray(page.seqs) || page.seqs.length === 0) return rows;
-      const unitOf = page.unitOfSeq ?? {};
-      const seqs = page.seqs;
-      const meta = state.data.meta ?? {};
-      const callUnit = new Map();
-      for (const seq of seqs) {
-        const n = unitOf[String(seq)];
-        if (!Number.isSafeInteger(n)) continue;
-        const info = meta[String(seq)];
-        for (const call of Array.isArray(info?.calls) ? info.calls : []) {
-          if (typeof call?.id === 'string') callUnit.set(call.id, n);
-        }
-      }
-      const unitOfCell = (cell) => {
-        if (cell === null || cell === undefined) return undefined;
-        const callId = typeof cell.callId === 'string' ? cell.callId
-          : typeof cell.id === 'string' ? cell.id
-            : typeof cell.parentCallId === 'string' ? cell.parentCallId : undefined;
-        if (callId !== undefined) {
-          const root = callId.split(':ptc:')[0];
-          if (callUnit.has(root)) return callUnit.get(root);
-          if (callUnit.has(callId)) return callUnit.get(callId);
-        }
-        if (typeof cell.sourceSeq !== 'number') return undefined;
-        if (Number.isSafeInteger(unitOf[String(cell.sourceSeq)])) return unitOf[String(cell.sourceSeq)];
-        let best;
-        for (const seq of seqs) {
-          if (seq > cell.sourceSeq) break;
-          const n = unitOf[String(seq)];
-          if (Number.isSafeInteger(n)) best = n;
-        }
-        return best;
-      };
-      const decorated = rows.map((row, index) => {
-        const entries = Array.isArray(row.entries) ? row.entries : [];
-        let unit;
-        for (const entry of entries) {
-          const n = unitOfCell(entry?.record?.cell);
-          if (Number.isSafeInteger(n) && (unit === undefined || n < unit)) unit = n;
-        }
-        return { row, unit, index };
-      });
-      if (decorated.every((entry) => entry.unit === undefined)) return rows;
-      decorated.sort((left, right) => {
-        const a = left.unit ?? Number.MAX_SAFE_INTEGER;
-        const b = right.unit ?? Number.MAX_SAFE_INTEGER;
-        return a - b || left.index - right.index;
-      });
-      return decorated.map((entry) => entry.row);
+      return rows;
     }
     function diffMarksOf(cell) {
       const state = activeState;
@@ -10045,11 +9992,6 @@ window.__ModuleLoader__.load({
       if (state === undefined || event === null || typeof event !== 'object') return false;
       const filter = filterOf(state);
       if (filter === null) return false;
-      // compaction lifecycle 是官方 trajectory 节点，不是 surface 行；
-      // 不能被 hiddenSteps/替代区间当成普通消息隐藏。只按页面 cutoff 截断。
-      if (typeof event.seq === 'number' && String(event.type).startsWith('compaction/')) {
-        return event.seq > filter.cutoff;
-      }
       if (typeof event.seq === 'number') {
         if (event.seq > filter.cutoff || filter.hiddenSeqs.has(event.seq)) return true;
         const data = event.data;
@@ -10312,7 +10254,8 @@ window.__ModuleLoader__.load({
         title: pmUiText(t, 'pm.safetyTitle', 'This message is in the safety zone and cannot be reshaped by plasticize'),
       }, pmUiText(t, 'pm.safeZone', 'Safety zone'));
     }
-    /** 当前世代单元序号徽标；与 retrospect 的 0 起 n 一致。 */
+    /** 正文前的徽标：差异（被塑形/已塑形）在前，安全区在后。 */
+    /** 当前页单元序号；与 retrospect 的 0 基 n 一致。 */
     function unitTag(cell) {
       const state = activeState;
       if (state === undefined || state.data === undefined || state.data === null) return null;
@@ -10323,28 +10266,6 @@ window.__ModuleLoader__.load({
       return h('span', { className: 'pm-unit-badge', title: 'Generation unit ' + String(n) }, '#' + String(n));
     }
 
-    /** 旧世代页末尾：下一次压缩事件（UI-only，不是模型上下文）。 */
-    function compactionBoundaryTag(cell) {
-      const state = activeState;
-      if (state === undefined || state.data === undefined || state.data === null) return null;
-      if (cell === undefined || cell === null || typeof cell.sourceSeq !== 'number') return null;
-      const gen = effectiveGeneration(state);
-      const pages = Array.isArray(state.data.generations) ? state.data.generations : [];
-      const page = pages[gen];
-      if (page === undefined || !Array.isArray(page.seqs) || page.seqs.length === 0) return null;
-      const logicalPages = Array.isArray(state.data.logicalPages) ? state.data.logicalPages : [];
-      const currentIndex = logicalPages.findIndex((page) => page.physical === gen);
-      const next = currentIndex >= 0
-        ? logicalPages.slice(currentIndex + 1).find((page) => page.kind === 'compaction')
-        : logicalPages.find((page) => page.kind === 'compaction' && page.physical > gen);
-      if (next === undefined) return null;
-      const lastUnit = page.unitOfSeq?.[String(page.seqs[page.seqs.length - 1])];
-      const cellUnit = page.unitOfSeq?.[String(cell.sourceSeq)];
-      if (!Number.isSafeInteger(lastUnit) || lastUnit !== cellUnit) return null;
-      return h('span', { className: 'pm-compaction-badge', title: 'A compaction boundary follows this generation' }, '已压缩');
-    }
-
-    /** 正文前的徽标：差异（被塑形/已塑形）在前，安全区在后。 */
     function diffNativeTag(cell, t) {
       if (cell === undefined || cell === null) return null;
       const marks = diffMarksOf(cell);
@@ -10372,7 +10293,6 @@ window.__ModuleLoader__.load({
       '.pm-diff-badge-reshaping{color:#FCE7F3;background:#C64F91}',
       '.pm-diff-badge.pm-safety-badge{color:#B42318;background:#FEE4E2;cursor:default}',
       '.pm-unit-badge{display:inline-flex;align-items:center;flex:none;margin-right:6px;height:19px;padding:0 5px;border-radius:var(--dsw-radius-xs);background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);font:600 10px/16px var(--dsw-font-mono,monospace)}',
-      '.pm-compaction-badge{display:inline-flex;align-items:center;flex:none;margin-right:4px;height:19px;padding:0 5px;border-radius:var(--dsw-radius-xs);background:var(--dsw-alias-bg-module-platform);color:var(--dsw-alias-label-secondary);font-size:10px;font-weight:650;letter-spacing:.035em;line-height:16px}',
       '.pm-reshaped-tag{background:transparent!important;border-color:transparent!important;padding:0!important;height:auto!important;min-width:0!important}',
       '.pm-reshaped-static{color:#C64F91;background:#FCE7F3;border-radius:var(--dsw-radius-xs);display:inline-flex;align-items:center;height:19px;padding:0 5px;font-size:10px;font-weight:650;line-height:16px}',
     ].join(String.fromCharCode(10));
@@ -10491,48 +10411,6 @@ window.__ModuleLoader__.load({
       for (let index = 0; index < seqs.length; index += 1) order.set(seqs[index], index);
       globalThis.__PM_SEQ_ORDER__ = order;
     }
-    /** 用下一条 compaction 的生命周期替换官方页面里的 running 节点。 */
-    function syncCompactionNode(eventNodes) {
-      if (!Array.isArray(eventNodes)) return eventNodes;
-      const state = activeState;
-      if (state === undefined || state.data === null || state.data === undefined) return eventNodes;
-      const gen = effectiveGeneration(state);
-      const labels = Array.isArray(state.data.logicalLabels) ? state.data.logicalLabels : [];
-      const next = labels.find((entry) => entry.kind === 'compaction' && entry.physical > gen)
-        ?? labels.find((entry) => entry.kind === 'compaction' && entry.physical === gen);
-      if (next === undefined || typeof next.compactionId !== 'string') return eventNodes;
-      const comp = state.data.compactions?.[next.compactionId];
-      if (comp === undefined || !Array.isArray(comp.summary)) return eventNodes;
-      const index = eventNodes.findIndex((node) => node !== null && node !== undefined && node.kind === 'compaction');
-      if (index < 0) return eventNodes;
-      const template = eventNodes[index];
-      const oldRequest = template.data?.request ?? {};
-      const request = {
-        ...oldRequest,
-        startSeq: comp.startSeq,
-        turn: comp.turn,
-        startedAt: comp.startedAt,
-        completedAt: comp.completedAt ?? oldRequest.completedAt,
-        status: comp.status === 'error' ? 'error' : 'complete',
-        resultSeq: comp.summarySeq,
-        summary: comp.summary,
-        ...(comp.usage === undefined ? {} : { usage: comp.usage }),
-        providerMetadata: { provider: comp.provider, model: comp.model },
-        requestConfig: { ...(oldRequest.requestConfig ?? {}), provider: comp.provider, model: comp.model, purpose: 'compaction' },
-        ...(comp.checkpointSeq === undefined ? {} : { replacementSeq: comp.checkpointSeq }),
-        ...(comp.status === 'error' ? { error: comp.error } : {}),
-      };
-      const nextNode = {
-        ...template,
-        key: 'pm-compaction-' + next.compactionId,
-        id: 'pm-compaction-' + next.compactionId,
-        anchorSeq: comp.startSeq,
-        data: { ...(template.data ?? {}), request },
-      };
-      const copy = [...eventNodes];
-      copy[index] = nextNode;
-      return copy;
-    }
     function orderSnapshot(snapshot) {
       if (snapshot === null || snapshot === undefined) return snapshot;
       const state = activeState;
@@ -10550,10 +10428,7 @@ window.__ModuleLoader__.load({
         return { node, pos, index };
       });
       decorated.sort((left, right) => (left.pos - right.pos) || (left.index - right.index));
-      const nodes = decorated.map((entry) => entry.node);
-      // 历史世代页不显示 compaction 日志节点；其余保持官方装配器结果。
-      if (state.gen === null) return { ...snapshot, eventNodes: nodes };
-      return { ...snapshot, eventNodes: nodes.filter((node) => node === null || node === undefined || node.kind !== 'compaction') };
+      return { ...snapshot, eventNodes: decorated.map((entry) => entry.node) };
     }
     function wrapTargetSource(sessionId, delegate) {
       const rawDelegate = delegate;
@@ -10729,15 +10604,13 @@ window.__ModuleLoader__.load({
     let lastDeliveredSnapshot;
     const PAGER_CSS = [
       '.pm-pgs{flex:none;display:flex;align-items:center;gap:3px;margin-left:auto;font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-secondary)}',
-      '.pm-pgs .pm-pgs-logical{display:inline-flex;align-items:center;gap:3px;margin-left:8px;padding-left:8px;border-left:1px solid var(--dsw-alias-border-l3)}',
       '.pm-pgs + *{margin-left:8px!important}',
       '.pm-pgs .pm-pgs-label{padding:0 3px;color:var(--dsw-alias-label-tertiary)}',
       '.pm-pgs button{box-sizing:border-box;min-width:22px;height:22px;padding:0 6px;border:1px solid var(--dsw-alias-border-l3);border-radius:2px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);font:inherit;line-height:20px;cursor:pointer}',
       '.pm-pgs button:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}',
       '.pm-pgs button.pm-pgs-current{background:var(--dsw-alias-state-business-tertiary);border-color:var(--dsw-alias-state-business-primary);color:var(--dsw-alias-state-business-primary);font-weight:600}',
       '.pm-pgs .pm-pgs-gap{color:var(--dsw-alias-label-tertiary);padding:0 2px}',
-      '.pm-pgs .pm-pgs-physical{display:inline-flex;align-items:center;gap:3px}',
-      '.pm-pgs .pm-pgs-ltag{margin-left:3px;color:var(--dsw-alias-label-tertiary);font-size:8px;line-height:10px}',
+      '.pm-pgs .pm-pgs-logical{display:inline-flex;align-items:center;gap:3px;margin-left:8px;padding-left:8px;border-left:1px solid var(--dsw-alias-border-l3)}',
     ].join(String.fromCharCode(10));
     function generationButtons(current, last) {
       const out = [];
@@ -10815,15 +10688,15 @@ window.__ModuleLoader__.load({
       if (state === undefined || total < 2) return null;
       const current = effectiveGeneration(state);
       const last = total - 1;
-      const physicalItems = [h('span', { key: 'label', className: 'pm-pgs-label' }, pmUiText(t, 'pm.pagerLabel', 'Generations'))];
+      const items = [h('span', { key: 'label', className: 'pm-pgs-label' }, pmUiText(t, 'pm.pagerLabel', 'Generations'))];
       for (const [index, item] of generationButtons(current, last).entries()) {
         if (item === '…') {
-          physicalItems.push(h('span', { key: 'gap' + String(index), className: 'pm-pgs-gap' }, '…'));
+          items.push(h('span', { key: 'gap' + String(index), className: 'pm-pgs-gap' }, '…'));
           continue;
         }
         const gen = item;
         const isCurrent = gen === current;
-        physicalItems.push(h('button', {
+        items.push(h('button', {
           key: 'g' + String(gen),
           type: 'button',
           className: isCurrent ? 'pm-pgs-current' : '',
@@ -10832,20 +10705,22 @@ window.__ModuleLoader__.load({
           onClick: () => setGeneration(gen === last ? null : gen),
         }, String(gen)));
       }
-      const labels = Array.isArray(state.data.logicalLabels) ? state.data.logicalLabels : [];
-      const items = [...physicalItems];
-      if (labels.length > 0) {
+      const pages = Array.isArray(state.data.logicalPages) ? state.data.logicalPages : [];
+      if (pages.length > 0) {
         const logicalItems = [h('span', { key: 'llabel', className: 'pm-pgs-label' }, pmUiText(t, 'pm.logicalPagerLabel', 'Logical'))];
-        for (const label of labels) {
-          const isCurrent = label.physical === current;
+        for (const page of pages) {
+          const isCurrent = page.physical === current;
+          const title = t === undefined || t === null
+            ? 'Logical generation ' + String(page.logical) + ' (physical page ' + String(page.physical) + ')'
+            : t('pm.logicalPageTitle', { logical: page.logical, physical: page.physical });
           logicalItems.push(h('button', {
-            key: 'l' + String(label.logical),
+            key: 'l' + String(page.logical),
             type: 'button',
             className: isCurrent ? 'pm-pgs-current' : '',
             'aria-current': isCurrent ? 'true' : undefined,
-            title: 'Logical generation ' + String(label.logical) + ' (physical page ' + String(label.physical) + ')',
-            onClick: () => setGeneration(label.physical === last ? null : label.physical),
-          }, 'L' + String(label.logical)));
+            title,
+            onClick: () => setGeneration(page.physical === last ? null : page.physical),
+          }, 'L' + String(page.logical)));
         }
         items.push(h('div', { key: 'logical', className: 'pm-pgs-logical' }, logicalItems));
       }
