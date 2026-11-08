@@ -136,14 +136,25 @@ export function unitAt(units, n) {
   return Number.isSafeInteger(n) && n >= 0 && n < units.length ? units[n] : undefined;
 }
 
-/** 把 "3" / "[3,7]" / [3,7] 解析成单元序号列表（含两端）。 */
+/** 把 "3" / "[3,7]" / [3,7] 解析成单元序号列表（闭区间，含两端）。开区间语法已删除。 */
 export function parseUnitRange(raw) {
   if (typeof raw === 'number' && Number.isSafeInteger(raw) && raw >= 0) return [raw];
-  if (typeof raw === 'string') {
-    const one = /^(\d+)$/.exec(raw.trim());
-    if (one !== null) return [Number(one[1])];
+  if (Array.isArray(raw) && raw.length === 2 && raw.every((n) => Number.isSafeInteger(n) && n >= 0)) {
+    const [a, b] = raw;
+    return a <= b ? Array.from({ length: b - a + 1 }, (_, i) => a + i) : [];
   }
-  throw new Error('unit index must be a non-negative integer');
+  if (typeof raw === 'string') {
+    const text = raw.trim();
+    const one = /^(\d+)$/.exec(text);
+    if (one !== null) return [Number(one[1])];
+    const span = /^\[\s*(\d+)\s*,\s*(\d+)\s*\]$/.exec(text);
+    if (span !== null) {
+      const a = Number(span[1]);
+      const b = Number(span[2]);
+      if (a <= b) return Array.from({ length: b - a + 1 }, (_, i) => a + i);
+    }
+  }
+  throw new Error('unit range must be a non-negative integer or [start,end] (closed interval)');
 }
 
 /** 选择器：数字、区间字符串、数组或 "this"（由调用方先转换为数字）。 */
