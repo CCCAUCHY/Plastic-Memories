@@ -118,16 +118,16 @@ console.log(NL + '⑥ retrospect：只返回历史世代自己的上下文（结
   ok(r.applied === 1, '空洞写入成功', JSON.stringify(r));
   ok(!s.surface.nodes.includes(6), '那条消息已离开工作面');
   const afterFirst = [...s.surface.nodes];
-  const firstFrozen = JSON.parse(retrospect(s, { generation: 0 }));
-  ok(firstFrozen.logical === 0 && firstFrozen.count === beforeFirstCount, '第一次 execute 冻结后，逻辑世代 0 立刻可查', JSON.stringify({ logical: firstFrozen.logical, count: firstFrozen.count }));
-  ok(firstFrozen.messages.some((message) => String(message.text).includes(keyword)), 'g0 上下文 = 任何塑形操作之前的 surface', JSON.stringify({ keyword, count: firstFrozen.count }));
-  ok(!firstFrozen.messages.some((message) => message.role === 'developer' && message.text === ''), 'g0 上下文不含 execute 之后写出的替代消息');
+  const firstFrozen = JSON.parse(retrospect(s, { generation: 0, preview: false }));
+  ok(firstFrozen.logical === 0 && Array.isArray(firstFrozen.messages) && firstFrozen.count === firstFrozen.messages.length, '第一次 execute 冻结后，逻辑世代 0 立刻可查', JSON.stringify({ logical: firstFrozen.logical, count: firstFrozen.count }));
+  ok(firstFrozen.messages.some((message) => JSON.stringify(message.content).includes(keyword)), 'g0 上下文 = 任何塑形操作之前的 surface', JSON.stringify({ keyword, count: firstFrozen.count }));
+  ok(!firstFrozen.messages.some((message) => message.role === 'developer' && Array.isArray(message.content) && message.content.length === 0), 'g0 上下文不含 execute 之后写出的替代消息');
   ok(firstFrozen.messages.some((message) => message.role === 'tool'), 'g0 上下文包含 execute 的 tool result');
 
   // 第一次 execute 冻结逻辑世代 0，继续推理进入 self=1；当前世代现在可查。
-  const currentSelf = JSON.parse(retrospect(s, { generation: 'self' }));
-  const currentNumber = JSON.parse(retrospect(s, { generation: 1 }));
-  ok(currentSelf.logical === 1 && currentSelf.count === afterFirst.length, 'self 返回当前 surface', JSON.stringify({ logical: currentSelf.logical, count: currentSelf.count }));
+  const currentSelf = JSON.parse(retrospect(s, { generation: 'self', preview: false }));
+  const currentNumber = JSON.parse(retrospect(s, { generation: 1, preview: false }));
+  ok(currentSelf.logical === 1 && Array.isArray(currentSelf.messages) && currentSelf.count === currentSelf.messages.length, 'self 返回当前消息数组', JSON.stringify({ logical: currentSelf.logical, count: currentSelf.count }));
   ok(JSON.stringify(currentSelf) === JSON.stringify(currentNumber), 'self 与绝对当前世代号等价');
 
   // 第二代：先在第 0 代生命周期内留一条 letter（独立 step），再执行 execute。
@@ -141,17 +141,17 @@ console.log(NL + '⑥ retrospect：只返回历史世代自己的上下文（结
   const r2 = flush(s, { openStep: { turn: 99, step: 3 } }, quiet);
   ok(r2.applied === 1, '第二个逻辑世代写入成功', JSON.stringify(r2));
 
-  const byNumber = JSON.parse(retrospect(s, { generation: 0 }));
-  const byLabel = JSON.parse(retrospect(s, { generation: 'self - 2' }));
+  const byNumber = JSON.parse(retrospect(s, { generation: 0, preview: false }));
+  const byLabel = JSON.parse(retrospect(s, { generation: 'self - 2', preview: false }));
   ok(byNumber.logical === 0, '返回 logical（历史世代号）', String(byNumber.logical));
   ok(JSON.stringify(byNumber) === JSON.stringify(byLabel), '绝对编号与 self - 2 写法返回完全一致');
-  ok(byNumber.count === beforeFirstCount, '历史上下文 = execute 调用 + tool result（不含替代）', String(byNumber.count));
-  ok(byNumber.messages.some((message) => String(message.text).includes(keyword)), '历史世代上下文包含当时的原文');
-  ok(!byNumber.messages.some((message) => message.role === 'developer' && message.text === ''), '历史上下文不含 execute 结果写出的空替代消息');
+  ok(Array.isArray(byNumber.messages) && byNumber.count === byNumber.messages.length, '历史上下文是消息数组', String(byNumber.count));
+  ok(byNumber.messages.some((message) => JSON.stringify(message.content).includes(keyword)), '历史世代上下文包含当时的原文');
+  ok(!byNumber.messages.some((message) => message.role === 'developer' && Array.isArray(message.content) && message.content.length === 0), '历史上下文不含 execute 结果写出的空替代消息');
   ok(byNumber.letter.length === 1
     && byNumber.letter[0].index === preIndex && byNumber.letter[0].text === 'S: 第 0 代之前的话',
     'letter 只含第 0 代生命周期内的输入且带消息序号', JSON.stringify(byNumber.letter));
-  ok(byNumber.messages.every((message) => Number.isSafeInteger(message.time)), 'messages 每项带底层日志时间');
+  ok(byNumber.messages.every((message) => typeof message.role === 'string' && Array.isArray(message.content)), 'messages 是 DSH Message[]');
   ok(byNumber.letter.every((entry) => Number.isSafeInteger(entry.time)), 'letter 每项带底层日志时间');
 
   // 第三代：第 1 代生命周期内的 letter 归入 gen1（独立 step）。
@@ -162,16 +162,16 @@ console.log(NL + '⑥ retrospect：只返回历史世代自己的上下文（结
   plasticizeCall(s, { turn: 99, step: 5 }, 'hide-3', { ops: [{ spans: ['this'], new_text: '⟨第三代⟩' }], option: 'execute' });
   const r3 = flush(s, { openStep: { turn: 99, step: 5 } }, quiet);
   ok(r3.applied === 1, '第三个逻辑世代写入成功', JSON.stringify(r3));
-  const gen1 = JSON.parse(retrospect(s, { generation: 1 }));
+  const gen1 = JSON.parse(retrospect(s, { generation: 1, preview: false }));
   ok(gen1.letter.length === 2
     && gen1.letter[0].index === zeroIndex && gen1.letter[0].text === 'L0: 第 0 代的话'
     && gen1.letter[1].index === ptcIndex && gen1.letter[1].text === 'L0: PTC 的话',
     '两个 execute 声明之间的 letter 属于下一个逻辑世代', JSON.stringify(gen1.letter));
 
-  const againSelf = JSON.parse(retrospect(s, { generation: 'self - 0' }));
+  const againSelf = JSON.parse(retrospect(s, { generation: 'self - 0', preview: false }));
   ok(againSelf.logical === 3, 'self - 0 也返回当前世代', String(againSelf.logical));
   const preview = JSON.parse(retrospect(s, { generation: 0, preview: true }));
-  ok(preview.logical === 0 && preview.messages === undefined && typeof preview.preview === 'string' && preview.count === firstFrozen.count, 'preview=true 返回缩略文本而不是完整 messages', JSON.stringify({ logical: preview.logical, count: preview.count, hasPreview: typeof preview.preview }));
+  ok(preview.logical === 0 && preview.messages === undefined && typeof preview.previewText === 'string' && preview.count === firstFrozen.count, 'preview=true 返回缩略文本而不是完整 messages', JSON.stringify({ logical: preview.logical, count: preview.count, hasPreview: typeof preview.previewText }));
   let futureError = null;
   try { retrospect(s, { generation: 4 }); } catch (error) { futureError = error.message; }
   ok(typeof futureError === 'string', '未来世代号被拒绝');
@@ -241,7 +241,7 @@ console.log(NL + '⑥.10 逻辑世代标记：同号物理世代成组，第一�
   let state = initState();
   for (const event of s.snapshotEvents()) state = applyEvent(state, event);
   const pages = viewOf(state).logicalPages;
-  ok(JSON.stringify(pages) === JSON.stringify([{ logical: 0, physical: 0 }, { logical: 1, physical: 2, current: true }]), '逻辑页码：冻结页 0 起 + 当前逻辑页指向最新物理页', JSON.stringify(pages));
+  ok(JSON.stringify(pages) === JSON.stringify([{ logical: 0, physical: 0 }, { logical: 1, physical: 2, kind: 'execute', current: true }]), '逻辑页码：冻结页 0 起 + 当前逻辑页指向最新物理页', JSON.stringify(pages));
   ok(countLogicalGenerations(s) === 1, '逻辑世代数为 1', String(countLogicalGenerations(s)));
   const freezeEvents = s.snapshotEvents().filter((e) => e.type === 'plugin:plastic-memories/logical' && e.data?.kind === 'execute');
   ok(freezeEvents.length === 1 && freezeEvents[0].data.logical === 0 && freezeEvents[0].data.physical === 1, 'execute 冻结写入私有 logical 事件（logical=0, physical=1）', JSON.stringify(freezeEvents.map((e) => e.data)));
@@ -253,7 +253,7 @@ console.log(NL + '⑥.10 逻辑世代标记：同号物理世代成组，第一�
   state = initState();
   for (const event of s.snapshotEvents()) state = applyEvent(state, event);
   const pages2 = viewOf(state).logicalPages;
-  ok(JSON.stringify(pages2) === JSON.stringify([{ logical: 0, physical: 0 }, { logical: 1, physical: 2 }, { logical: 2, physical: 3, current: true }]), '逻辑页码：中间物理世代不生成新逻辑页，当前页跟随最新物理页', JSON.stringify(pages2));
+  ok(JSON.stringify(pages2) === JSON.stringify([{ logical: 0, physical: 0 }, { logical: 1, physical: 0, kind: 'execute' }, { logical: 2, physical: 3, kind: 'execute', current: true }]), '逻辑页码：中间物理世代不生成新逻辑页，当前页跟随最新物理页', JSON.stringify(pages2));
   ok(countLogicalGenerations(s) === 2, '逻辑世代数递增到 2', String(countLogicalGenerations(s)));
   openStep(s, 99, 3);
   plasticizeCall(s, { turn: 99, step: 3 }, 'lg-set', { ops: [{ spans: ['(3,4)'], new_text: '⟨SET⟩' }], option: 'set' });
@@ -326,10 +326,10 @@ console.log(NL + '⑥.7 /plasticize 待落盘操作（可交换；发送消息�
 {
   const s = mk();
   openStep(s, 99, 1);
-  const staged = stageUserOperation(s, { kind: 'project', mode: 'range', interval: '(3,4)', newText: '⟨内存投影⟩' });
+  const staged = stageUserOperation(s, { kind: 'project', mode: 'range', interval: '[3,4]', newText: '⟨内存投影⟩' });
   ok(staged.pending === 1, '登记投影', String(staged.pending));
   let overlap;
-  try { stageUserOperation(s, { kind: 'project', mode: 'range', interval: '(3,4)', newText: 'x' }); } catch (error) { overlap = String(error.message); }
+  try { stageUserOperation(s, { kind: 'project', mode: 'range', interval: '[3,4]', newText: 'x' }); } catch (error) { overlap = String(error.message); }
   ok(typeof overlap === 'string' && overlap.includes('重叠'), '区间重叠被拒绝', overlap?.slice(0, 40));
   const written = await flushUserOperations(s, { turn: 99, step: 1 }, quiet);
   ok(written.projections === 1, '发送消息时写入投影', JSON.stringify(written));
@@ -337,17 +337,19 @@ console.log(NL + '⑥.7 /plasticize 待落盘操作（可交换；发送消息�
   ok(countLogicalGenerations(s) === 1, '用户投影产生一个逻辑世代', String(countLogicalGenerations(s)));
   const s2 = mk();
   openStep(s2, 99, 1);
-  stageUserOperation(s2, { kind: 'project', mode: 'range', interval: '(3,4)', newText: '⟨将被清空⟩' });
+  stageUserOperation(s2, { kind: 'project', mode: 'range', interval: '[3,4]', newText: '⟨将被清空⟩' });
   ok(clearStagedOperations(s2) === 1, '清空待落盘操作');
 }
-console.log(NL + '⑥.8 all / prelock / lock_this 与区间描述');
+console.log(NL + '⑥.8 unlock all / prelock / lock_this 与区间描述');
 {
   const s = mk();
   openStep(s, 99, 1);
-  stageUserOperation(s, { kind: 'lock', mode: 'all' });
+  stageUserOperation(s, { kind: 'lock', mode: 'range', positions: ['1'] });
+  await flushUserOperations(s, { turn: 99, step: 1 }, quiet);
+  ok(lockedSeqs(s).size > 0, '先锁定至少一个单元', String(lockedSeqs(s).size));
+  stageUserOperation(s, { kind: 'unlock', mode: 'all' });
   const allResult = await flushUserOperations(s, { turn: 99, step: 1 }, quiet);
-  ok(allResult.safety === 1 && lockedSeqs(s).size === s.surface.nodes.length, 'lock all 锁定当前全部轨迹', String(lockedSeqs(s).size));
-  ok(safetyZoneIntervals(s).includes('cookie'), '安全区用区间（cookie）描述', safetyZoneIntervals(s).slice(0, 80));
+  ok(allResult.safety === 1 && lockedSeqs(s).size === 0, 'unlock all 解除当前全部安全锁', String(lockedSeqs(s).size));
 }
 {
   const s = mk();
@@ -356,17 +358,6 @@ console.log(NL + '⑥.8 all / prelock / lock_this 与区间描述');
   const userMessage = s.append('user/message', { id: 'prelock-u', role: 'user', content: [{ type: 'text', text: '这条进入安全区' }], source: { kind: 'user' } }, { surfaceOp: 'append' });
   await flushUserOperations(s, { turn: 99, step: 1 }, quiet);
   ok(lockedSeqs(s).has(userMessage.seq), 'prelock 锁定触发落盘的用户消息', String(userMessage.seq));
-}
-{
-  const s = mk();
-  openStep(s, 99, 1);
-  stageUserOperation(s, { kind: 'lock', mode: 'all' });
-  stageUserOperation(s, { kind: 'lock', mode: 'prelock' });
-  const first = await flushUserOperations(s, { turn: 99, step: 1 }, quiet);
-  ok(first.safety === 1, 'lock all 与 prelock 同批时先落盘 lock all', JSON.stringify(first));
-  const trigger = s.append('user/message', { id: 'prelock-all-u', role: 'user', content: [{ type: 'text', text: '触发 prelock 的用户消息' }], source: { kind: 'user' } }, { surfaceOp: 'append' });
-  const second = await flushUserOperations(s, { turn: 99, step: 2 }, quiet);
-  ok(second.safety === 1 && lockedSeqs(s).has(trigger.seq), 'lock all 同批的 prelock 在用户消息落盘后仍生效', JSON.stringify({ safety: second.safety, locked: lockedSeqs(s).has(trigger.seq) }));
 }
 {
   const s = mk();

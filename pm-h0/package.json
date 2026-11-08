@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-plastic-memories-h0",
-  "version": "0.50.28",
+  "version": "0.50.29",
   "description": "Plastic Memories — H0 route: plastic memory projection over DSH surfaceOp",
   "type": "module",
   "main": "index.js",
@@ -35,7 +35,8 @@
     "capture.js",
     "cordis.patch.yml",
     "presets/*.yml",
-    "locale/*.json"
+    "locale/*.json",
+    "messages.js"
   ],
   "dsh": {
     "bundle": {

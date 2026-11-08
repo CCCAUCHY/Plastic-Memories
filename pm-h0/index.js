@@ -22,6 +22,7 @@ import { resolveOps, previewOf, findLastPendingSet, normalizeOp } from './plasti
 import { resolveUnitOps } from './unitops.js';
 import { retrospect } from './retrospect.js';
 import { retrospectUnits } from './unitretro.js';
+import { retrospectMessages } from './messages.js';
 import { replayCompactedSafety } from './safetyreplay.js';
 import { openSetProfile } from './grouping.js';
 import { compileArgsValidator, ToolArgsError } from './schema.js';
@@ -543,8 +544,8 @@ export function apply(ctx, config) {
         "Read the context of a logical generation, past or current. Pure read.",
         "Pass an absolute 0-based logical generation number, \"self\" (the current generation), or \"self - N\" (for example \"self - 1\"). Past generations are frozen; self returns the current surface as the model sees it now.",
         "A successful execute freezes logical generation N and returns N; continued reasoning belongs to generation N + 1, so generation N is immediately queryable with self - 1.",
-        "Returns compact JSON: {logical, count, letter} plus either messages or preview. messages is [{role, text, time}]; letter is [{index, text, time}]. preview=true returns one clipped preview line per message instead of the full messages array, reusing the set-preview renderer.",
-        "Messages are that generation's input context: replayed through that generation's execute call and its tool result, before that execute's replacement/auto-hide writes. The material that generation hid belonged to the previous generation and is not included; read the previous generation to see it. A letter written between two execute declarations belongs to the later generation. Call once per generation; use a run_code program to iterate over several generations.",
+        "Returns JSON: {logical, count, messages, letter}. messages is the exact DSH Message[] for that generation's last model input, produced by replaying the session prefix through the same DSH projection that feeds the capture node. preview=true returns {count, previewText} instead; units=true is an internal migration view that returns current-generation units.",
+        "The historical cutoff is the request that produced that generation's execute call: prefix events before that request's assistant output. The generation that hid material belongs to the previous generation; read the previous generation to see it. A letter written between two execute declarations belongs to the later generation.",
       ].join(String.fromCharCode(10) + String.fromCharCode(10)),
       parameters: {
         type: 'object',
@@ -555,7 +556,7 @@ export function apply(ctx, config) {
           },
           preview: {
             type: 'boolean',
-            description: 'Default true. When true, clip text in unit mode.',
+            description: 'Default false. When true, return a text preview instead of the full Message[].',
           },
           units: {
             type: 'boolean',
@@ -568,7 +569,9 @@ export function apply(ctx, config) {
         const session = sessionOf(exec);
         const generation = args?.generation;
         const isSelf = typeof generation === 'string' && /^self(?:\s*-\s*0)?$/iu.test(generation.trim());
-        return Promise.resolve({ text: args?.units === true || isSelf ? retrospectUnits(session, args ?? {}) : retrospect(session, args ?? {}) });
+        if (args?.units === true) return Promise.resolve({ text: retrospectUnits(session, args ?? {}) });
+        if (isSelf) return Promise.resolve({ text: JSON.stringify(retrospectMessages(session, args?.preview === true)) });
+        return Promise.resolve({ text: retrospect(session, args ?? {}) });
       },
     }),
   );

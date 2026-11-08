@@ -36,11 +36,20 @@ const session = store.sessions.create('global-retro', { seed: cookieSeed('subage
 const retrospect = definitions.find((definition) => definition.name === 'retrospect');
 let unitData;
 try {
-  const result = await retrospect.execute({ generation: 'self' }, { agent: { session } });
+  const result = await retrospect.execute({ generation: 'self', units: true }, { agent: { session } });
   unitData = JSON.parse(result.text);
 } catch (error) {
   unitData = { error: String(error.message) };
 }
-ok(unitData.error === undefined && unitData.count > 0 && unitData.units[0].n === 0, 'staged retrospect(self) 返回单元数组', JSON.stringify(unitData).slice(0, 160));
+ok(unitData.error === undefined && unitData.count > 0 && unitData.units[0].n === 0, 'retrospect(self, units) 返回单元数组', JSON.stringify(unitData).slice(0, 160));
 ok(unitData.units !== undefined && unitData.units[0].type === 'system', '0 号单元是 system');
+let messageData;
+try {
+  const result = await retrospect.execute({ generation: 'self' }, { agent: { session } });
+  messageData = JSON.parse(result.text);
+} catch (error) {
+  messageData = { error: String(error.message) };
+}
+ok(messageData.error === undefined && Array.isArray(messageData.messages) && messageData.messages.length > 0, 'retrospect(self) 返回 Message[]', JSON.stringify(messageData).slice(0, 160));
+ok(messageData.messages[0].role === 'system', 'Message[] 第一条是 system');
 done();

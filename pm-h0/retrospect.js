@@ -12,6 +12,8 @@
 
 import { SURFACE_TYPES, derivedMessage, messageText } from './coords.js';
 import { logicalGenerations } from './engine.js';
+import { logicalBoundaries } from './boundaries.js';
+import { messagesAt } from './messages.js';
 import { renderPreview } from './preview.js';
 
 /** 事件类型到角色名的兜底映射（正常消息直接读 message.role）。 */
@@ -76,7 +78,7 @@ function normalizeGeneration(value, self) {
 export function retrospect(session, args) {
   const value = args?.generation;
   if (value === undefined) throw new Error('retrospect requires generation (a logical generation number, "self", or "self - N")');
-  return retrospectGeneration(session, value, args?.preview !== false);
+  return retrospectGeneration(session, value, args?.preview === true);
 }
 
 /**
@@ -105,68 +107,44 @@ function executeResultSeq(events, callId) {
 export function retrospectGeneration(session, generation, preview = false) {
   const events = session.snapshotEvents();
   const info = logicalGenerations(session);
-  info.byCallId = new Map(info.executes.map((entry) => [entry.callId, entry.logical]));
   const self = info.total;
   const normalized = normalizeGeneration(generation, self);
   const target = normalized.target;
   const isCurrent = normalized.current;
+  const logical = isCurrent ? self : target;
 
-  const bySeq = new Map(events.map((event) => [event.seq, event]));
-  // 统一元数据来源：plugin:plastic-memories/logical；旧日志回退替代消息标记。
-  const cutoffs = [];
-  for (const event of events) {
-    if (event.type === 'plugin:plastic-memories/logical' && Number.isSafeInteger(event.data?.logical)) {
-      cutoffs.push({ logical: event.data.logical, seq: event.seq });
-      continue;
-    }
-    if (event.surfaceOp?.op !== 'replace') continue;
-    const source = event.type === 'user/message' ? event.data?.source : event.data?.message?.source;
-    if (source?.kind !== 'pm-surface') continue;
-    let logical;
-    if (Number.isSafeInteger(source.logicalGeneration)) logical = source.logicalGeneration;
-    else {
-      for (const candidate of [source.callId, ...(Array.isArray(source.consumed) ? source.consumed : [])]) {
-        if (typeof candidate === 'string' && info.byCallId.has(candidate)) { logical = info.byCallId.get(candidate); break; }
-      }
-    }
-    if (logical !== undefined) cutoffs.push({ logical, seq: event.seq });
-  }
-  cutoffs.sort((left, right) => left.seq - right.seq);
-
-  // 历史世代：上下文截止到该世代 execute 调用及其 tool result；
-  // 当前世代 self：直接用当前 surface。
-  let contextNodes;
+  let rawMessages;
   if (isCurrent) {
-    contextNodes = [...session.surface.nodes];
+    rawMessages = session.deriveMessages();
   } else {
-    const ownExecute = info.executes.find((entry) => entry.logical === target);
-    const executeResult = ownExecute === undefined ? undefined : executeResultSeq(events, ownExecute.callId);
-    let cutoff = ownExecute === undefined ? -1 : (executeResult ?? ownExecute.seq);
-    if (cutoff < 0) {
-      for (const marker of cutoffs) {
-        if (marker.logical === target) cutoff = Math.max(cutoff, marker.seq);
-      }
+    // 世代边界：优先该世代的 execute 声明，其次 compaction checkpoint。
+    const execute = info.executes.find((entry) => entry.logical === target);
+    const boundary = logicalBoundaries(events).boundaries.find((entry) => entry.logical === target);
+    const boundarySeq = execute?.seq ?? boundary?.seq;
+    if (!Number.isSafeInteger(boundarySeq)) {
+      throw new Error('no context found for logical generation ' + String(target) + ' (no write recorded for that generation)');
     }
-    if (cutoff < 0) throw new Error('no context found for logical generation ' + String(target) + ' (no write recorded for that generation)');
-    contextNodes = replaySurface(events, cutoff);
+    // 输入消息是产生该边界的那次请求：取边界前最后一条 assistant 消息，
+    // 它的 seq 就是该请求输出的位置，前缀 < 它刚好是模型输入。
+    let requestSeq;
+    for (const event of events) {
+      if (event.seq >= boundarySeq) break;
+      if (event.type === 'assistant/message') requestSeq = event.seq;
+    }
+    rawMessages = messagesAt(session, requestSeq ?? boundarySeq);
   }
-  const messages = [];
-  const rawMessages = [];
-  for (const seq of contextNodes) {
-    const event = bySeq.get(seq);
-    if (event === undefined) continue;
-    const message = derivedMessage(session, event);
-    if (message !== undefined && message !== null) rawMessages.push(message);
-    messages.push({
-      role: message !== undefined && typeof message.role === 'string' ? String(message.role) : (ROLE_BY_TYPE[event.type] ?? String(event.type)),
-      text: messageText(message),
-      time: Number.isSafeInteger(event.time) ? event.time : null,
+
+  const letter = lettersOfGeneration(events, isCurrent ? Number.POSITIVE_INFINITY : target, info, []);
+  if (preview) {
+    return JSON.stringify({
+      logical,
+      count: rawMessages.length,
+      preview: true,
+      previewText: renderPreview(rawMessages),
+      letter,
     });
   }
-  const logical = isCurrent ? self : target;
-  const letter = lettersOfGeneration(events, isCurrent ? Number.POSITIVE_INFINITY : target, info, cutoffs);
-  if (preview) return JSON.stringify({ logical, count: messages.length, preview: renderPreview(rawMessages), letter });
-  return JSON.stringify({ logical, count: messages.length, messages, letter });
+  return JSON.stringify({ logical, count: rawMessages.length, preview: false, messages: rawMessages, letter });
 }
 
 /** 取某个逻辑世代生命周期内输入的全部 letter（按调用顺序，附消息序号）。 */
