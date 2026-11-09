@@ -7,7 +7,8 @@
  * @module dsh-plugin-plastic-memories-h0/messages
  */
 
-import { logicalGenerations } from './engine.js';
+import { logicalGenerations, lockedSeqs } from './engine.js';
+import { classifyMessage } from './units.js';
 
 /**
  * @param {object} session - 当前会话。
@@ -37,15 +38,15 @@ export function messagesAt(session, before) {
  * @param {boolean} [preview]
  */
 export function retrospectMessages(session, preview = false) {
-  const messages = currentInputMessages(session);
-  const logical = logicalGenerations(session).self;
+  const messages = compactMessages(session, currentInputMessages(session));
+  const logical = logicalGenerations(session).total;
   if (preview) {
     return { logical, count: messages.length, preview: true, messages: messages.map((message) => ({
-      role: message.role,
-      text: Array.isArray(message.content) ? message.content.map((block) => block?.type === 'text' ? block.text : '').join('') : '',
+      ...message,
+      text: message.text.length <= 240 ? message.text : message.text.slice(0, 180) + '……' + message.text.slice(-40),
     })) };
   }
-  return { logical, count: messages.length, preview: false, messages };
+  return { logical, count: messages.length, messages };
 }
 
 /**
@@ -61,3 +62,62 @@ export function currentInputMessages(session) {
   }
   return cutoff === undefined ? session.deriveMessages() : messagesAt(session, cutoff);
 }
+
+function textOf(message) {
+  const content = Array.isArray(message?.content) ? message.content : [];
+  return content
+    .filter((block) => block?.type === 'text' && typeof block.text === 'string')
+    .map((block) => block.text)
+    .join(String.fromCharCode(10));
+}
+
+function callsOf(message) {
+  const content = Array.isArray(message?.content) ? message.content : [];
+  return content
+    .filter((block) => block?.type === 'tool-call' && typeof block.name === 'string')
+    .map((block) => ({ id: typeof block.id === 'string' ? block.id : undefined, name: block.name }));
+}
+
+/**
+ * 把捕获/DSH Message[] 合并成模型可过滤视图。
+ * 顺序只来自 messages 数组；id 只用于查事件和锁，不输出。
+ * @param {object} session
+ * @param {Array<object>} messages
+ * @returns {Array<object>} [{n,unit,type,text,calls?,locked?}]
+ */
+export function compactMessages(session, messages) {
+  const byId = new Map();
+  for (const event of session.snapshotEvents()) {
+    const id = event?.data?.message?.id;
+    if (typeof id === 'string') byId.set(id, event);
+  }
+  const locks = lockedSeqs(session);
+  const out = [];
+  let unit = -1;
+  let currentCallIds = new Set();
+  for (const message of messages) {
+    const calls = callsOf(message);
+    const role = String(message?.role ?? '');
+    const isTool = role === 'tool';
+    const callId = typeof message?.toolCallId === 'string' ? message.toolCallId : undefined;
+    const continuation = isTool && unit >= 0 && (currentCallIds.size === 0 || (callId !== undefined && currentCallIds.has(callId)));
+    if (!continuation) {
+      unit += 1;
+      currentCallIds = new Set(calls.map((call) => call.id).filter((id) => typeof id === 'string'));
+    } else if (callId !== undefined) {
+      currentCallIds.delete(callId);
+    }
+    const event = byId.get(message?.id);
+    const entry = {
+      n: out.length,
+      unit,
+      type: classifyMessage(message).type,
+      text: textOf(message),
+    };
+    if (calls.length > 0) entry.calls = calls.map((call) => call.name);
+    if (event !== undefined && Number.isSafeInteger(event.seq) && locks.has(event.seq)) entry.locked = true;
+    out.push(entry);
+  }
+  return out;
+}
+

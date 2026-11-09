@@ -120,9 +120,9 @@ console.log(NL + '⑥ retrospect：只返回历史世代自己的上下文（结
   const afterFirst = [...s.surface.nodes];
   const firstFrozen = JSON.parse(retrospect(s, { generation: 0, preview: false }));
   ok(firstFrozen.logical === 0 && Array.isArray(firstFrozen.messages) && firstFrozen.count === firstFrozen.messages.length, '第一次 execute 冻结后，逻辑世代 0 立刻可查', JSON.stringify({ logical: firstFrozen.logical, count: firstFrozen.count }));
-  ok(firstFrozen.messages.some((message) => JSON.stringify(message.content).includes(keyword)), 'g0 上下文 = 任何塑形操作之前的 surface', JSON.stringify({ keyword, count: firstFrozen.count }));
-  ok(!firstFrozen.messages.some((message) => message.role === 'developer' && Array.isArray(message.content) && message.content.length === 0), 'g0 上下文不含 execute 之后写出的替代消息');
-  ok(firstFrozen.messages.some((message) => message.role === 'tool'), 'g0 上下文包含 execute 的 tool result');
+  ok(firstFrozen.messages.some((message) => String(message.text).includes(keyword)), 'g0 上下文 = 任何塑形操作之前的 surface', JSON.stringify({ keyword, count: firstFrozen.count }));
+  ok(!firstFrozen.messages.some((message) => message.type === 'developer' && String(message.text).length === 0), 'g0 上下文不含 execute 之后写出的替代消息');
+  ok(firstFrozen.messages.some((message) => message.type === 'tool'), 'g0 上下文包含 execute 的 tool result');
 
   // 第一次 execute 冻结逻辑世代 0，继续推理进入 self=1；当前世代现在可查。
   const currentSelf = JSON.parse(retrospect(s, { generation: 'self', preview: false }));
@@ -146,12 +146,12 @@ console.log(NL + '⑥ retrospect：只返回历史世代自己的上下文（结
   ok(byNumber.logical === 0, '返回 logical（历史世代号）', String(byNumber.logical));
   ok(JSON.stringify(byNumber) === JSON.stringify(byLabel), '绝对编号与 self - 2 写法返回完全一致');
   ok(Array.isArray(byNumber.messages) && byNumber.count === byNumber.messages.length, '历史上下文是消息数组', String(byNumber.count));
-  ok(byNumber.messages.some((message) => JSON.stringify(message.content).includes(keyword)), '历史世代上下文包含当时的原文');
-  ok(!byNumber.messages.some((message) => message.role === 'developer' && Array.isArray(message.content) && message.content.length === 0), '历史上下文不含 execute 结果写出的空替代消息');
+  ok(byNumber.messages.some((message) => String(message.text).includes(keyword)), '历史世代上下文包含当时的原文');
+  ok(!byNumber.messages.some((message) => message.type === 'developer' && String(message.text).length === 0), '历史上下文不含 execute 结果写出的空替代消息');
   ok(byNumber.letter.length === 1
     && byNumber.letter[0].index === preIndex && byNumber.letter[0].text === 'S: 第 0 代之前的话',
     'letter 只含第 0 代生命周期内的输入且带消息序号', JSON.stringify(byNumber.letter));
-  ok(byNumber.messages.every((message) => typeof message.role === 'string' && Array.isArray(message.content)), 'messages 是 DSH Message[]');
+  ok(byNumber.messages.every((message) => typeof message.type === 'string' && typeof message.text === 'string'), 'messages 是 DSH Message[]');
   ok(byNumber.letter.every((entry) => Number.isSafeInteger(entry.time)), 'letter 每项带底层日志时间');
 
   // 第三代：第 1 代生命周期内的 letter 归入 gen1（独立 step）。
@@ -171,7 +171,7 @@ console.log(NL + '⑥ retrospect：只返回历史世代自己的上下文（结
   const againSelf = JSON.parse(retrospect(s, { generation: 'self - 0', preview: false }));
   ok(againSelf.logical === 3, 'self - 0 也返回当前世代', String(againSelf.logical));
   const preview = JSON.parse(retrospect(s, { generation: 0, preview: true }));
-  ok(preview.logical === 0 && preview.messages === undefined && typeof preview.previewText === 'string' && preview.count === firstFrozen.count, 'preview=true 返回缩略文本而不是完整 messages', JSON.stringify({ logical: preview.logical, count: preview.count, hasPreview: typeof preview.previewText }));
+  ok(preview.logical === 0 && preview.preview === true && Array.isArray(preview.messages) && preview.count === firstFrozen.count, 'preview=true 返回缩略文本而不是完整 messages', JSON.stringify({ logical: preview.logical, count: preview.count, hasPreview: preview.preview }));
   let futureError = null;
   try { retrospect(s, { generation: 4 }); } catch (error) { futureError = error.message; }
   ok(typeof futureError === 'string', '未来世代号被拒绝');

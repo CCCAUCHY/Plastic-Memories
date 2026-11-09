@@ -33,13 +33,20 @@ function resultInfo(event) {
 }
 
 /** 分类：普通角色，或自动注入类型 agent/skill/other。 */
-export function unitKindOf(event, message) {
-  const source = message?.source ?? sourceOf(event);
+export function classifyMessage(message) {
+  const source = message?.source;
   if (source?.kind === 'agent-instructions') return { type: 'agent', autoInjected: true, autoRefresh: true };
   if (source?.kind === 'skill-catalog') return { type: 'skill', autoInjected: true, autoRefresh: true };
   const calls = Array.isArray(message?.content) ? message.content.filter((block) => block?.type === 'tool-call') : [];
   if (calls.some((call) => call.name === 'skill')) return { type: 'skill', autoInjected: false, autoRefresh: false };
   if (AUTO_OTHER.has(source?.kind)) return { type: 'other', autoInjected: true, autoRefresh: source?.kind === 'runtime-context' };
+  const role = typeof message?.role === 'string' ? message.role : 'unknown';
+  return { type: role, autoInjected: false, autoRefresh: false };
+}
+
+export function unitKindOf(event, message) {
+  const kind = classifyMessage(message);
+  if (kind.type !== 'unknown') return kind;
   return { type: roleOfEvent(event) ?? String(event?.type ?? 'unknown'), autoInjected: false, autoRefresh: false };
 }
 

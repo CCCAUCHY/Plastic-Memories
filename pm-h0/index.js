@@ -544,8 +544,8 @@ export function apply(ctx, config) {
         "Read the context of a logical generation, past or current. Pure read.",
         "Pass an absolute 0-based logical generation number, \"self\" (the current generation), or \"self - N\" (for example \"self - 1\"). Past generations are frozen; self returns the current surface as the model sees it now.",
         "A successful execute freezes logical generation N and returns N; continued reasoning belongs to generation N + 1, so generation N is immediately queryable with self - 1.",
-        "Returns JSON: {logical, count, messages, letter}. messages is the exact DSH Message[] for that generation's last model input, produced by replaying the session prefix through the same DSH projection that feeds the capture node. preview=true returns {count, previewText} instead; units=true is an internal migration view that returns current-generation units.",
-        "The historical cutoff is the request that produced that generation's execute call: prefix events before that request's assistant output. The generation that hid material belongs to the previous generation; read the previous generation to see it. A letter written between two execute declarations belongs to the later generation.",
+        "Returns {logical,count,messages,letter?}. messages are compact model-context rows: {n,unit,type,text,calls?,locked?}; n is order, unit is the plasticize position, type is system/user/developer/assistant/tool/agent/skill/other. preview=true clips text.",
+        "Historical generations return the input of the request that produced their execute call. The generation that hid material belongs to the previous generation; read the previous generation to see it.",
       ].join(String.fromCharCode(10) + String.fromCharCode(10)),
       parameters: {
         type: 'object',
@@ -556,7 +556,7 @@ export function apply(ctx, config) {
           },
           preview: {
             type: 'boolean',
-            description: 'Default false. When true, return a text preview instead of the full Message[].',
+            description: 'Default false. When true, clip message text.',
           },
           units: {
             type: 'boolean',

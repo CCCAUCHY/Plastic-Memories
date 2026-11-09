@@ -51,5 +51,5 @@ try {
   messageData = { error: String(error.message) };
 }
 ok(messageData.error === undefined && Array.isArray(messageData.messages) && messageData.messages.length > 0, 'retrospect(self) 返回 Message[]', JSON.stringify(messageData).slice(0, 160));
-ok(messageData.messages[0].role === 'system', 'Message[] 第一条是 system');
+ok(messageData.messages[0].type === 'system', 'Message[] 第一条是 system');
 done();

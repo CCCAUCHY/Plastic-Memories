@@ -13,7 +13,7 @@
 import { SURFACE_TYPES, derivedMessage, messageText } from './coords.js';
 import { logicalGenerations } from './engine.js';
 import { logicalBoundaries } from './boundaries.js';
-import { messagesAt, currentInputMessages } from './messages.js';
+import { messagesAt, currentInputMessages, compactMessages } from './messages.js';
 import { renderPreview } from './preview.js';
 
 /** 事件类型到角色名的兜底映射（正常消息直接读 message.role）。 */
@@ -135,16 +135,20 @@ export function retrospectGeneration(session, generation, preview = false) {
   }
 
   const letter = lettersOfGeneration(events, isCurrent ? Number.POSITIVE_INFINITY : target, info, []);
+  const messages = compactMessages(session, rawMessages);
   if (preview) {
     return JSON.stringify({
       logical,
-      count: rawMessages.length,
+      count: messages.length,
       preview: true,
-      previewText: renderPreview(rawMessages),
-      letter,
+      messages: messages.map((message) => ({
+        ...message,
+        text: message.text.length <= 240 ? message.text : message.text.slice(0, 180) + '……' + message.text.slice(-40),
+      })),
+      ...(letter.length === 0 ? {} : { letter }),
     });
   }
-  return JSON.stringify({ logical, count: rawMessages.length, preview: false, messages: rawMessages, letter });
+  return JSON.stringify({ logical, count: messages.length, messages, ...(letter.length === 0 ? {} : { letter }) });
 }
 
 /** 取某个逻辑世代生命周期内输入的全部 letter（按调用顺序，附消息序号）。 */
