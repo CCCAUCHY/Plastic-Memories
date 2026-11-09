@@ -65,8 +65,10 @@ export function currentInputMessages(session) {
 
 function textOf(message) {
   const content = Array.isArray(message?.content) ? message.content : [];
+  // reasoning 的文本也是 assistant 消息内容的一部分；不能只看 type==='text'，
+  // 否则只有思考 + tool-call 的 assistant 单元会显示为空。
   return content
-    .filter((block) => block?.type === 'text' && typeof block.text === 'string')
+    .filter((block) => typeof block?.text === 'string' && block.text.length > 0)
     .map((block) => block.text)
     .join(String.fromCharCode(10));
 }
