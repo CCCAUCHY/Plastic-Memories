@@ -446,7 +446,7 @@ export function apply(ctx, config) {
                 positions: {
                   type: 'array',
                   items: { oneOf: [{ type: 'integer' }, { type: 'string' }] },
-                  description: "Current-generation unit numbers (0 = system prompt). Forms: 3, '[3,7]', 'this'. Every selected unit is hidden except the last, which is replaced by new_text. Tool results are part of the assistant unit and are not addressed separately.",
+                  description: "Current-generation unit numbers (0 = system prompt). Each JSON array entry selects ONE unit; a string entry like '[3,7]' is a closed range. Example: positions:[3,7] selects units 3 and 7 only; positions:['[3,7]'] selects 3 through 7. 'this' selects the unit carrying this call. Every selected unit is hidden except the last, which is replaced by new_text. Tool results belong to the assistant unit.",
                 },
                 spans: {
                   type: 'array',

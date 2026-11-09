@@ -31,17 +31,58 @@
 export const GENERATIONS_KEY = 'pmGenerations';
 
 /** 状态版本：字段或 fold 语义变了就 bump（持久化缓存据此丢弃旧行）。 */
-export const GENERATIONS_STATE_VERSION = 8;
+export const GENERATIONS_STATE_VERSION = 9;
+
+/** 空 wire 视图：任何坏 state 的兜底。 */
+function emptyView() {
+  return {
+    current: 0,
+    asOfSeq: -1,
+    generations: [],
+    meta: {},
+    raw: [],
+    replacements: [],
+    safety: [],
+    logicalPages: [],
+    logicalLabels: [],
+    logicalOfPhysical: {},
+    compactions: {},
+    boundaries: [],
+    units: [],
+    unitOfSeq: {},
+  };
+}
 
 /**
- * 鸭子类型的 schema 替身。
- *
- * 注册表只调用 `stateSchema.parse(val)` 与 `viewSchema.parse(view)`（源码可查），
- * 所以这里不需要真正的 zod —— 本包刻意不依赖 `@deepseek-ai/*` 运行时包。
- * @param {unknown} value - 待校验值。
- * @returns {unknown} 原值。
+ * 把缓存行/旧状态归一化到完整字段；缺失字段按空值处理。
+ * @param {unknown} value
+ * @returns {object}
  */
-const passthroughSchema = Object.freeze({ parse: (value) => value });
+function normalizeState(value) {
+  const source = value !== null && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  const array = (entry) => (Array.isArray(entry) ? entry : []);
+  const record = (entry) => (entry !== null && typeof entry === 'object' && !Array.isArray(entry) ? entry : {});
+  return {
+    ...initState(),
+    ...source,
+    gen: Number.isSafeInteger(source.gen) && source.gen >= 0 ? source.gen : 0,
+    asOfSeq: Number.isSafeInteger(source.asOfSeq) ? source.asOfSeq : -1,
+    seqs: array(source.seqs),
+    meta: record(source.meta),
+    gens: array(source.gens),
+    raw: array(source.raw),
+    reps: array(source.reps),
+    safety: array(source.safety),
+    logicalPages: array(source.logicalPages),
+    boundaries: array(source.boundaries),
+    compactions: record(source.compactions),
+    initialSeqs: Array.isArray(source.initialSeqs) ? source.initialSeqs : null,
+    initialAsOfSeq: Number.isSafeInteger(source.initialAsOfSeq) ? source.initialAsOfSeq : -1,
+  };
+}
+
+const stateSchema = Object.freeze({ parse: (value) => normalizeState(value) });
+const viewSchema = Object.freeze({ parse: (value) => (value !== null && typeof value === 'object' && !Array.isArray(value) ? value : emptyView()) });
 
 /** 会产生模型消息的事件类型（dsh-session 的 SURFACE_EVENT_TYPES）。 */
 const MESSAGE_EVENT_TYPES = new Set([
@@ -390,21 +431,38 @@ function unitsFrom(seqs, meta) {
   return out;
 }
 
+/** 对任何 state 都不抛的 wire view。 */
+function safeViewOf(state) {
+  try {
+    return viewOf(normalizeState(state));
+  } catch {
+    return emptyView();
+  }
+}
+
 /**
  * 投影定义（交给 `ctx.sessionProjections.register`）。
  * @returns {object} ProjectionDefinition。
  */
 export function generationProjection() {
+  let lastState;
+  let lastView;
   return {
     key: GENERATIONS_KEY,
     stateVersion: GENERATIONS_STATE_VERSION,
-    stateSchema: passthroughSchema,
-    viewSchema: passthroughSchema,
+    stateSchema,
+    viewSchema,
     init: () => initState(),
     apply: (state, event) => applyEvent(state, event),
     wire: {
-      viewSchema: passthroughSchema,
-      view: (state) => viewOf(state),
+      viewSchema,
+      summary: false,
+      view: (state) => {
+        if (state === lastState && lastView !== undefined) return lastView;
+        lastState = state;
+        lastView = safeViewOf(state);
+        return lastView;
+      },
     },
   };
 }
