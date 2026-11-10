@@ -25,7 +25,10 @@ const quiet = { warn: () => {}, info: () => {} };
 const ctx = new Context();
 new SessionStore(ctx);
 const records = fixture('session-ptc-minimal.jsonl');
-const s = ctx.sessions.create('ptc-probe', { seed: cookieSeed('session-ptc-minimal.jsonl') });
+const ptcSeed = () => cookieSeed('session-ptc-minimal.jsonl').map((event) => event.type === 'agent-preset/selected'
+  ? { ...event, data: { ...(event.data ?? {}), agentPreset: 'ptc' } }
+  : event);
+const s = ctx.sessions.create('ptc-probe', { seed: ptcSeed() });
 
 /** 在打开的 step 里注入一条真实形态的 PTC plasticize 声明。 */
 const ptcDeclare = (session, at, rootCallId, args) => {
@@ -95,7 +98,7 @@ console.log(NL + '② 幂等：重复 flush 不再动作，日志保持合法');
 console.log(NL + '③ PTC 路径与 native 路径共用同一套解析（this 也认）');
 {
   const ctx3 = new Context(); new SessionStore(ctx3);
-  const s3 = ctx3.sessions.create('ptc-self', { seed: cookieSeed('session-ptc-minimal.jsonl') });
+  const s3 = ctx3.sessions.create('ptc-self', { seed: ptcSeed() });
   s3.append('turn/start', { turn: 99 });
   s3.append('step/start', { turn: 99, step: 1 });
   ptcDeclare(s3, { turn: 99, step: 1 }, 'ptc-root-self', { ops: [{ spans: ['this'], new_text: '' }], option: 'execute' });
@@ -123,7 +126,7 @@ console.log(NL + '④ 工具执行期：this 组还没落地时，execute 不能
   const tool = tctx.tools.get('plasticize');
   ok(tool !== undefined, '工具已注册');
 
-  const ts = tctx.sessions.create('ptc-tool-self', { seed: cookieSeed('session-ptc-minimal.jsonl') });
+  const ts = tctx.sessions.create('ptc-tool-self', { seed: ptcSeed() });
   ts.append('turn/start', { turn: 2 });
   ts.append('step/start', { turn: 2, step: 1 });
   const root = 'call_root_exec';
@@ -162,7 +165,7 @@ console.log(NL + '④ 工具执行期：this 组还没落地时，execute 不能
 console.log(NL + '⑤ 工具执行失败时：声明永远不落地（不能悄悄生效）');
 {
   const fctx = new Context(); new SessionStore(fctx);
-  const fs = fctx.sessions.create('ptc-failed', { seed: cookieSeed('session-ptc-minimal.jsonl') });
+  const fs = fctx.sessions.create('ptc-failed', { seed: ptcSeed() });
   fs.append('turn/start', { turn: 2 });
   fs.append('step/start', { turn: 2, step: 1 });
   const root = 'call_root_fail';
@@ -196,7 +199,7 @@ console.log(NL + '⑥b set 预览：this 组不完整时也能算预览（且不
   tctx.plugin(await import('./index.js'), {});
   await new Promise((r) => setTimeout(r, 30));
   const tool = tctx.tools.get('plasticize');
-  const ts = tctx.sessions.create('ptc-set-preview', { seed: cookieSeed('session-ptc-minimal.jsonl') });
+  const ts = tctx.sessions.create('ptc-set-preview', { seed: ptcSeed() });
   ts.append('turn/start', { turn: 2 });
   ts.append('step/start', { turn: 2, step: 1 });
   const root = 'call_root_set';
@@ -227,7 +230,7 @@ console.log(NL + '⑥b set 预览：this 组不完整时也能算预览（且不
 console.log(NL + '⑥ 待决 set 查找认得 PTC 形态');
 {
   const pctx = new Context(); new SessionStore(pctx);
-  const ps = pctx.sessions.create('ptc-set', { seed: cookieSeed('session-ptc-minimal.jsonl') });
+  const ps = pctx.sessions.create('ptc-set', { seed: ptcSeed() });
   ps.append('turn/start', { turn: 2 });
   ps.append('step/start', { turn: 2, step: 1 });
   ptcDeclare(ps, { turn: 2, step: 1 }, 'ptc-root-set', { ops: [{ spans: ['(5,6)'], new_text: '⟨预览⟩' }], option: 'set' });
@@ -242,7 +245,7 @@ console.log(NL + '⑦ PTC + also_execute_last_set：零点属于 set，且只写
   // 于是 set 与 execute 各按自己的零点解析 → 写了**两条**投影（同一段结论出现两次），
   // 模型以为没生效又重发一轮。（native 下 callId == ownerCallId，所以测试一直没抓到。）
   const actx = new Context(); new SessionStore(actx);
-  const as = actx.sessions.create('ptc-anchor', { seed: cookieSeed('session-ptc-minimal.jsonl') });
+  const as = actx.sessions.create('ptc-anchor', { seed: ptcSeed() });
   const quiet2 = { warn: () => {}, info: () => {} };
   const repsOf = (sess) => sess.snapshotEvents().filter((e) => e.surfaceOp?.op === 'replace');
   const args = { ops: [{ spans: ['this'], new_text: '⟨PTC 预览③⟩' }], option: 'set' };

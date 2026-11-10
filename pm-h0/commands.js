@@ -78,6 +78,8 @@ export function registerCommands(ctx, logger) {
       handler: ({ agent, rawInput }) => {
         const session = agent?.session;
         if (session === undefined || session === null) return fail(new Error(en ? 'This command needs a session.' : '这条命令需要一个会话'));
+        const preset = session.header?.agentPreset;
+        if (typeof preset === 'string' && preset !== 'ptc') return fail(new Error(en ? 'Plastic Memories requires the PTC preset.' : 'Plastic Memories 需要 PTC 预设。'));
         if (agent.status !== 'idle') return fail(busyError());
         try {
           const parsed = parsePlasticizeCommand(rawInput, locale);

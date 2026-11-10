@@ -249,14 +249,31 @@ function tool(spec) {
   };
 }
 
+/** 当前会话的 agent preset：header 优先，其次最新 agent-preset/selected 事件。 */
+function sessionPreset(session) {
+  const fromHeader = session?.header?.agentPreset;
+  if (typeof fromHeader === 'string') return fromHeader;
+  let latest;
+  for (const event of session?.snapshotEvents?.() ?? []) {
+    if (event.type === 'agent-preset/selected' && typeof event.data?.agentPreset === 'string') latest = event.data.agentPreset;
+  }
+  return latest;
+}
+
+function isPtcSession(session) {
+  const preset = sessionPreset(session);
+  // 旧会话没有 header/agent-preset 记录：按历史默认允许；显式 standard 等才拒绝。
+  return preset === undefined || preset === 'ptc';
+}
+
 /** 取本次调用所属的 agent 会话。 */
 function sessionOf(exec) {
   const session = exec?.agent?.session;
   if (session === undefined || session === null) {
     throw new Error('this tool requires an agent session (exec.agent.session is unavailable)');
   }
-  const preset = session.header?.agentPreset;
-  if (typeof preset === 'string' && preset !== 'ptc') {
+  if (!isPtcSession(session)) {
+    const preset = sessionPreset(session) ?? 'unknown';
     throw new Error('Plastic Memories requires the PTC preset (current preset: ' + preset + '); retrospect unit lookup depends on run_code filtering');
   }
   return session;
@@ -534,6 +551,7 @@ export function apply(ctx, config) {
         return Promise.resolve({ text: parts.join(String.fromCharCode(10)) });
       },
     }),
+    { when: ({ agent }) => isPtcSession(agent?.session) },
   );
 
 
@@ -574,6 +592,7 @@ export function apply(ctx, config) {
         return Promise.resolve({ text: retrospect(session, args ?? {}) });
       },
     }),
+    { when: ({ agent }) => isPtcSession(agent?.session) },
   );
 
   ctx.tools.register(
@@ -596,6 +615,7 @@ export function apply(ctx, config) {
         return Promise.resolve({ text: 'Registered.' });
       },
     }),
+    { when: ({ agent }) => isPtcSession(agent?.session) },
   );
 
   /**
