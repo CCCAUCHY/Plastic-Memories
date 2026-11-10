@@ -326,10 +326,10 @@ console.log(NL + '⑥.7 /plasticize 待落盘操作（可交换；发送消息�
 {
   const s = mk();
   openStep(s, 99, 1);
-  const staged = stageUserOperation(s, { kind: 'project', mode: 'range', interval: '[3,4]', newText: '⟨内存投影⟩' });
+  const staged = stageUserOperation(s, { kind: 'project', mode: 'range', positions: ['unit 3 to 4'], newText: '⟨内存投影⟩' });
   ok(staged.pending === 1, '登记投影', String(staged.pending));
   let overlap;
-  try { stageUserOperation(s, { kind: 'project', mode: 'range', interval: '[3,4]', newText: 'x' }); } catch (error) { overlap = String(error.message); }
+  try { stageUserOperation(s, { kind: 'project', mode: 'range', positions: ['unit 3 to 4'], newText: 'x' }); } catch (error) { overlap = String(error.message); }
   ok(typeof overlap === 'string' && overlap.includes('重叠'), '区间重叠被拒绝', overlap?.slice(0, 40));
   const written = await flushUserOperations(s, { turn: 99, step: 1 }, quiet);
   ok(written.projections === 1, '发送消息时写入投影', JSON.stringify(written));
@@ -337,7 +337,7 @@ console.log(NL + '⑥.7 /plasticize 待落盘操作（可交换；发送消息�
   ok(countLogicalGenerations(s) === 1, '用户投影产生一个逻辑世代', String(countLogicalGenerations(s)));
   const s2 = mk();
   openStep(s2, 99, 1);
-  stageUserOperation(s2, { kind: 'project', mode: 'range', interval: '[3,4]', newText: '⟨将被清空⟩' });
+  stageUserOperation(s2, { kind: 'project', mode: 'range', positions: ['unit 3 to 4'], newText: '⟨将被清空⟩' });
   ok(clearStagedOperations(s2) === 1, '清空待落盘操作');
 }
 console.log(NL + '⑥.8 unlock all / prelock / lock_this 与区间描述');

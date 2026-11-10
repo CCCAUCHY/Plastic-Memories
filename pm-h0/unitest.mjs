@@ -23,7 +23,7 @@ ok(toolUnit !== undefined && !units.some((unit) => unit.seqs.includes(toolUnit.r
 
 const data = JSON.parse(retrospectUnits(s, { preview: true }));
 ok(data.preview === true && Array.isArray(data.units) && data.units.length === units.length, 'retrospect 默认 preview 返回单元数组');
-ok(data.units[1].n === 1 && data.units[1].safety === false, '单元带 n/safety');
+ok(data.units[1].n === 1 && data.units[1].locked === false, '单元带 n/locked');
 
 const before = currentUnits(s);
 openStep(s, 99, 1);
@@ -60,7 +60,7 @@ const locks = lockedSeqs(ps);
 const target = currentUnits(ps, { locks })[1];
 appendSafetyRecord(ps, { op: 'lock', seqs: [target.seq], comment: 'test' });
 const safetyData = JSON.parse(retrospectUnits(ps, { preview: true }));
-ok(safetyData.units[1].safety === true && safetyData.units[1].locked === true, 'retrospect 标出安全区单元');
+ok(safetyData.units[1].locked === true, 'retrospect 标出安全区单元');
 
 // 自动隐藏：retrospect 单元被下一次 execute 清掉
 const ahctx = makeStore();

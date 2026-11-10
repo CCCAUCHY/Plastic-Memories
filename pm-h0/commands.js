@@ -17,7 +17,7 @@
 
 import { clearStagedOperations, pendingUserOperations, stageUserOperation } from './engine.js';
 
-const HINT = '<单元序号或[起,止]> <替代文本> | hide/lock/unlock <单元序号或[起,止]> | unlock all | prelock | clear';
+const HINT = '<unit 17 或 unit 17 to 28> <替代文本> | hide/lock/unlock <同样写法> | unlock all | prelock | clear';
 
 /**
  * 解析 /plasticize 输入。
@@ -26,7 +26,7 @@ const HINT = '<单元序号或[起,止]> <替代文本> | hide/lock/unlock <单�
  */
 export function parsePlasticizeCommand(rawInput, locale = 'zh') {
   const en = locale === 'en';
-  const hint = en ? '<unit or [start,end]> <replacement> | hide/lock/unlock <unit or [start,end]> | unlock all | prelock | clear' : HINT;
+  const hint = en ? '<unit 17 or unit 17 to 28> <replacement> | hide/lock/unlock <same form> | unlock all | prelock | clear' : HINT;
   const text = String(rawInput ?? '').replace(/^\s+/, '');
   const command = text.replace(/[ \t\r\n]+$/, '');
   if (command.length === 0) throw new Error((en ? 'Usage: /plasticize ' : '用法：/plasticize ') + hint);
@@ -34,17 +34,23 @@ export function parsePlasticizeCommand(rawInput, locale = 'zh') {
   if (command === 'prelock') return { action: 'stage', kind: 'lock', mode: 'prelock' };
   for (const kind of ['lock', 'unlock', 'hide']) {
     if (command !== kind && !command.startsWith(kind + ' ') && !command.startsWith(kind + '\t')) continue;
-    const match = new RegExp('^' + kind + '[ \t]+(\\S+)[ \t]*$').exec(command);
-    if (match === null) throw new Error(en ? '/plasticize ' + kind + ' must be followed by a unit or closed range.' : '/plasticize ' + kind + ' 后必须是一个单元或闭区间。');
-    if (match[1] === 'all') {
+    const rest = command.slice(kind.length).trim();
+    if (rest.length === 0) throw new Error(en ? '/plasticize ' + kind + ' must be followed by a unit or a range.' : '/plasticize ' + kind + ' 后必须是一个单元或区间。');
+    if (rest === 'all') {
       if (kind !== 'unlock') throw new Error(en ? 'lock all is not supported; name units explicitly.' : 'lock all 已取消；请逐个指定单元。');
       return { action: 'stage', kind: 'unlock', mode: 'all', newText: '' };
     }
-    return { action: 'stage', kind: kind === 'hide' ? 'project' : kind, mode: 'range', interval: match[1], positions: [match[1]], newText: '' };
+    return { action: 'stage', kind: kind === 'hide' ? 'project' : kind, mode: 'range', positions: [rest], newText: '' };
   }
-  const match = /^(\S+)[ \t\r\n]+([\s\S]*)$/.exec(text);
-  if (match === null) throw new Error((en ? 'Usage: /plasticize ' : '用法：/plasticize ') + hint);
-  return { action: 'stage', kind: 'project', mode: 'range', interval: match[1], positions: [match[1]], newText: match[2] };
+
+  // 投影：<selector> <new_text>；selector 可以是 'unit 17' / 'unit 17 to 28'（含空格）。
+  const projected = /^(unit\s*\d+(?:\s*(?:to|through|til|-|–)\s*(?:unit\s*)?\d+)?|\d+)\s+([\s\S]*)$/iu.exec(text);
+  if (projected !== null) return { action: 'stage', kind: 'project', mode: 'range', positions: [projected[1]], newText: projected[2] };
+  // 只给选择器、不给替换文本：等价于纯隐藏。
+  if (/^(?:unit\s*\d+(?:\s*(?:to|through|til|-|–)\s*(?:unit\s*)?\d+)?|\d+)$/iu.test(text.trim())) {
+    return { action: 'stage', kind: 'project', mode: 'range', positions: [text.trim()], newText: '' };
+  }
+  throw new Error((en ? 'Usage: /plasticize ' : '用法：/plasticize ') + hint);
 }
 
 /**
@@ -67,7 +73,7 @@ export function registerCommands(ctx, logger) {
   ctx.inject(['commands'], (commandCtx) => {
     const locale = currentLocale();
     const en = locale === 'en';
-    const hint = en ? '<unit or [start,end]> <replacement> | hide/lock/unlock <unit or [start,end]> | unlock all | prelock | clear' : HINT;
+    const hint = en ? '<unit 17 or unit 17 to 28> <replacement> | hide/lock/unlock <same form> | unlock all | prelock | clear' : HINT;
     const fail = (error) => ({ kind: 'error', text: String(error?.message ?? error) });
     const busyError = () => new Error(en ? 'Cannot run /plasticize while the model is running; wait for this inference to finish.' : '正在推理中，暂不能执行 /plasticize；请等本次推理结束后再试。');
     commandCtx.commands.register({

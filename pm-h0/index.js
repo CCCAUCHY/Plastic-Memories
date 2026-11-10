@@ -260,20 +260,38 @@ function sessionPreset(session) {
   return latest;
 }
 
-function isPtcSession(session) {
-  const preset = sessionPreset(session);
-  // 旧会话没有 header/agent-preset 记录：按历史默认允许；显式 standard 等才拒绝。
+/**
+ * 会话的 preset：优先读 agentPresets 官方读面（presetForSession），
+ * 它认得 header 与 profile 侧的选择记录；服务缺席时退回本地扫描。
+ */
+function presetOfSession(ctx, session) {
+  try {
+    const service = ctx.get('agentPresets');
+    const recorded = service?.presetForSession?.(session);
+    if (typeof recorded === 'string') return recorded;
+  } catch {
+    // 服务未加载：退回本地扫描
+  }
+  return sessionPreset(session);
+}
+
+/**
+ * PM 只服务 PTC 会话：工具由 run_code 转发，标准模式里根本不该出现。
+ * 旧会话可能没有任何 preset 记录，此时按 PTC 处理（历史兼容）。
+ */
+function isPtcSession(ctx, session) {
+  const preset = presetOfSession(ctx, session);
   return preset === undefined || preset === 'ptc';
 }
 
 /** 取本次调用所属的 agent 会话。 */
-function sessionOf(exec) {
+function sessionOf(exec, ctx) {
   const session = exec?.agent?.session;
   if (session === undefined || session === null) {
     throw new Error('this tool requires an agent session (exec.agent.session is unavailable)');
   }
-  if (!isPtcSession(session)) {
-    const preset = sessionPreset(session) ?? 'unknown';
+  if (ctx !== undefined && !isPtcSession(ctx, session)) {
+    const preset = presetOfSession(ctx, session) ?? 'unknown';
     throw new Error('Plastic Memories requires the PTC preset (current preset: ' + preset + '); retrospect unit lookup depends on run_code filtering');
   }
   return session;
@@ -438,7 +456,7 @@ export function apply(ctx, config) {
       name: 'plasticize',
       description: [
         "Reshape how your own past appears in this context. This is the only tool that changes the surface and starts a new logical generation. The trajectory is never deleted: hidden material remains in the session log and can be inspected with retrospect. Treat this as editing the context, not as a scratch pad.",
-        "POSITIONS. Use the 0-based unit numbers returned by retrospect(self) or shown in the Generation tab. The system prompt is unit 0. An assistant message and its tool results are one unit; tool results are not addressed separately. Forms: 3, '[3,7]', 'this'. Hidden units are no longer part of the current generation and cannot be targeted.",
+        "POSITIONS. Use the 0-based unit numbers returned by retrospect(self) or shown in the Generation tab. The system prompt is unit 0. An assistant message and its tool results are one unit; tool results are not addressed separately. Forms: 'unit 3', 'unit 3 to 7', 'this'. Hidden units are no longer part of the current generation and cannot be targeted.",
         "OPS. Each op has positions and new_text. Every selected unit is hidden except the last by position, which is replaced by new_text. An empty new_text is a pure hole (hide). One op may cover several disjoint ranges.",
         "MODES. option:\"set\" previews and writes nothing. option:\"execute\" commits at the next submission boundary. Only ONE plasticize call is allowed per run_code program (or per assistant message); set and execute count the same. Do not issue two plasticize calls before the next boundary. also_execute_last_set defaults to true: an execute commits the most recent unexecuted set as well; pass false to leave it pending. The field is not valid on set. A set result states whether committing is available.",
         "lock_this:true locks the replacement message itself into the safety zone; default false.",
@@ -463,7 +481,7 @@ export function apply(ctx, config) {
                 positions: {
                   type: 'array',
                   items: { oneOf: [{ type: 'integer' }, { type: 'string' }] },
-                  description: "Current-generation unit numbers (0 = system prompt). Each JSON array entry selects ONE unit; a string entry like '[3,7]' is a closed range. Example: positions:[3,7] selects units 3 and 7 only; positions:['[3,7]'] selects 3 through 7. 'this' selects the unit carrying this call. Every selected unit is hidden except the last, which is replaced by new_text. Tool results belong to the assistant unit.",
+                  description: "Current-generation unit numbers (0 = system prompt). Write one selector per selected unit: 'unit 3', 'unit 7', or the range 'unit 3 to 7'. 'this' selects the unit carrying this call. Example: positions:['unit 3','unit 7'] selects two units; positions:['unit 3 to 7'] selects 3 through 7. Every selected unit is hidden except the last, which is replaced by new_text. Tool results belong to the assistant unit.",
                 },
                 spans: {
                   type: 'array',
@@ -495,7 +513,7 @@ export function apply(ctx, config) {
         required: ['ops', 'option'],
       },
       execute(args, exec) {
-        const session = sessionOf(exec);
+        const session = sessionOf(exec, ctx);
         const option = args?.option;
         if (option !== 'set' && option !== 'execute') throw new Error('option must be "set" or "execute"');
         if (option === 'set' && args?.also_execute_last_set !== undefined) {
@@ -551,7 +569,7 @@ export function apply(ctx, config) {
         return Promise.resolve({ text: parts.join(String.fromCharCode(10)) });
       },
     }),
-    { when: ({ agent }) => isPtcSession(agent?.session) },
+    { when: ({ agent }) => isPtcSession(ctx, agent?.session) },
   );
 
 
@@ -584,7 +602,7 @@ export function apply(ctx, config) {
         required: ['generation'],
       },
       execute(args, exec) {
-        const session = sessionOf(exec);
+        const session = sessionOf(exec, ctx);
         const generation = args?.generation;
         const isSelf = typeof generation === 'string' && /^self(?:\s*-\s*0)?$/iu.test(generation.trim());
         if (args?.units === true) return Promise.resolve({ text: retrospectUnits(session, args ?? {}) });
@@ -592,7 +610,7 @@ export function apply(ctx, config) {
         return Promise.resolve({ text: retrospect(session, args ?? {}) });
       },
     }),
-    { when: ({ agent }) => isPtcSession(agent?.session) },
+    { when: ({ agent }) => isPtcSession(ctx, agent?.session) },
   );
 
   ctx.tools.register(
@@ -610,12 +628,12 @@ export function apply(ctx, config) {
         required: ['text'],
       },
       execute(args, exec) {
-        sessionOf(exec);
+        sessionOf(exec, ctx);
         // Minimal English receipt.
         return Promise.resolve({ text: 'Registered.' });
       },
     }),
-    { when: ({ agent }) => isPtcSession(agent?.session) },
+    { when: ({ agent }) => isPtcSession(ctx, agent?.session) },
   );
 
   /**

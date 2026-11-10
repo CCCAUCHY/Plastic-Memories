@@ -135,7 +135,7 @@ export function retrospectGeneration(session, generation, preview = false) {
   }
 
   const letter = lettersOfGeneration(events, isCurrent ? Number.POSITIVE_INFINITY : target, info, []);
-  const messages = compactMessages(session, rawMessages);
+  const messages = compactMessages(session, rawMessages, { locks: isCurrent });
   if (preview) {
     return JSON.stringify({
       logical,

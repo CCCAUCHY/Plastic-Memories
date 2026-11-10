@@ -1,13 +1,13 @@
 # dsh-plugin-plastic-memories-h0
 
-> **v0.50.34 通用版（PTC-only）**
+> **v0.50.35 通用版（PTC-only）**
 >
 > Plastic Memories 把 DSH 的 surfaceOp 从“压缩插件专用”变成模型可主动使用的可塑投影。
 > 底层 trajectory 不删除；插件只改当前模型上下文里的 surface。
 
 ## 版本边界
 
-- v0.50.34 起是**通用工具**，不要求 PM preset；
+- v0.50.35 起是**通用工具**，不要求 PM preset；
 - 只支持 **PTC**：`retrospect(self)` 的单元定位依赖 `run_code` 代码过滤；
 - 生产 cookie 注入已移除；
 - 旧 PM preset / cookie 语义在 git 分支 `old`（fe676aa）中保留。
@@ -65,18 +65,19 @@ retrospect({ generation: "self" })
 - `agent` = AGENTS.md 自动注入；
 - `skill` = 技能目录或技能工具；
 - `other` = 其他低频自动注入；
-- 单元带 `safety` / `locked`。
+- 单元带 `locked`（仅当前世代；历史世代不返回安全区）。
 
 ### `plasticize`
 
 ```js
 plasticize({
-  ops: [{ positions: [3,4], new_text: "..." }],
+  ops: [{ positions: ["unit 3", "unit 4"], new_text: "..." }],
   option: "execute"
 })
 ```
 
-- `positions`：当前世代单元序号，支持 `3`、`"[3,7]"`、`"this"`；
+- `positions`：当前世代单元序号，写 `"unit 3"` 或区间 `"unit 3 to 7"`，`"this"` 指本次调用所在单元；
+  每个元素只选一个单元（`["unit 3", "unit 4"]` 是两个单元，不是区间）；
 - 每个选中单元整体命中（assistant + tool result）；
 - 前面的段隐藏，`new_text` 落在最后一段；
 - `this` 自噬：替换生成这次 execute 的单元，可用于隐藏自身；
@@ -95,7 +96,7 @@ plasticize({
 
 ```text
 /plasticize lock 3
-/plasticize lock [3,7]
+/plasticize lock unit 3 to 7
 /plasticize unlock 3
 ```
 
@@ -126,7 +127,7 @@ End of verbatim content from the summarized messages.
 标准 bundle 安装：
 
 ```bash
-dsh plugin --profile web2 add file:/绝对路径/可塑性记忆/dist/dsh-plugin-plastic-memories-h0-0.50.34.tgz
+dsh plugin --profile web2 add file:/绝对路径/可塑性记忆/dist/dsh-plugin-plastic-memories-h0-0.50.35.tgz
 ```
 
 开发 stage：

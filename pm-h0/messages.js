@@ -83,17 +83,19 @@ function callsOf(message) {
 /**
  * 把捕获/DSH Message[] 合并成模型可过滤视图。
  * 顺序只来自 messages 数组；id 只用于查事件和锁，不输出。
+ * 安全区只属于当前世代：历史世代不返回 locked（那时的锁还没建立）。
  * @param {object} session
  * @param {Array<object>} messages
+ * @param {{locks?: boolean}} [options] - locks=false 时不标注安全区。
  * @returns {Array<object>} [{n,unit,type,text,calls?,locked?}]
  */
-export function compactMessages(session, messages) {
+export function compactMessages(session, messages, options = {}) {
   const byId = new Map();
   for (const event of session.snapshotEvents()) {
     const id = event?.data?.message?.id;
     if (typeof id === 'string') byId.set(id, event);
   }
-  const locks = lockedSeqs(session);
+  const locks = options.locks === false ? null : lockedSeqs(session);
   const out = [];
   let unit = -1;
   let currentCallIds = new Set();
@@ -117,7 +119,7 @@ export function compactMessages(session, messages) {
       text: textOf(message),
     };
     if (calls.length > 0) entry.calls = calls.map((call) => call.name);
-    if (event !== undefined && Number.isSafeInteger(event.seq) && locks.has(event.seq)) entry.locked = true;
+    if (locks !== null && event !== undefined && Number.isSafeInteger(event.seq) && locks.has(event.seq)) entry.locked = true;
     out.push(entry);
   }
   return out;

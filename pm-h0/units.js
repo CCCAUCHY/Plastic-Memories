@@ -143,25 +143,31 @@ export function unitAt(units, n) {
   return Number.isSafeInteger(n) && n >= 0 && n < units.length ? units[n] : undefined;
 }
 
-/** 把 "3" / "[3,7]" / [3,7] 解析成单元序号列表（闭区间，含两端）。开区间语法已删除。 */
+/**
+ * 解析单元选择器。
+ *
+ * 只用自然语言写法，避免模型把 "[17,28]" 这种区间误读成两个单元：
+ *   - `17` / `"unit 17"`        单个单元
+ *   - `"unit 17 to 28"`          闭区间（含两端）
+ *   - `"this"`                   由上层解析
+ * @param {unknown} raw - 选择器。
+ * @returns {number[]} 单元序号（升序，含两端）。
+ */
 export function parseUnitRange(raw) {
   if (typeof raw === 'number' && Number.isSafeInteger(raw) && raw >= 0) return [raw];
-  if (Array.isArray(raw) && raw.length === 2 && raw.every((n) => Number.isSafeInteger(n) && n >= 0)) {
-    const [a, b] = raw;
-    return a <= b ? Array.from({ length: b - a + 1 }, (_, i) => a + i) : [];
-  }
   if (typeof raw === 'string') {
     const text = raw.trim();
-    const one = /^(\d+)$/.exec(text);
+    const one = /^(?:unit\s*)?(\d+)$/iu.exec(text);
     if (one !== null) return [Number(one[1])];
-    const span = /^\[\s*(\d+)\s*,\s*(\d+)\s*\]$/.exec(text);
+    const span = /^unit\s*(\d+)\s*(?:to|through|til|-|–)\s*(?:unit\s*)?(\d+)$/iu.exec(text);
     if (span !== null) {
       const a = Number(span[1]);
       const b = Number(span[2]);
       if (a <= b) return Array.from({ length: b - a + 1 }, (_, i) => a + i);
+      throw new Error('unit range start must not exceed its end: ' + text);
     }
   }
-  throw new Error('unit range must be a non-negative integer or [start,end] (closed interval)');
+  throw new Error('unit selector must look like "unit 17" or "unit 17 to 28" (got ' + JSON.stringify(raw) + ')');
 }
 
 /** 选择器：数字、区间字符串、数组或 "this"（由调用方先转换为数字）。 */
@@ -194,7 +200,6 @@ export function unitView(unit) {
     role: unit.role,
     autoInjected: unit.autoInjected,
     autoRefresh: unit.autoRefresh,
-    safety: unit.safety,
     locked: unit.locked,
     text: unit.text,
     calls: unit.calls,

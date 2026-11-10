@@ -14,6 +14,7 @@ process.env.DSH_HOME = home;
 
 const tools = [];
 const definitions = [];
+const toolOptions = [];
 const commands = [];
 const ctx = {
   logger: { info() {}, warn() {}, error() {} },
@@ -23,7 +24,7 @@ const ctx = {
   },
   effect(effect) { try { return effect(); } catch { return undefined; } },
   on() { return () => {}; },
-  tools: { register(definition) { tools.push(definition.name); definitions.push(definition); } },
+  tools: { register(definition, options) { tools.push(definition.name); definitions.push(definition); toolOptions.push(options ?? {}); } },
   root: undefined,
 };
 apply(ctx, {});
@@ -52,4 +53,35 @@ try {
 }
 ok(messageData.error === undefined && Array.isArray(messageData.messages) && messageData.messages.length > 0, 'retrospect(self) 返回 Message[]', JSON.stringify(messageData).slice(0, 160));
 ok(messageData.messages[0].type === 'system', 'Message[] 第一条是 system');
+
+// preset 门控：标准模式不提供服务，PTC 提供。
+const standardSession = { header: { agentPreset: 'standard' }, snapshotEvents: () => [] };
+const ptcSession = { header: { agentPreset: 'ptc' }, snapshotEvents: () => [] };
+const gate = toolOptions[0] ?? {};
+const allowed = async (session) => {
+  try {
+    return (await gate.when === undefined) ? 'no-when' : (await gate.when({ agent: { session }, signal: new AbortController().signal })) === true;
+  } catch {
+    return 'threw';
+  }
+};
+ok((await allowed(standardSession)) === false, 'standard 会话不提供服务');
+ok((await allowed(ptcSession)) === true, 'ptc 会话提供服务');
+const legacySession = { header: {}, snapshotEvents: () => [] };
+ok((await allowed(legacySession)) === true, '无 preset 记录的旧会话保持兼容');
+
+// 安全区只属于当前世代。
+const lockSession = store.sessions.create('global-lock', { seed: cookieSeed('subagent-95230f54.jsonl') });
+lockSession.append('plugin:plastic-memories/logical', { logical: 0, physical: 1, kind: 'execute', callId: 'lock-probe' });
+lockSession.append('plugin:plastic-memories/locks', { op: 'lock', seqs: [lockSession.surface.nodes[1]] }, { ignorable: true });
+const selfData = JSON.parse((await retrospect.execute({ generation: 'self' }, { agent: { session: lockSession } })).text);
+const selfLocked = selfData.messages.filter((message) => message.locked === true).length;
+let historyData;
+try {
+  historyData = JSON.parse((await retrospect.execute({ generation: 0 }, { agent: { session: lockSession } })).text);
+} catch (error) {
+  historyData = { error: String(error.message) };
+}
+const historyLocked = Array.isArray(historyData.messages) ? historyData.messages.filter((message) => message.locked === true).length : -1;
+ok(historyLocked === 0, '历史世代不返回安全区', JSON.stringify({ historyLocked, error: historyData.error }));
 done();
