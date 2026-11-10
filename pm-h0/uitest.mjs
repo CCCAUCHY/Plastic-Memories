@@ -131,21 +131,24 @@ console.log(NL + '④ 客户端 bundle 与命令解析');
   }
   ok(checkError === undefined, 'client.js 语法通过 node --check', checkError);
 
-  const parsed = parsePlasticizeCommand('(1,2) 替代文本');
-  ok(parsed.action === 'stage' && parsed.mode === 'range' && parsed.interval === '(1,2)', 'parsePlasticizeCommand：区间 + 文本');
+  const parsed = parsePlasticizeCommand('unit 17: 替代文本');
+  ok(parsed.action === 'stage' && parsed.mode === 'range' && parsed.positions[0] === 'unit 17', 'parsePlasticizeCommand：选择器: 文本');
   ok(parsed.newText === '替代文本', '替代文本原样读取');
-  ok(parsePlasticizeCommand('(1,2) 第一行\n第二行').newText === '第一行\n第二行', '替代文本可以含换行');
-  ok(parsePlasticizeCommand('hide [3,4]').kind === 'project' && parsePlasticizeCommand('hide [3,4]').newText === '', 'hide <区间>');
-  ok(parsePlasticizeCommand('lock [3,4]').kind === 'lock', 'lock <区间>');
-  ok(parsePlasticizeCommand('unlock [3,4]').kind === 'unlock', 'unlock <区间>');
-  ok(parsePlasticizeCommand('lock all').mode === 'all' && parsePlasticizeCommand('unlock all').mode === 'all', 'lock/unlock all');
-  ok(parsePlasticizeCommand('lock all\n').mode === 'all' && parsePlasticizeCommand('unlock all  ').mode === 'all', 'lock/unlock all 容忍尾随空白');
-  ok(parsePlasticizeCommand('lock all\n').mode === 'all' && parsePlasticizeCommand('unlock all  ').mode === 'all', 'lock/unlock all 容忍尾随空白');
+  ok(parsePlasticizeCommand('unit 17 to 28: 摘要').positions[0] === 'unit 17 to 28', '闭区间选择器');
+  ok(parsePlasticizeCommand('unit 17: to be continued').newText === 'to be continued', '冒号后以 to 开头的替代文本不被当成区间');
+  ok(parsePlasticizeCommand('unit 17: 第一行\n第二行').newText === '第一行\n第二行', '替代文本可以含换行');
+  ok(parsePlasticizeCommand('hide unit 17').kind === 'project' && parsePlasticizeCommand('hide unit 17').newText === '', 'hide <选择器>');
+  ok(parsePlasticizeCommand('lock unit 3 to 7').kind === 'lock', 'lock <选择器>');
+  ok(parsePlasticizeCommand('unlock unit 17').kind === 'unlock', 'unlock <选择器>');
+  ok(parsePlasticizeCommand('unlock all').mode === 'all', 'unlock all');
+  let lockAll;
+  try { parsePlasticizeCommand('lock all'); } catch (error) { lockAll = String(error.message); }
+  ok(typeof lockAll === 'string', 'lock all 已取消', lockAll?.slice(0, 40));
   ok(parsePlasticizeCommand('prelock').mode === 'prelock', 'prelock');
   ok(parsePlasticizeCommand('clear').action === 'clear', 'clear');
   let bad;
-  try { parsePlasticizeCommand('(1,2)'); } catch (error) { bad = String(error.message); }
-  ok(typeof bad === 'string' && bad.includes('/plasticize'), '缺少替代文本给出用法提示', bad?.slice(0, 60));
+  try { parsePlasticizeCommand('unit 17 替代文本'); } catch (error) { bad = String(error.message); }
+  ok(typeof bad === 'string' && bad.includes('冒号'), '缺冒号时提示加冒号', bad?.slice(0, 40));
   let hideBad;
   try { parsePlasticizeCommand('hide'); } catch (error) { hideBad = String(error.message); }
   ok(typeof hideBad === 'string' && hideBad.includes('hide'), 'hide 缺区间报错', hideBad?.slice(0, 60));

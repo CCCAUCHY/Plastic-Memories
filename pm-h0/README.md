@@ -1,13 +1,13 @@
 # dsh-plugin-plastic-memories-h0
 
-> **v0.50.35 通用版（PTC-only）**
+> **v0.50.36 通用版（PTC-only）**
 >
 > Plastic Memories 把 DSH 的 surfaceOp 从“压缩插件专用”变成模型可主动使用的可塑投影。
 > 底层 trajectory 不删除；插件只改当前模型上下文里的 surface。
 
 ## 版本边界
 
-- v0.50.35 起是**通用工具**，不要求 PM preset；
+- v0.50.36 起是**通用工具**，不要求 PM preset；
 - 只支持 **PTC**：`retrospect(self)` 的单元定位依赖 `run_code` 代码过滤；
 - 生产 cookie 注入已移除；
 - 旧 PM preset / cookie 语义在 git 分支 `old`（fe676aa）中保留。
@@ -90,14 +90,15 @@ plasticize({
 
 ## 安全区
 
-- 单位是单元序号；
+- 单位是单元序号；命令里选择器与替代文本用冒号分隔（`unit 17: 文本`），否则替代文本以 `to` 开头会被当成区间；
 - 最多 64 单元；
 - 用户命令：
 
 ```text
-/plasticize lock 3
+/plasticize unit 17: 新的替代文本
+/plasticize unit 17 to 28: 折叠成一段摘要
 /plasticize lock unit 3 to 7
-/plasticize unlock 3
+/plasticize unlock all
 ```
 
 - `lock all` 已取消；`unlock all` 可解除当前世代全部安全锁；
@@ -127,7 +128,7 @@ End of verbatim content from the summarized messages.
 标准 bundle 安装：
 
 ```bash
-dsh plugin --profile web2 add file:/绝对路径/可塑性记忆/dist/dsh-plugin-plastic-memories-h0-0.50.35.tgz
+dsh plugin --profile web2 add file:/绝对路径/可塑性记忆/dist/dsh-plugin-plastic-memories-h0-0.50.36.tgz
 ```
 
 开发 stage：

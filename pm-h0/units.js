@@ -147,7 +147,7 @@ export function unitAt(units, n) {
  * 解析单元选择器。
  *
  * 只用自然语言写法，避免模型把 "[17,28]" 这种区间误读成两个单元：
- *   - `17` / `"unit 17"`        单个单元
+ *   - `17` / `"unit 17"`        单个单元（可写 `"unit 17:"`）
  *   - `"unit 17 to 28"`          闭区间（含两端）
  *   - `"this"`                   由上层解析
  * @param {unknown} raw - 选择器。
@@ -156,7 +156,8 @@ export function unitAt(units, n) {
 export function parseUnitRange(raw) {
   if (typeof raw === 'number' && Number.isSafeInteger(raw) && raw >= 0) return [raw];
   if (typeof raw === 'string') {
-    const text = raw.trim();
+    // 选择器可以用冒号结尾（`unit 17:`），方便和后面的替代文本分隔。
+    const text = raw.trim().replace(/:$/, '').trim();
     const one = /^(?:unit\s*)?(\d+)$/iu.exec(text);
     if (one !== null) return [Number(one[1])];
     const span = /^unit\s*(\d+)\s*(?:to|through|til|-|–)\s*(?:unit\s*)?(\d+)$/iu.exec(text);

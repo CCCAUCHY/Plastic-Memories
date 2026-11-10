@@ -17,7 +17,8 @@
 
 import { clearStagedOperations, pendingUserOperations, stageUserOperation } from './engine.js';
 
-const HINT = '<unit 17 或 unit 17 to 28> <替代文本> | hide/lock/unlock <同样写法> | unlock all | prelock | clear';
+const SELECTOR = '(?:unit\\s*\\d+(?:\\s*(?:to|through|til|-|–)\\s*(?:unit\\s*)?\\d+)?|\\d+)';
+const HINT = '<unit 17: 替代文本> 或 <unit 17 to 28: 替代文本> | hide/lock/unlock <选择器> | unlock all | prelock | clear';
 
 /**
  * 解析 /plasticize 输入。
@@ -26,7 +27,7 @@ const HINT = '<unit 17 或 unit 17 to 28> <替代文本> | hide/lock/unlock <同
  */
 export function parsePlasticizeCommand(rawInput, locale = 'zh') {
   const en = locale === 'en';
-  const hint = en ? '<unit 17 or unit 17 to 28> <replacement> | hide/lock/unlock <same form> | unlock all | prelock | clear' : HINT;
+  const hint = en ? '<unit 17: replacement> or <unit 17 to 28: replacement> | hide/lock/unlock <selector> | unlock all | prelock | clear' : HINT;
   const text = String(rawInput ?? '').replace(/^\s+/, '');
   const command = text.replace(/[ \t\r\n]+$/, '');
   if (command.length === 0) throw new Error((en ? 'Usage: /plasticize ' : '用法：/plasticize ') + hint);
@@ -40,15 +41,17 @@ export function parsePlasticizeCommand(rawInput, locale = 'zh') {
       if (kind !== 'unlock') throw new Error(en ? 'lock all is not supported; name units explicitly.' : 'lock all 已取消；请逐个指定单元。');
       return { action: 'stage', kind: 'unlock', mode: 'all', newText: '' };
     }
-    return { action: 'stage', kind: kind === 'hide' ? 'project' : kind, mode: 'range', positions: [rest], newText: '' };
+    return { action: 'stage', kind: kind === 'hide' ? 'project' : kind, mode: 'range', positions: [rest.replace(/:$/, '')], newText: '' };
   }
 
-  // 投影：<selector> <new_text>；selector 可以是 'unit 17' / 'unit 17 to 28'（含空格）。
-  const projected = /^(unit\s*\d+(?:\s*(?:to|through|til|-|–)\s*(?:unit\s*)?\d+)?|\d+)\s+([\s\S]*)$/iu.exec(text);
-  if (projected !== null) return { action: 'stage', kind: 'project', mode: 'range', positions: [projected[1]], newText: projected[2] };
-  // 只给选择器、不给替换文本：等价于纯隐藏。
-  if (/^(?:unit\s*\d+(?:\s*(?:to|through|til|-|–)\s*(?:unit\s*)?\d+)?|\d+)$/iu.test(text.trim())) {
-    return { action: 'stage', kind: 'project', mode: 'range', positions: [text.trim()], newText: '' };
+  // 投影：<selector>: <new_text>。冒号是必须的终结符，否则 `unit 17 to ...` 会被读成区间。
+  const withText = new RegExp('^(' + SELECTOR + ')\\s*:\\s*([\\s\\S]*)$', 'iu').exec(text);
+  if (withText !== null) return { action: 'stage', kind: 'project', mode: 'range', positions: [withText[1]], newText: withText[2] };
+  // 只给选择器、不给替换文本：等价于纯隐藏（冒号可省略）。
+  const only = new RegExp('^(' + SELECTOR + ')\\s*:?$', 'iu').exec(text.trim());
+  if (only !== null) return { action: 'stage', kind: 'project', mode: 'range', positions: [only[1]], newText: '' };
+  if (new RegExp('^' + SELECTOR + '\\s', 'iu').test(text)) {
+    throw new Error((en ? 'Write the selector, then a colon, then the replacement: /plasticize unit 17: text' : '选择器后面要用冒号接替代文本：/plasticize unit 17: 要写入的文本'));
   }
   throw new Error((en ? 'Usage: /plasticize ' : '用法：/plasticize ') + hint);
 }
@@ -73,12 +76,12 @@ export function registerCommands(ctx, logger) {
   ctx.inject(['commands'], (commandCtx) => {
     const locale = currentLocale();
     const en = locale === 'en';
-    const hint = en ? '<unit 17 or unit 17 to 28> <replacement> | hide/lock/unlock <same form> | unlock all | prelock | clear' : HINT;
+    const hint = en ? '<unit 17: replacement> or <unit 17 to 28: replacement> | hide/lock/unlock <selector> | unlock all | prelock | clear' : HINT;
     const fail = (error) => ({ kind: 'error', text: String(error?.message ?? error) });
     const busyError = () => new Error(en ? 'Cannot run /plasticize while the model is running; wait for this inference to finish.' : '正在推理中，暂不能执行 /plasticize；请等本次推理结束后再试。');
     commandCtx.commands.register({
       name: 'plasticize',
-      description: en ? '/plasticize <unit or [start,end]> <replacement> | hide/lock/unlock <unit or [start,end]> | unlock all | prelock | clear' : '/plasticize <单元序号或[起,止]> <替代文本> | hide/lock/unlock <单元序号或[起,止]> | unlock all | prelock | clear',
+      description: en ? '/plasticize <selector>: <replacement> | hide/lock/unlock <selector> | unlock all | prelock | clear' : '/plasticize <选择器>: <替代文本> | hide/lock/unlock <选择器> | unlock all | prelock | clear',
       input: { hint },
       recordInput: false,
       handler: ({ agent, rawInput }) => {
