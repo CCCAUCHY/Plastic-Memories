@@ -52,6 +52,17 @@
 - 命中安全区报错；
 - 成功 execute 后，早于它、含失败 PM 调用 / set 预览 / 成功 letter / 成功 retrospect 的整个单元会被自动隐藏；execute 回执本身保留。
 
+### 世代计数
+
+- **物理世代**：每次 surface replacement 加一，包括自动隐藏写出的空替代；
+- **逻辑世代**：每次成功的 execute 加一（自动隐藏不另计）；
+- 因此「一次 set+execute」通常产生 2 个物理页、1 个逻辑世代。
+
+### 待决 set 的识别
+
+`execute` 省略 ops 时，会兑现**最近一条尚未执行且 ops 非空**的 set。
+ops 为空（或被判失败）的 set 不算待决——它永远无法落地，不能挡住后面的 execute。
+
 ### 返回（`{ text }`）
 
 - `Preview only (not committed). The next generation would contain N messages[ (showing units a, b of T)]:` + 逐行预览；

@@ -98,6 +98,8 @@ export function findLastPendingSet(session) {
         if (args?.option !== 'set') continue;
         const callId = block.id ?? block.callId;
         if (typeof callId !== 'string' || applied.has(callId) || failed.has(callId)) continue;
+        // 空的 / 非数组的 ops 不是可兑现的 set：它永远无法落地，不能挡住后面的 execute。
+        if (!Array.isArray(args.ops) || args.ops.length === 0) continue;
         found = { callId, ops: args.ops };
       }
       continue;
@@ -109,6 +111,7 @@ export function findLastPendingSet(session) {
       if (args?.option !== 'set') continue;
       const callId = event.data?.subCallId;
       if (typeof callId !== 'string' || applied.has(callId) || failed.has(callId)) continue;
+      if (!Array.isArray(args.ops) || args.ops.length === 0) continue;
       found = { callId, ops: args.ops };
     }
   }
