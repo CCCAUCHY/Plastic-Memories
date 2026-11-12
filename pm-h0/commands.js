@@ -16,10 +16,8 @@
  */
 
 import { clearStagedOperations, pendingUserOperations, stageUserOperation } from './engine.js';
-import { UNIT_SELECTOR_SOURCE } from './units.js';
+import { parseOpText } from './opshape.js';
 
-/** 选择器语法只有一处定义（units.js），这里只负责把它拼进命令正则。 */
-const SELECTOR = '(?:' + UNIT_SELECTOR_SOURCE + ')';
 const HINT = '<unit 17: 替代文本> 或 <unit 17 to 28: 替代文本> | hide/lock/unlock <选择器> | unlock all | prelock | clear';
 
 /**
@@ -43,19 +41,20 @@ export function parsePlasticizeCommand(rawInput, locale = 'zh') {
       if (kind !== 'unlock') throw new Error(en ? 'lock all is not supported; name units explicitly.' : 'lock all 已取消；请逐个指定单元。');
       return { action: 'stage', kind: 'unlock', mode: 'all', newText: '' };
     }
-    return { action: 'stage', kind: kind === 'hide' ? 'project' : kind, mode: 'range', positions: [rest.replace(/:$/, '')], newText: '' };
+    return { action: 'stage', kind: kind === 'hide' ? 'project' : kind, mode: 'range', positions: [rest], newText: '' };
   }
 
-  // 投影：<selector>: <new_text>。冒号是必须的终结符，否则 `unit 17 to ...` 会被读成区间。
-  const withText = new RegExp('^(' + SELECTOR + ')\\s*:\\s*([\\s\\S]*)$', 'iu').exec(text);
-  if (withText !== null) return { action: 'stage', kind: 'project', mode: 'range', positions: [withText[1]], newText: withText[2] };
-  // 只给选择器、不给替换文本：等价于纯隐藏（冒号可省略）。
-  const only = new RegExp('^(' + SELECTOR + ')\\s*:?$', 'iu').exec(text.trim());
-  if (only !== null) return { action: 'stage', kind: 'project', mode: 'range', positions: [only[1]], newText: '' };
-  if (new RegExp('^' + SELECTOR + '\\s', 'iu').test(text)) {
-    throw new Error((en ? 'Write the selector, then a colon, then the replacement: /plasticize unit 17: text' : '选择器后面要用冒号接替代文本：/plasticize unit 17: 要写入的文本'));
+  // 投影与工具共用同一套 op 语法：<selector>: <new_text>；没有冒号就是纯隐藏。
+  let op;
+  try {
+    op = parseOpText(text);
+  } catch (error) {
+    if (String(error.message).includes('unit') || String(error.message).includes('选择器')) {
+      throw new Error((en ? 'Write the selector, then a colon, then the replacement: /plasticize unit 17: text' : '选择器后面要用冒号接替代文本：/plasticize unit 17: 要写入的文本'));
+    }
+    throw new Error((en ? 'Usage: /plasticize ' : '用法：/plasticize ') + hint);
   }
-  throw new Error((en ? 'Usage: /plasticize ' : '用法：/plasticize ') + hint);
+  return { action: 'stage', kind: 'project', mode: 'range', positions: op.positions, newText: op.new_text };
 }
 
 /**

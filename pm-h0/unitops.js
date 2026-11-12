@@ -9,6 +9,7 @@
  */
 
 import { currentUnits, isThisSelector, parseUnitRange } from './units.js';
+import { normalizeOp } from './opshape.js';
 
 /** 找出 this 指向的单元：承载本次声明的那条 assistant 单元。 */
 function unitForHere(units, here) {
@@ -42,12 +43,11 @@ export function resolveUnitOps(session, rawOps, here) {
   const thisUnit = unitForHere(units, here);
   const out = [];
   for (let index = 0; index < rawOps.length; index += 1) {
-    const raw = rawOps[index];
-    if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('op #' + index + ' must be an object');
+    // 与命令路径共用同一个 op 校验器（opshape.js），不在这里重复一套规则。
+    const raw = normalizeOp(rawOps[index], index);
     const positions = raw.positions;
-    if (!Array.isArray(positions) || positions.length === 0) throw new Error('op #' + index + ' positions must be a non-empty array');
-    const newText = raw.new_text === undefined ? '' : raw.new_text;
-    if (typeof newText !== 'string') throw new Error('op #' + index + ' new_text must be a string');
+    if (!Array.isArray(positions) || positions.length === 0) throw new Error('op #' + index + ' 需要 positions；spans 是旧语法');
+    const newText = raw.new_text;
     const picked = [];
     for (const selector of positions) {
       if (isThisSelector(selector)) {
