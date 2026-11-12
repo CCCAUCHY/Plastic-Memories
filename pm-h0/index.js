@@ -20,7 +20,7 @@ import { GENERATIONS_KEY, generationProjection } from './generations.js';
 import { stepGroup, surfaceNodes } from './coords.js';
 import { previewOf, findLastPendingSet, normalizeOp } from './plasticize.js';
 import { resolveUnitOps } from './unitops.js';
-import { normalizeSelectors, isLastSetSelector } from './opshape.js';
+import { normalizeSelectors, isLastSetMacro } from './opshape.js';
 import { isThisSelector } from './units.js';
 import { retrospect } from './retrospect.js';
 import { retrospectMessages } from './messages.js';
@@ -438,29 +438,36 @@ export function apply(ctx, config) {
         properties: {
           ops: {
             type: 'array',
-            description: 'Optional, default []. One entry per operation. Each entry names one or more units and ONE replacement message. An execute with [] only commits the previous pending set.',
+            description: 'Required, non-empty. Each entry is either one operation (units + ONE replacement message) or the macro { "the last plasticize(set)": true }, which splices the pending set ops in place. The macro may appear once and is not valid for option:"set".',
             items: {
-              type: 'object',
-              additionalProperties: false,
-              properties: {
-                // 注意：宿主的 JSON Schema 子集是**封闭白名单**（dsh-tools/json-schema）：
-                // 只认 type / properties / required / additionalProperties / items / enum / const / oneOf。
-                // minItems / maxItems 会直接被 assertSupportedJsonSchema 拒绝 —— 不要加。
-                // 数量约束（2..16）在 resolveEndpoint 里做。
-                positions: {
-                  type: 'array',
-                  items: { oneOf: [{ type: 'integer' }, { type: 'string' }] },
-                  description: "Current-generation unit numbers (0 = system prompt). Write one selector per selected unit: 'unit 3', 'unit 7', or the range 'unit 3 to 7'. 'this' selects the unit carrying this call. Example: positions:['unit 3','unit 7'] selects two units; positions:['unit 3 to 7'] selects 3 through 7. Every selected unit is hidden except the last, which is replaced by new_text. Tool results belong to the assistant unit.",
+              oneOf: [
+                { type: 'string', const: 'the last plasticize(set)' },
+                {
+                  type: 'object',
+                  additionalProperties: false,
+                  properties: { 'the last plasticize(set)': { type: 'boolean', const: true } },
+                  required: ['the last plasticize(set)'],
                 },
-                new_text: { type: 'string', description: 'Default: "" (pure hole/hide). Placed at the LAST selected unit: the replacement message. Earlier units are hidden automatically.' },
-                lock_this: { type: 'boolean', description: 'Default false. If true, lock the replacement message itself into the safety zone (it can never be reshaped afterwards).' },
-                types: {
-                  type: 'array',
-                  items: { type: 'string', enum: ['user', 'developer', 'assistant', 'error', 'letter'] },
-                  description: 'Default: [] (no filter). Type filter inside each resolved span: user/developer match one message; assistant/error/letter match the whole unit (assistant message + its tool results). Cookie messages never match, even as user/developer. Matched units are hidden; the last matched unit is replaced by new_text. If omitted or empty, every message in the interval matches, cookies included.',
+                {
+                  type: 'object',
+                  additionalProperties: false,
+                  properties: {
+                    positions: {
+                      type: 'array',
+                      items: { oneOf: [{ type: 'integer' }, { type: 'string' }] },
+                      description: "Current-generation unit numbers (0 = system prompt). Write one selector per selected unit: 'unit 3', 'unit 7', or the range 'unit 3 to 7'. 'this' selects the unit carrying this call. Every selected unit is hidden except the last, which is replaced by new_text. Tool results belong to the assistant unit.",
+                    },
+                    new_text: { type: 'string', description: 'Default: "" (pure hole/hide). Placed at the LAST selected unit: the replacement message. Earlier units are hidden automatically.' },
+                    lock_this: { type: 'boolean', description: 'Default false. If true, lock the replacement message itself into the safety zone.' },
+                    types: {
+                      type: 'array',
+                      items: { type: 'string', enum: ['user', 'developer', 'assistant', 'error', 'letter'] },
+                      description: 'Default: [] (no filter). user/developer match one message; assistant/error/letter match the whole unit. Matched units are hidden; the last matched unit is replaced by new_text.',
+                    },
+                  },
+                  required: ['positions'],
                 },
-              },
-              required: ['positions'],
+              ],
             },
           },
           option: {
@@ -491,7 +498,7 @@ export function apply(ctx, config) {
 
         const parts = [];
         const ops = normalizeOps(args?.ops);
-        const wantsReplay = ops.some((op) => Array.isArray(op?.positions) && op.positions.some((one) => isLastSetSelector(one)));
+        const wantsReplay = ops.some((one) => isLastSetMacro(one));
         if (option === 'set' && wantsReplay) {
           throw new Error('option:"set" cannot replay the last set: a set must carry its own ops so it has something to preview');
         }

@@ -84,7 +84,7 @@ console.log(NL + '⑥ option 与重放元素的组合约束');
   const exec = { agent: { session: s }, callId, name: 'plasticize', arguments: args, signal: new AbortController().signal };
   const d = defs.get('plasticize');
   let msg = null;
-  try { d.execute({ ops: [{ positions: ['the last plasticize(set)'] }], option: 'set' }, exec); } catch (e) { msg = e.message; }
+  try { d.execute({ ops: [{ 'the last plasticize(set)': true }], option: 'set' }, exec); } catch (e) { msg = e.message; }
   ok(typeof msg === 'string' && msg.includes('cannot replay'), 'set 不能重放上一条 set', String(msg).slice(0, 70));
   let msgMissing = null;
   try { d.execute({ option: 'set' }, exec); } catch (e) { msgMissing = e.message; }

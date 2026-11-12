@@ -36,7 +36,7 @@
 
 | 字段 | 类型 | 默认 | 语义 |
 |---|---|---|---|
-| `positions` | selector array | — | 必需，且不能为空数组；可含 `"the last plasticize(set)"` |
+| `positions` | selector array | — | 必需，且不能为空数组 |
 | `new_text` | string | `""` | 落在**最后一个**选中单元；空串 = 纯隐藏 |
 | `lock_this` | boolean | `false` | 把替代消息本身锁进安全区 |
 | `types` | enum array | `[]` | user/developer 匹配单条；assistant/error/letter 匹配整个单元；cookie 永不匹配 |
@@ -57,18 +57,24 @@
 - **逻辑世代**：每次成功的 execute 加一（自动隐藏不另计）；
 - 因此「一次 set+execute」通常产生 2 个物理页、1 个逻辑世代。
 
-### 重放待决 set
+### 重放待决 set（ops 宏）
+
+`ops` 的每个元素要么是一条 op，要么是这个宏：
 
 ```json
-{ "option": "execute", "ops": [{ "positions": ["the last plasticize(set)"] }] }
+{ "option": "execute", "ops": [
+  { "the last plasticize(set)": true },
+  { "positions": ["unit 5"], "new_text": "X" }
+] }
 ```
 
-- 这个元素**必须单独成段**，且该段不能再带 `new_text` / `lock_this` / `types`（会与 set 的声明冲突）；
-- 它按原样重放待决 set 的 ops（含 new_text），并把它标记为已了结；
-- 没有待决 set 时报 `there is no pending plasticize(set) to replay`；
-- `option:"set"` 不能用它（set 必须自己带 ops 才有预览）。
+- 宏在**所在位置原地展开**成待决 set 的 ops 数组（顺序保持），等价于把那份 ops 抄过来；
+- 宏**只能出现一次**；
+- 宏不能带其它字段（`new_text` 等）；
+- `option:"set"` 不能用宏（set 必须自己带 ops 才有预览）；
+- 没有待决 set 时报 `there is no pending plasticize(set) to replay`。
 
-不写这个元素时，`execute` **不会**消费待决 set。
+不写宏时，`execute` **不会**消费待决 set。
 
 ### set 的合法性
 

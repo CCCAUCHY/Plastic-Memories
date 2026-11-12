@@ -8,11 +8,11 @@
  */
 
 import { pmSettledCallIds } from './markers.js';
-import { isLastSetSelector } from './opshape.js';
+import { isLastSetMacro } from './opshape.js';
 
 /** set 的 ops 里出现重放元素 = 非法 set，永远不可能是待决。 */
 function referencesLastSet(ops) {
-  return Array.isArray(ops) && ops.some((op) => Array.isArray(op?.positions) && op.positions.some((one) => isLastSetSelector(one)));
+  return Array.isArray(ops) && ops.some((one) => isLastSetMacro(one));
 }
 
 /**

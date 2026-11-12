@@ -9,7 +9,7 @@
  */
 
 import { currentUnits, isThisSelector, parseUnitRange } from './units.js';
-import { normalizeOp, isLastSetSelector } from './opshape.js';
+import { normalizeOp, isLastSetMacro } from './opshape.js';
 import { findLastPendingSet } from './pending.js';
 
 /** 找出 this 指向的单元：承载本次声明的那条 assistant 单元。 */
@@ -32,6 +32,25 @@ function unitRanges(numbers) {
 }
 
 /**
+ * 把 ops 里的宏元素替换成待决 set 的 ops（原地展开，顺序保持）。
+ * @param {object} session
+ * @param {Array<object>} ops
+ * @param {{replayed?: boolean}} options
+ * @returns {Array<object>} 展开后的 ops。
+ */
+function expandLastSetMacro(session, ops, options) {
+  const marks = [];
+  for (let index = 0; index < ops.length; index += 1) if (isLastSetMacro(ops[index])) marks.push(index);
+  if (marks.length === 0) return ops;
+  if (marks.length > 1) throw new Error('"the last plasticize(set)" may appear only once in ops');
+  if (options.replayed === true) throw new Error('the pending set itself references "the last plasticize(set)"; fix that set instead');
+  const pending = findLastPendingSet(session);
+  if (pending === undefined) throw new Error('there is no pending plasticize(set) to replay; pass the ops explicitly');
+  const index = marks[0];
+  return [...ops.slice(0, index), ...pending.ops, ...ops.slice(index + 1)];
+}
+
+/**
  * 解析 positions 形式的 ops。
  * @param {object} session - 目标会话。
  * @param {Array<object>} rawOps - 原始 ops。
@@ -40,26 +59,15 @@ function unitRanges(numbers) {
  */
 export function resolveUnitOps(session, rawOps, here, options = {}) {
   if (!Array.isArray(rawOps) || rawOps.length === 0) throw new Error('ops must be a non-empty array');
-  // `positions: ["the last plasticize(set)"]`：重放上一条待决 set 的 ops。
-  // 它必须单独成段，且不能自带 new_text / lock_this / types —— 那会与 set 的声明冲突。
-  if (!options.replayed && rawOps.length === 1 && rawOps[0] !== null && typeof rawOps[0] === 'object' && !Array.isArray(rawOps[0])) {
-    const only = rawOps[0];
-    if (Array.isArray(only.positions) && only.positions.some((one) => isLastSetSelector(one))) {
-      if (only.positions.length !== 1) throw new Error('op #0: "the last plasticize(set)" must be the only position in its op');
-      for (const field of ['new_text', 'lock_this', 'types']) {
-        if (Object.hasOwn(only, field)) throw new Error('op #0: "the last plasticize(set)" replays that set verbatim; do not add ' + field);
-      }
-      const pending = findLastPendingSet(session);
-      if (pending === undefined) throw new Error('there is no pending plasticize(set) to replay; pass the ops explicitly');
-      return resolveUnitOps(session, pending.ops, here, { replayed: true });
-    }
-  }
+  // `{ "the last plasticize(set)" }` 是 ops 里的一个宏元素：把它替换成待决 set 的 ops 数组。
+  // 它只能出现一次，且不能出现在 set 自己身上（由工具层拒绝）。
+  const expanded = expandLastSetMacro(session, rawOps, options);
   const units = currentUnits(session);
   const thisUnit = unitForHere(units, here);
   const out = [];
-  for (let index = 0; index < rawOps.length; index += 1) {
+  for (let index = 0; index < expanded.length; index += 1) {
     // 与命令路径共用同一个 op 校验器（opshape.js），不在这里重复一套规则。
-    const raw = normalizeOp(rawOps[index], index);
+    const raw = normalizeOp(expanded[index], index);
     const positions = raw.positions;
     if (!Array.isArray(positions) || positions.length === 0) throw new Error('op #' + index + ' 需要 positions');
     const newText = raw.new_text;

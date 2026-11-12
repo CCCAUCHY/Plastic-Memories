@@ -108,10 +108,14 @@ export function normalizeSelectors(value, label = 'positions') {
   return [...value];
 }
 
-/** 是否是「重放上一条 set」的特殊元素。 */
-export function isLastSetSelector(value) {
-  return typeof value === 'string' && value.trim().toLowerCase() === LAST_SET_SELECTOR;
+/** 是否是「重放上一条 set」的宏（ops 里的一个元素，不是 op 的字段）。 */
+export function isLastSetMacro(value) {
+  if (typeof value === 'string') return value.trim().toLowerCase() === LAST_SET_SELECTOR;
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
+  const keys = Object.keys(value);
+  return keys.length === 1 && keys[0].trim().toLowerCase() === LAST_SET_SELECTOR;
 }
+
 
 /** 纯语法解析，不判断 this 的可用性。 */
 function parseOpSource(text) {

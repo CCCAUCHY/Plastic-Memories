@@ -101,8 +101,8 @@ ok(!String(fullPreview.text).includes('\u0000'), '预览文本不含控制字符
   try {
     say('eo-set', { option: 'set', ops: [{ positions: ['unit 2'], new_text: '⟨预览⟩' }] });
     setText = (await plasticize.execute({ option: 'set', ops: [{ positions: ['unit 2'], new_text: '⟨预览⟩' }] }, { agent: { session: emptyOps }, callId: 'eo-set' })).text;
-    say('eo-exec', { option: 'execute', ops: [{ positions: ['the last plasticize(set)'] }] });
-    emptyExec = (await plasticize.execute({ option: 'execute', ops: [{ positions: ['the last plasticize(set)'] }] }, { agent: { session: emptyOps }, callId: 'eo-exec' })).text;
+    say('eo-exec', { option: 'execute', ops: [{ 'the last plasticize(set)': true }] });
+    emptyExec = (await plasticize.execute({ option: 'execute', ops: [{ 'the last plasticize(set)': true }] }, { agent: { session: emptyOps }, callId: 'eo-exec' })).text;
   } catch (error) {
     emptyExec = 'ERR ' + String(error.message);
   }

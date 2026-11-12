@@ -262,7 +262,7 @@ console.log(NL + '⑦ PTC + 显式重放：零点属于 set，且只写一条投
 
   as.append('step/end', { turn: 2, step: 1 });
   as.append('step/start', { turn: 2, step: 2 });
-  ptcDeclare(as, { turn: 2, step: 2 }, 'ptc-root-exec3', { ops: [{ positions: ['the last plasticize(set)'] }], option: 'execute' });
+  ptcDeclare(as, { turn: 2, step: 2 }, 'ptc-root-exec3', { ops: [{ 'the last plasticize(set)': true }], option: 'execute' });
   const execCallSeq = as.snapshotEvents()
     .find((e) => e.type === 'assistant/message' && e.data.message.content.some((b) => b.id === 'ptc-root-exec3')).seq;
   const r = flush(as, { openStep: { turn: 2, step: 2 } }, quiet2);

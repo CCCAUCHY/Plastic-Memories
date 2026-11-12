@@ -31,7 +31,7 @@ import { initState, applyEvent } from './generations.js';
 import { findOverlap } from './overlap.js';
 import { pmSettledCallIds, pmSource } from './markers.js';
 import { resolveUnitOps } from './unitops.js';
-import { isLastSetSelector } from './opshape.js';
+import { isLastSetMacro } from './opshape.js';
 import { currentUnits } from './units.js';
 import { logicalBoundaries } from './boundaries.js';
 import {
@@ -858,8 +858,7 @@ export function flush(session, options, logger) {
     if (isDone(state, d)) continue;
     let anchor;
     // 只有显式要求重放（ops 里出现 “the last plasticize(set)”）才会消费待决 set。
-    const replay = Array.isArray(d.args?.ops)
-      && d.args.ops.some((op) => Array.isArray(op?.positions) && op.positions.some((one) => isLastSetSelector(one)));
+    const replay = Array.isArray(d.args?.ops) && d.args.ops.some((one) => isLastSetMacro(one));
     if (replay) {
       const pending = findLastPendingSet(state.declarations, d, state.failedCallIds);
       if (pending !== undefined && !isDone(state, pending)) {
