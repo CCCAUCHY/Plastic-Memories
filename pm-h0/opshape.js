@@ -82,19 +82,23 @@ const BARE_OP = new RegExp('^(' + UNIT_SELECTOR_SOURCE + ')\\s*:?$', 'iu');
 /**
  * 把命令里的一段文本解析成与工具相同的 op 形状。
  *
- *   - `unit 17: 文本`      替换
- *   - `unit 17 to 28: 文本` 区间替换
- *   - `unit 17`            纯隐藏（new_text 为空）
+ * **语义等于 `normalizeOp({ positions: [冒号前那段], new_text: 冒号后那段 })`**：
+ * 命令只是把「单元素 positions 的 op」写成一行文本，冒号是选择器与替代文本的分界。
+ *
+ *   - `unit 17: 文本`       → positions: ["unit 17"]，new_text: "文本"
+ *   - `unit 17 to 28: 文本`  → positions: ["unit 17 to 28"]（一个元素，一个区间）
+ *   - `this: 文本`           → positions: ["this"]
+ *   - `unit 17`             → positions: ["unit 17"]，new_text: ""（纯隐藏）
  * @param {string} text - 命令剩余部分。
- * @returns {{positions: string[], new_text: string}} op。
+ * @returns {{positions: string[], new_text: string, lock_this: boolean, types: string[]}} op。
  */
 export function parseOpText(text) {
-  const source = String(text ?? '');
+  const source = String(text ?? '').trim();
   const withText = COLON_OP.exec(source);
   if (withText !== null) return normalizeOp({ positions: [withText[1]], new_text: withText[2] }, 0);
-  const bare = BARE_OP.exec(source.trim());
+  const bare = BARE_OP.exec(source);
   if (bare !== null) return normalizeOp({ positions: [bare[1]], new_text: '' }, 0);
   const trailing = new RegExp('^' + UNIT_SELECTOR_SOURCE + '\\s', 'iu').test(source);
   if (trailing) throw new Error('选择器后面要用冒号接替代文本：unit 17: 要写入的文本');
-  throw new Error('选择器要写成 unit 17 或 unit 17 to 28');
+  throw new Error('选择器要写成 unit 17、unit 17 to 28 或 this');
 }

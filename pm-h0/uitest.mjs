@@ -14,7 +14,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { initState, applyEvent, viewOf, describeEvent, GENERATIONS_KEY } from './generations.js';
 import { parsePlasticizeCommand } from './commands.js';
-import { parseOpText } from './opshape.js';
+import { normalizeOp, parseOpText } from './opshape.js';
 import { Context } from '/var/data/.npm/_npx/1e7f6d9597241db0/node_modules/@deepseek-ai/cordis/lib/index.js';
 import SessionStore from '/var/data/.npm/_npx/1e7f6d9597241db0/node_modules/@deepseek-ai/dsh-session/lib/index.js';
 import SessionProjectionRegistry from '/var/data/.npm/_npx/1e7f6d9597241db0/node_modules/@deepseek-ai/dsh-session-projection/lib/index.js';
@@ -158,6 +158,13 @@ console.log(NL + '④ 客户端 bundle 与命令解析');
   let sharedBad;
   try { parseOpText('hide [1,2]'); } catch (error) { sharedBad = String(error.message); }
   ok(typeof sharedBad === 'string' && sharedBad.includes('unit'), '非法选择器的报错也来自同一处', sharedBad?.slice(0, 40));
+
+  // 不变式：命令文本 = 单元素 positions 的 op。
+  for (const sample of ['unit 17: 文本', 'unit 17 to 28: 文本', 'this: 文本', 'unit 17']) {
+    const asText = parseOpText(sample);
+    const asJson = normalizeOp({ positions: [asText.positions[0]], new_text: asText.new_text }, 0);
+    ok(JSON.stringify(asText) === JSON.stringify(asJson), '文本形式等价于单元素 positions：' + sample, JSON.stringify({ asText, asJson }));
+  }
   let hideBad;
   try { parsePlasticizeCommand('hide'); } catch (error) { hideBad = String(error.message); }
   ok(typeof hideBad === 'string' && hideBad.includes('hide'), 'hide 缺区间报错', hideBad?.slice(0, 60));

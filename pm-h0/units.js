@@ -154,7 +154,7 @@ const UNIT_RANGE_SEP = '(?:to|through|til|-|–)';
  *
  * 允许尾随冒号（`unit 17:`），用于与后面的替代文本分隔；`this` 由上层解析。
  */
-export const UNIT_SELECTOR_SOURCE = 'unit\\s*\\d+(?:\\s*' + UNIT_RANGE_SEP + '\\s*(?:unit\\s*)?\\d+)?|\\d+';
+export const UNIT_SELECTOR_SOURCE = 'this|unit\\s*\\d+(?:\\s*' + UNIT_RANGE_SEP + '\\s*(?:unit\\s*)?\\d+)?|\\d+';
 
 const SELECTOR_ANY = new RegExp('^(?:' + UNIT_SELECTOR_SOURCE + ')$', 'iu');
 const SELECTOR_ONE = new RegExp('^(?:unit\\s*)?(\\d+)$', 'iu');
@@ -174,6 +174,9 @@ export function parseUnitRange(raw) {
   if (typeof raw === 'number' && Number.isSafeInteger(raw) && raw >= 0) return [raw];
   if (typeof raw === 'string') {
     const text = raw.trim().replace(/:$/, '').trim();
+    if (isThisSelector(text)) {
+      throw new Error('"this" 需要由调用方解析成具体单元号，不能直接求值');
+    }
     if (SELECTOR_ANY.test(text)) {
       const span = SELECTOR_SPAN.exec(text);
       if (span !== null) {
