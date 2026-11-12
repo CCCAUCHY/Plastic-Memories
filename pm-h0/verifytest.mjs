@@ -19,10 +19,10 @@ const quiet = { warn: () => {}, info: () => {} };
 const ctx = new Context(); new SessionStore(ctx);
 const s = ctx.sessions.create('verify-semantics', { seed: cookieSeed('subagent-95230f54.jsonl') });
 openStep(s, 2, 1);
-plasticizeCall(s, { turn: 2, step: 1 }, 'v-set', { ops: [{ positions: ['unit 3'], new_text: '⟨预览⟩' }], option: 'set' });
+plasticizeCall(s, { turn: 2, step: 1 }, 'v-set', { ops: [{ positions: 'unit 3', new_text: '⟨预览⟩' }], option: 'set' });
 s.append('step/end', { turn: 2, step: 1 });
 s.append('step/start', { turn: 2, step: 2 });
-plasticizeCall(s, { turn: 2, step: 2 }, 'v-exec', { ops: [{ positions: ['this'], new_text: '⟨结论⟩' }], option: 'execute' });
+plasticizeCall(s, { turn: 2, step: 2 }, 'v-exec', { ops: [{ positions: 'this', new_text: '⟨结论⟩' }], option: 'execute' });
 const r = flush(s, { openStep: { turn: 2, step: 2 } }, quiet);
 ok(r.applied >= 1, '执行落地', JSON.stringify(r));
 

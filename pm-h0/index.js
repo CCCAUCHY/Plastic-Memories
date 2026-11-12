@@ -20,7 +20,7 @@ import { GENERATIONS_KEY, generationProjection } from './generations.js';
 import { stepGroup, surfaceNodes } from './coords.js';
 import { previewOf, findLastPendingSet, normalizeOp } from './plasticize.js';
 import { resolveUnitOps } from './unitops.js';
-import { normalizeSelectors, isLastSetMacro } from './opshape.js';
+import { normalizeSelector, isLastSetMacro } from './opshape.js';
 import { isThisSelector } from './units.js';
 import { retrospect } from './retrospect.js';
 import { retrospectMessages } from './messages.js';
@@ -453,17 +453,11 @@ export function apply(ctx, config) {
                   additionalProperties: false,
                   properties: {
                     positions: {
-                      type: 'array',
-                      items: { oneOf: [{ type: 'integer' }, { type: 'string' }] },
-                      description: "Current-generation unit numbers (0 = system prompt). Write one selector per selected unit: 'unit 3', 'unit 7', or the range 'unit 3 to 7'. 'this' selects the unit carrying this call. Every selected unit is hidden except the last, which is replaced by new_text. Tool results belong to the assistant unit.",
+                      oneOf: [{ type: 'integer' }, { type: 'string' }],
+                      description: "ONE selector for this op: 'unit 3', the range 'unit 3 to 7', 'this', or a unit number. The whole selection is hidden and replaced by new_text (one op = one replacement). For several disjoint segments, write several ops.",
                     },
-                    new_text: { type: 'string', description: 'Default: "" (pure hole/hide). Placed at the LAST selected unit: the replacement message. Earlier units are hidden automatically.' },
+                    new_text: { type: 'string', description: 'Default: "" (pure hole/hide). The replacement message for this op.' },
                     lock_this: { type: 'boolean', description: 'Default false. If true, lock the replacement message itself into the safety zone.' },
-                    types: {
-                      type: 'array',
-                      items: { type: 'string', enum: ['user', 'developer', 'assistant', 'error', 'letter'] },
-                      description: 'Default: [] (no filter). user/developer match one message; assistant/error/letter match the whole unit. Matched units are hidden; the last matched unit is replaced by new_text.',
-                    },
                   },
                   required: ['positions'],
                 },
@@ -476,9 +470,8 @@ export function apply(ctx, config) {
             description: 'Required. set = preview only, writes nothing. execute = commit at the next boundary.',
           },
           preview_positions: {
-            type: 'array',
-            items: { oneOf: [{ type: 'integer' }, { type: 'string' }] },
-            description: 'Optional preview window for option:"set" (NOT the same thing as ops[].positions). Same unit syntax: ["unit 17"] or ["unit 17 to 28"]. The preview lists only those units of the next generation (real n/unit, plus a "showing units ... of N" note). Ignored for execute. Use it to keep the preview small outside PTC.',
+            oneOf: [{ type: 'integer' }, { type: 'string' }],
+            description: 'Optional preview window for option:"set" (NOT the same thing as ops[].positions): ONE selector such as "unit 17" or "unit 17 to 28". The preview lists only those units of the next generation (real n/unit plus a "showing units ... of N" note). Ignored for execute. Use it to keep the preview small outside PTC.',
           },
         },
         required: ['ops', 'option'],
@@ -488,7 +481,7 @@ export function apply(ctx, config) {
         const option = args?.option;
         if (option !== 'set' && option !== 'execute') throw new Error('option must be "set" or "execute"');
         // 结果窗口：只返回这些单元的行，用来在非 PTC 模式里主动限制工具结果大小。
-        const previewSelectors = normalizeSelectors(args?.preview_positions, 'preview_positions');
+        const previewSelectors = normalizeSelector(args?.preview_positions, 'preview_positions');
         assertSinglePendingPlasticize(session, exec.callId);
 
         // 「本步整组」：容纳本次调用的 assistant 消息 … 它的全部工具结果。
@@ -555,9 +548,8 @@ export function apply(ctx, config) {
             description: 'Default false. When true, clip message text.',
           },
           result_positions: {
-            type: 'array',
-            items: { oneOf: [{ type: 'integer' }, { type: 'string' }] },
-            description: 'Optional result window, same unit syntax as plasticize ops: ["unit 17"] or ["unit 17 to 28"]. Only those units are returned (rows keep their real n/unit); the reply then also carries total and units. Use it to keep the tool result small — especially outside PTC, where you cannot post-filter a large result. "this" is not allowed here.',
+            oneOf: [{ type: 'integer' }, { type: 'string' }],
+            description: 'Optional result window: ONE selector such as "unit 17" or "unit 17 to 28". Only those units are returned (rows keep their real n/unit); the reply then also carries total and units. Use it to keep the tool result small — especially outside PTC. Call retrospect again for another segment. "this" is not allowed here.',
           },
         },
         required: ['generation'],
@@ -567,8 +559,8 @@ export function apply(ctx, config) {
         const generation = args?.generation;
         const isSelf = typeof generation === 'string' && /^self(?:\s*-\s*0)?$/iu.test(generation.trim());
         // 结果窗口：命令里的 this 没有锚点，这里直接拒绝。
-        const selectors = normalizeSelectors(args?.result_positions, 'result_positions');
-        if (selectors !== undefined && selectors.some((one) => isThisSelector(one))) {
+        const selectors = normalizeSelector(args?.result_positions, 'result_positions');
+        if (selectors !== undefined && isThisSelector(selectors)) {
           throw new Error('result_positions 不能用 this：它指模型本次调用所在的单元，而 retrospect 读的是历史快照；请写具体单元号');
         }
         if (isSelf) return Promise.resolve({ text: JSON.stringify(retrospectMessages(session, args?.preview === true, selectors)) });

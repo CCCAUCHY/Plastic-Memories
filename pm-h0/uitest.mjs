@@ -58,7 +58,7 @@ console.log(NL + '② 一次投影 = 一代快照；wire 值能还原每一代')
 
   openStep(session, 2, 1);
   plasticizeCall(session, { turn: 2, step: 1 }, 'ui-exec', {
-    ops: [{ positions: ['this'], new_text: '⟨UI 测试投影⟩' }],
+    ops: [{ positions: 'this', new_text: '⟨UI 测试投影⟩' }],
     option: 'execute',
   });
   // 第 0 代 = 投影**写入前**的工作面 —— 它包含这次 plasticize 调用自己的两步。
@@ -133,9 +133,9 @@ console.log(NL + '④ 客户端 bundle 与命令解析');
   ok(checkError === undefined, 'client.js 语法通过 node --check', checkError);
 
   const parsed = parsePlasticizeCommand('unit 17: 替代文本');
-  ok(parsed.action === 'stage' && parsed.mode === 'range' && parsed.positions[0] === 'unit 17', 'parsePlasticizeCommand：选择器: 文本');
+  ok(parsed.action === 'stage' && parsed.mode === 'range' && parsed.positions === 'unit 17', 'parsePlasticizeCommand：选择器: 文本');
   ok(parsed.newText === '替代文本', '替代文本原样读取');
-  ok(parsePlasticizeCommand('unit 17 to 28: 摘要').positions[0] === 'unit 17 to 28', '闭区间选择器');
+  ok(parsePlasticizeCommand('unit 17 to 28: 摘要').positions === 'unit 17 to 28', '闭区间选择器');
   ok(parsePlasticizeCommand('unit 17: to be continued').newText === 'to be continued', '冒号后以 to 开头的替代文本不被当成区间');
   ok(parsePlasticizeCommand('unit 17: 第一行\n第二行').newText === '第一行\n第二行', '替代文本可以含换行');
   ok(parsePlasticizeCommand('hide unit 17').kind === 'project' && parsePlasticizeCommand('hide unit 17').newText === '', 'hide <选择器>');
@@ -163,12 +163,12 @@ console.log(NL + '④ 客户端 bundle 与命令解析');
   let thisRejected;
   try { parsePlasticizeCommand('this: 摘要'); } catch (error) { thisRejected = String(error.message); }
   ok(typeof thisRejected === 'string' && thisRejected.includes('this') && thisRejected.includes('unit 17'), '命令拒绝 this 并提示具体单元号', thisRejected?.slice(0, 40));
-  ok(parseOpText('this: 摘要').positions[0] === 'this', '工具路径仍然允许 this');
+  ok(parseOpText('this: 摘要').positions === 'this', '工具路径仍然允许 this');
 
   // 不变式：命令文本 = 单元素 positions 的 op。
   for (const sample of ['unit 17: 文本', 'unit 17 to 28: 文本', 'this: 文本', 'unit 17']) {
     const asText = parseOpText(sample);
-    const asJson = normalizeOp({ positions: [asText.positions[0]], new_text: asText.new_text }, 0);
+    const asJson = normalizeOp({ positions: asText.positions, new_text: asText.new_text }, 0);
     ok(JSON.stringify(asText) === JSON.stringify(asJson), '文本形式等价于单元素 positions：' + sample, JSON.stringify({ asText, asJson }));
   }
   let hideBad;
@@ -428,7 +428,7 @@ console.log(NL + '⑥ 投影单元真的能被 host 注册表驱动并发布 wir
 
   openStep(session, 2, 1);
   plasticizeCall(session, { turn: 2, step: 1 }, 'ui-proj-exec', {
-    ops: [{ positions: ['this'], new_text: '⟨投影后的世代⟩' }],
+    ops: [{ positions: 'this', new_text: '⟨投影后的世代⟩' }],
     option: 'execute',
   });
   flush(session, { openStep: { turn: 2, step: 1 } });

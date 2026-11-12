@@ -65,16 +65,16 @@ const historyLocked = Array.isArray(historyData.messages) ? historyData.messages
 ok(historyLocked === 0, '历史世代不返回安全区', JSON.stringify({ historyLocked, error: historyData.error }));
 
 // 结果窗口：两个工具共用同一套 positions 语法，用来在非 PTC 里主动限制结果大小。
-const windowData = JSON.parse((await retrospect.execute({ generation: 'self', result_positions: ['unit 1'] }, { agent: { session } })).text);
+const windowData = JSON.parse((await retrospect.execute({ generation: 'self', result_positions: 'unit 1' }, { agent: { session } })).text);
 ok(windowData.count === 1 && windowData.messages[0].n === 1 && windowData.total > 1, 'retrospect result_positions 只返回选中单元', JSON.stringify({ count: windowData.count, total: windowData.total }));
 ok(JSON.stringify(windowData.units) === JSON.stringify([1]), 'retrospect result_positions 回显命中的单元', JSON.stringify(windowData.units));
 let thisInRetrospect;
-try { await retrospect.execute({ generation: 'self', result_positions: ['this'] }, { agent: { session } }); } catch (error) { thisInRetrospect = String(error.message); }
+try { await retrospect.execute({ generation: 'self', result_positions: 'this' }, { agent: { session } }); } catch (error) { thisInRetrospect = String(error.message); }
 ok(typeof thisInRetrospect === 'string' && thisInRetrospect.includes('this'), 'retrospect 拒绝 result_positions 里的 this', thisInRetrospect?.slice(0, 40));
 
 const previewSession = store.sessions.create('global-preview-window', { seed: cookieSeed('subagent-95230f54.jsonl') });
 const fullPreview = previewOf(previewSession, [], 'window-probe');
-const windowPreview = previewOf(previewSession, [], 'window-probe', { selectors: ['unit 1'] });
+const windowPreview = previewOf(previewSession, [], 'window-probe', { selectors: 'unit 1' });
 ok(windowPreview.messageCount === 1 && windowPreview.total === fullPreview.messageCount && JSON.stringify(windowPreview.units) === JSON.stringify([1]), 'set 预览支持同一套 positions', JSON.stringify({ shown: windowPreview.messageCount, total: windowPreview.total }));
 ok(!String(fullPreview.text).includes('\u0000'), '预览文本不含控制字符');
 
@@ -99,8 +99,8 @@ ok(!String(fullPreview.text).includes('\u0000'), '预览文本不含控制字符
   let setText;
   let emptyExec;
   try {
-    say('eo-set', { option: 'set', ops: [{ positions: ['unit 2'], new_text: '⟨预览⟩' }] });
-    setText = (await plasticize.execute({ option: 'set', ops: [{ positions: ['unit 2'], new_text: '⟨预览⟩' }] }, { agent: { session: emptyOps }, callId: 'eo-set' })).text;
+    say('eo-set', { option: 'set', ops: [{ positions: 'unit 2', new_text: '⟨预览⟩' }] });
+    setText = (await plasticize.execute({ option: 'set', ops: [{ positions: 'unit 2', new_text: '⟨预览⟩' }] }, { agent: { session: emptyOps }, callId: 'eo-set' })).text;
     say('eo-exec', { option: 'execute', ops: [{ 'the last plasticize(set)': true }] });
     emptyExec = (await plasticize.execute({ option: 'execute', ops: [{ 'the last plasticize(set)': true }] }, { agent: { session: emptyOps }, callId: 'eo-exec' })).text;
   } catch (error) {

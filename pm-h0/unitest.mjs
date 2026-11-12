@@ -27,7 +27,7 @@ ok(data.messages[1].n === 1 && data.messages[1].unit === 1 && data.messages[1].l
 
 const before = currentUnits(s);
 openStep(s, 99, 1);
-plasticizeCall(s, { turn: 99, step: 1 }, 'pos-unit', { ops: [{ positions: [1], new_text: '⟨UNIT⟩' }], option: 'execute' });
+plasticizeCall(s, { turn: 99, step: 1 }, 'pos-unit', { ops: [{ positions: 1, new_text: '⟨UNIT⟩' }], option: 'execute' });
 const result = flush(s, { openStep: { turn: 99, step: 1 } }, quiet);
 ok(result.applied === 1, 'positions execute 落地', JSON.stringify(result));
 const after = currentUnits(s);
@@ -38,7 +38,7 @@ ok(after[0].n === 0 && after[0].type === 'system', '系统提示词仍在 0');
 const sctx = makeStore();
 const ss = sctx.sessions.create('unitest-self', { seed: cookieSeed('subagent-95230f54.jsonl') });
 openStep(ss, 98, 1);
-plasticizeCall(ss, { turn: 98, step: 1 }, 'self-unit', { ops: [{ positions: ['this'], new_text: '⟨SELF⟩' }], option: 'execute' });
+plasticizeCall(ss, { turn: 98, step: 1 }, 'self-unit', { ops: [{ positions: 'this', new_text: '⟨SELF⟩' }], option: 'execute' });
 const selfResult = flush(ss, { openStep: { turn: 98, step: 1 } }, quiet);
 const selfUnits = currentUnits(ss);
 ok(selfResult.applied === 1 && selfUnits.some((unit) => unit.text.includes('⟨SELF⟩')), 'this 自噬替换 execute 单元');
@@ -70,7 +70,7 @@ openStep(ahs, 97, 1);
 plasticizeCall(ahs, { turn: 97, step: 1 }, 'retro-ah', { generation: 'self' }, { name: 'retrospect', resultText: '{"messages":[]}' });
 ahs.append('step/end', { turn: 97, step: 1 });
 ahs.append('step/start', { turn: 97, step: 2 });
-plasticizeCall(ahs, { turn: 97, step: 2 }, 'exec-ah', { ops: [{ positions: [1], new_text: 'X' }], option: 'execute' });
+plasticizeCall(ahs, { turn: 97, step: 2 }, 'exec-ah', { ops: [{ positions: 1, new_text: 'X' }], option: 'execute' });
 const ah = flush(ahs, { openStep: { turn: 97, step: 2 } }, quiet);
 ok(ah.auto >= 1 && !currentUnits(ahs).some((unit) => unit.calls.some((call) => call.name === 'retrospect')), 'retrospect 单元被自动隐藏');
 
@@ -78,7 +78,7 @@ ok(ah.auto >= 1 && !currentUnits(ahs).some((unit) => unit.calls.some((call) => c
 const lbctx = makeStore();
 const lbs = lbctx.sessions.create('unitest-boundary', { seed: cookieSeed('subagent-95230f54.jsonl') });
 openStep(lbs, 96, 1);
-plasticizeCall(lbs, { turn: 96, step: 1 }, 'exec-b', { ops: [{ positions: [1], new_text: 'B' }], option: 'execute' });
+plasticizeCall(lbs, { turn: 96, step: 1 }, 'exec-b', { ops: [{ positions: 1, new_text: 'B' }], option: 'execute' });
 flush(lbs, { openStep: { turn: 96, step: 1 } }, quiet);
 const bdata = retrospectMessages(lbs, true);
 ok(bdata.logical === 1, 'execute 后 self=1', String(bdata.logical));

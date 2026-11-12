@@ -75,7 +75,7 @@ console.log(NL + '⑥ option 与重放元素的组合约束');
   s.append('turn/start', { turn: 2 });
   s.append('step/start', { turn: 2, step: 1 });
   const callId = 'c1';
-  const args = { ops: [{ positions: ['this'], new_text: 'X' }], option: 'set' };
+  const args = { ops: [{ positions: 'this', new_text: 'X' }], option: 'set' };
   s.append('assistant/message', {
     turn: 2, step: 1,
     message: { id: 'am', role: 'assistant', source: { kind: 'model', provider: 'q', model: 'd' }, content: [{ type: 'tool-call', id: callId, name: 'plasticize', arguments: JSON.stringify(args) }] },

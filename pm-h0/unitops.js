@@ -68,16 +68,13 @@ export function resolveUnitOps(session, rawOps, here, options = {}) {
   for (let index = 0; index < expanded.length; index += 1) {
     // 与命令路径共用同一个 op 校验器（opshape.js），不在这里重复一套规则。
     const raw = normalizeOp(expanded[index], index);
-    const positions = raw.positions;
-    if (!Array.isArray(positions) || positions.length === 0) throw new Error('op #' + index + ' 需要 positions');
+    const selector = raw.positions;
     const newText = raw.new_text;
     const picked = [];
-    for (const selector of positions) {
-      if (isThisSelector(selector)) {
-        if (thisUnit === undefined) throw new Error('op #' + index + ': this is not resolvable');
-        picked.push(thisUnit.n);
-        continue;
-      }
+    if (isThisSelector(selector)) {
+      if (thisUnit === undefined) throw new Error('op #' + index + ': this is not resolvable');
+      picked.push(thisUnit.n);
+    } else {
       try { picked.push(...parseUnitRange(selector)); } catch (error) { throw new Error('op #' + index + ': ' + error.message); }
     }
     for (const n of picked) if (n < 0 || n >= units.length) throw new Error('op #' + index + ': unit ' + n + ' is out of range (0..' + (units.length - 1) + ')');

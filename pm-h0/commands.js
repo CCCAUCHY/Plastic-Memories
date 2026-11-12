@@ -46,7 +46,7 @@ export function parsePlasticizeCommand(rawInput, locale = 'zh') {
       return { action: 'stage', kind: 'unlock', mode: 'all', newText: '' };
     }
     if (isThisSelector(rest)) throw new Error(THIS_HINT);
-    return { action: 'stage', kind: kind === 'hide' ? 'project' : kind, mode: 'range', positions: [rest], newText: '' };
+    return { action: 'stage', kind: kind === 'hide' ? 'project' : kind, mode: 'range', positions: rest, newText: '' };
   }
 
   // 投影与工具共用同一套 op 语法：<selector>: <new_text>；没有冒号就是纯隐藏。

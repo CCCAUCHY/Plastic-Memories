@@ -11,7 +11,7 @@
 import { makeCounter, makeStore, cookieSeed, openStep, plasticizeCall } from './testkit.mjs';
 import { apply } from './index.js';
 import { parseUnitRange, isThisSelector } from './units.js';
-import { normalizeOp, parseOpText, normalizeSelectors } from './opshape.js';
+import { normalizeOp, parseOpText, normalizeSelector } from './opshape.js';
 import { parsePlasticizeCommand } from './commands.js';
 import { flush, lockedSeqs, appendSafetyRecord } from './engine.js';
 import { currentUnits } from './units.js';
@@ -102,21 +102,22 @@ for (const bad of ['[17,28]', '(17,20)', 'unit 20 to 17', '', 'unit', 'unit x'])
 ok(errorOf(() => parseUnitRange('this')) !== undefined, 'parseUnitRange 拒绝 this（需调用方解析）');
 ok(isThisSelector('this') && isThisSelector('this:') && !isThisSelector('unit 17'), 'isThisSelector 判定');
 
-ok(JSON.stringify(parseOpText('unit 17 to 28: 摘要').positions) === '["unit 17 to 28"]', '文本 → 单元素 positions（区间）');
+ok(parseOpText('unit 17 to 28: 摘要').positions === 'unit 17 to 28', '文本 → 单值 positions（区间）');
 ok(parseOpText('unit 17: to be continued').new_text === 'to be continued', '冒号后以 to 开头的文本不被当区间');
 ok(parseOpText('unit 17').new_text === '', '无冒号即纯隐藏');
-ok(parseOpText('this: x').positions[0] === 'this', 'this 在工具侧可用');
+ok(parseOpText('this: x').positions === 'this', 'this 在工具侧可用');
 ok(errorOf(() => parseOpText('unit 17 文本'))?.includes('冒号') === true, '缺冒号时提示加冒号');
 ok(errorOf(() => parseOpText('this: x', { allowThis: false }))?.includes('this') === true, 'allowThis:false 拒绝 this');
 
-ok(JSON.stringify(normalizeOp({ positions: ['unit 1'] }, 0)) === JSON.stringify({ positions: ['unit 1'], new_text: '', lock_this: false }), 'normalizeOp 默认值');
+ok(JSON.stringify(normalizeOp({ positions: 'unit 1' }, 0)) === JSON.stringify({ positions: 'unit 1', new_text: '', lock_this: false }), 'normalizeOp 默认值');
 ok(errorOf(() => normalizeOp({ spans: ['(1,2)'] }, 0))?.includes('unknown field') === true, 'spans 已不是合法字段');
 ok(errorOf(() => normalizeOp({}, 0))?.includes('positions') === true, '缺 positions 报错');
-ok(errorOf(() => normalizeOp({ positions: [] }, 0))?.includes('non-empty') === true, '空 positions 报错');
-ok(errorOf(() => normalizeOp({ positions: ['unit 1'], new_text: 1 }, 0))?.includes('new_text') === true, 'new_text 必须是字符串');
-ok(errorOf(() => normalizeOp({ positions: ['unit 1'], lock_this: 1 }, 0))?.includes('lock_this') === true, 'lock_this 必须是布尔');
-ok(errorOf(() => normalizeOp({ positions: ['unit 1'], types: ['user'] }, 0))?.includes('unknown field') === true, 'types 已删除（未知字段）');
-ok(errorOf(() => normalizeSelectors([])) !== undefined && normalizeSelectors(undefined) === undefined, 'normalizeSelectors 形状校验');
+ok(errorOf(() => normalizeOp({ positions: [] }, 0))?.includes('ONE selector') === true, '数组 positions 报错（现在是单值）');
+ok(errorOf(() => normalizeOp({ positions: '' }, 0))?.includes('ONE selector') === true, '空字符串 positions 报错');
+ok(errorOf(() => normalizeOp({ positions: 'unit 1', new_text: 1 }, 0))?.includes('new_text') === true, 'new_text 必须是字符串');
+ok(errorOf(() => normalizeOp({ positions: 'unit 1', lock_this: 1 }, 0))?.includes('lock_this') === true, 'lock_this 必须是布尔');
+ok(errorOf(() => normalizeOp({ positions: 'unit 1', types: ['user'] }, 0))?.includes('unknown field') === true, 'types 已删除（未知字段）');
+ok(errorOf(() => normalizeSelector([])) !== undefined && normalizeSelector(undefined) === undefined, 'normalizeSelector 形状校验');
 
 const cmd = (text) => parsePlasticizeCommand(text, 'zh');
 ok(cmd('clear').action === 'clear', 'clear');
@@ -133,8 +134,8 @@ ok(errorOf(() => cmd('unit 17 缺冒号'))?.includes('冒号') === true, '命令
 
 for (const sample of ['unit 17: 文本', 'unit 17 to 28: 文本', 'unit 17']) {
   const fromText = parseOpText(sample);
-  const fromJson = normalizeOp({ positions: [fromText.positions[0]], new_text: fromText.new_text }, 0);
-  ok(JSON.stringify(fromText) === JSON.stringify(fromJson), '命令文本 ≡ 单元素 positions：' + sample);
+  const fromJson = normalizeOp({ positions: fromText.positions, new_text: fromText.new_text }, 0);
+  ok(JSON.stringify(fromText) === JSON.stringify(fromJson), '命令文本 ≡ 同一个 op：' + sample);
 }
 
 console.log('B 工具层');
@@ -151,10 +152,10 @@ console.log('B 工具层');
   ok(monotonic, 'unit 单调不降');
   ok(Object.hasOwn(data, 'units') === false, '不再有 units 字段');
 
-  const window = JSON.parse((await callTool('retrospect', { generation: 'self', result_positions: ['unit 1'] }, session, 'c-window', false)).text);
+  const window = JSON.parse((await callTool('retrospect', { generation: 'self', result_positions: 'unit 1' }, session, 'c-window', false)).text);
   ok(window.count === 1 && window.messages[0].unit === 1 && window.total > 1 && JSON.stringify(window.units) === '[1]', 'result_positions 窗口');
-  ok((await callTool('retrospect', { generation: 'self', result_positions: ['this'] }, session, 'c-this', false)).error?.includes('this') === true, 'result_positions 拒绝 this');
-  ok((await callTool('retrospect', { generation: 'self', result_positions: ['unit 999'] }, session, 'c-oor', false)).error?.includes('out of range') === true, 'result_positions 越界报错');
+  ok((await callTool('retrospect', { generation: 'self', result_positions: 'this' }, session, 'c-this', false)).error?.includes('this') === true, 'result_positions 拒绝 this');
+  ok((await callTool('retrospect', { generation: 'self', result_positions: 'unit 999' }, session, 'c-oor', false)).error?.includes('out of range') === true, 'result_positions 越界报错');
   ok((await callTool('retrospect', { generation: 99 }, session, 'c-future', false)).error?.includes('future') === true, '未来世代报错');
   const history = JSON.parse((await callTool('retrospect', { generation: 0 }, session, 'c-g0', false)).text);
   ok(history.count > 0 && history.messages.every((row) => row.locked === undefined), '历史世代不含 locked');
@@ -165,7 +166,7 @@ console.log('B 工具层');
 
 {
   const session = freshSession('contract-plasticize');
-  const set = await callTool('plasticize', { option: 'set', ops: [{ positions: ['unit 2'], new_text: '⟨X⟩' }], preview_positions: ['unit 2'] }, session, 'p-set');
+  const set = await callTool('plasticize', { option: 'set', ops: [{ positions: 'unit 2', new_text: '⟨X⟩' }], preview_positions: 'unit 2' }, session, 'p-set');
   ok(set.text.startsWith('Preview only') && set.text.includes('showing units'), 'set 预览带窗口说明');
   const emptySet = await callTool('plasticize', { option: 'set', ops: [] }, session, 'p-empty-set');
   ok(emptySet.error?.includes('at least one op') === true, 'set 传空 ops 报错', String(emptySet.error).slice(0, 50));
@@ -173,7 +174,7 @@ console.log('B 工具层');
   ok(replayInSet.error?.includes('cannot replay') === true, 'set 不能重放上一条 set', String(replayInSet.error).slice(0, 50));
   const replayOk = await callTool('plasticize', { option: 'execute', ops: [{ 'the last plasticize(set)': true }] }, session, 'p-replay-ok');
   ok(replayOk.error === undefined && replayOk.text.includes('Registered'), 'execute 可以重放待决 set', String(replayOk.error ?? replayOk.text).slice(0, 50));
-  const mixed = await callTool('plasticize', { option: 'execute', ops: [{ 'the last plasticize(set)': true }, { positions: ['unit 1'], new_text: 'Y' }] }, session, 'p-mixed');
+  const mixed = await callTool('plasticize', { option: 'execute', ops: [{ 'the last plasticize(set)': true }, { positions: 'unit 1', new_text: 'Y' }] }, session, 'p-mixed');
   ok(mixed.error === undefined, '宏可以和普通 op 并存', String(mixed.error ?? '').slice(0, 60));
   const twoMacros = await callTool('plasticize', { option: 'execute', ops: [{ 'the last plasticize(set)': true }, { 'the last plasticize(set)': true }] }, session, 'p-two-macros');
   ok(twoMacros.error?.includes('only once') === true, '宏只能出现一次', String(twoMacros.error).slice(0, 50));
@@ -186,7 +187,7 @@ console.log('C 行为层');
 {
   const session = freshSession('contract-set-exec');
   const before = session.surface.replaceGeneration;
-  await callTool('plasticize', { option: 'set', ops: [{ positions: ['unit 2'], new_text: '⟨SET⟩' }] }, session, 'b-set');
+  await callTool('plasticize', { option: 'set', ops: [{ positions: 'unit 2', new_text: '⟨SET⟩' }] }, session, 'b-set');
   await callTool('plasticize', { option: 'execute', ops: [{ 'the last plasticize(set)': true }] }, session, 'b-exec');
   const result = flush(session, { openStep: { turn: 9, step: 1 } }, quiet);
   ok(result.applied >= 1, '显式重放落地（兑现 set）', JSON.stringify(result));
@@ -208,7 +209,7 @@ console.log('C 行为层');
   const target = currentUnits(session)[1];
   appendSafetyRecord(session, { op: 'lock', seqs: [target.seq], comment: 'contract' });
   ok(lockedSeqs(session).has(target.seq), '锁已写入');
-  const hit = await callTool('plasticize', { option: 'set', ops: [{ positions: ['unit ' + target.n], new_text: 'X' }] }, session, 's-hit');
+  const hit = await callTool('plasticize', { option: 'set', ops: [{ positions: 'unit ' + target.n, new_text: 'X' }] }, session, 's-hit');
   ok(hit.error?.includes('safety zone') === true, '命中安全区报错', String(hit.error).slice(0, 60));
   const rows = JSON.parse((await callTool('retrospect', { generation: 'self' }, session, 's-self', false)).text);
   ok(rows.messages.some((row) => row.unit === target.n && row.locked === true), 'self 标出锁定单元');
@@ -216,7 +217,7 @@ console.log('C 行为层');
 
 {
   const session = freshSession('contract-reload');
-  await callTool('plasticize', { option: 'set', ops: [{ positions: ['unit 2'], new_text: '⟨RELOAD⟩' }] }, session, 'r-set');
+  await callTool('plasticize', { option: 'set', ops: [{ positions: 'unit 2', new_text: '⟨RELOAD⟩' }] }, session, 'r-set');
   await callTool('plasticize', { option: 'execute', ops: [{ 'the last plasticize(set)': true }] }, session, 'r-exec');
   flush(session, { openStep: { turn: 9, step: 1 } }, quiet);
   const events = JSON.parse(JSON.stringify(session.snapshotEvents())).filter((event) => event.type !== 'session');
@@ -228,7 +229,7 @@ console.log('C 行为层');
 
 {
   const session = freshSession('contract-generations');
-  await callTool('plasticize', { option: 'set', ops: [{ positions: ['unit 2'], new_text: '⟨G⟩' }] }, session, 'g-set');
+  await callTool('plasticize', { option: 'set', ops: [{ positions: 'unit 2', new_text: '⟨G⟩' }] }, session, 'g-set');
   await callTool('plasticize', { option: 'execute', ops: [{ 'the last plasticize(set)': true }] }, session, 'g-exec');
   flush(session, { openStep: { turn: 9, step: 1 } }, quiet);
   let state = initState();

@@ -69,7 +69,7 @@ console.log(NL + '① 新实现必须认得 PTC 形态的 plasticize 声明');
   s.append('turn/start', { turn: 99 });
   s.append('step/start', { turn: 99, step: 1 });
   // ptc-minimal 的布局：cookie 5@10 与 cookie 6@13 之间是「assistant + tool/result」一组。
-  ptcDeclare(s, { turn: 99, step: 1 }, 'ptc-root-1', { ops: [{ positions: ['this'], new_text: '⟨PTC 压缩结论⟩' }], option: 'execute' });
+  ptcDeclare(s, { turn: 99, step: 1 }, 'ptc-root-1', { ops: [{ positions: 'this', new_text: '⟨PTC 压缩结论⟩' }], option: 'execute' });
 
   const before = pendingReport(s);
   ok(before.length === 1 && before[0].via === 'ptc', '**认出了 PTC 声明**（旧实现这里恒为 0）', JSON.stringify(before));
@@ -101,7 +101,7 @@ console.log(NL + '③ PTC 路径与 native 路径共用同一套解析（this �
   const s3 = ctx3.sessions.create('ptc-self', { seed: ptcSeed() });
   s3.append('turn/start', { turn: 99 });
   s3.append('step/start', { turn: 99, step: 1 });
-  ptcDeclare(s3, { turn: 99, step: 1 }, 'ptc-root-self', { ops: [{ positions: ['this'], new_text: '' }], option: 'execute' });
+  ptcDeclare(s3, { turn: 99, step: 1 }, 'ptc-root-self', { ops: [{ positions: 'this', new_text: '' }], option: 'execute' });
   const pm = pairingMaps(s3);   // 必须在投影**之前**取：投影会改变工作面
   const r3 = flush(s3, { openStep: { turn: 99, step: 1 } }, quiet);
   ok(r3.applied === 1, 'PTC 路径下的 this 也能落地', JSON.stringify(r3));
@@ -131,7 +131,7 @@ console.log(NL + '④ 工具执行期：this 组还没落地时，execute 不能
   ts.append('step/start', { turn: 2, step: 1 });
   const root = 'call_root_exec';
   const sub = root + ':ptc:1';
-  const args = { ops: [{ positions: ['this'], new_text: '⟨吞掉本步⟩' }], option: 'execute' };
+  const args = { ops: [{ positions: 'this', new_text: '⟨吞掉本步⟩' }], option: 'execute' };
   ts.append('assistant/message', {
     turn: 2, step: 1,
     message: { id: 'am-exec', role: 'assistant', source: { kind: 'model', provider: 'q', model: 'd' },
@@ -170,7 +170,7 @@ console.log(NL + '⑤ 工具执行失败时：声明永远不落地（不能悄�
   fs.append('step/start', { turn: 2, step: 1 });
   const root = 'call_root_fail';
   const sub = root + ':ptc:1';
-  const args = { ops: [{ positions: ['this'], new_text: '⟨不该出现⟩' }], option: 'execute' };
+  const args = { ops: [{ positions: 'this', new_text: '⟨不该出现⟩' }], option: 'execute' };
   fs.append('assistant/message', {
     turn: 2, step: 1,
     message: { id: 'am-fail', role: 'assistant', source: { kind: 'model', provider: 'q', model: 'd' },
@@ -204,7 +204,7 @@ console.log(NL + '⑥b set 预览：this 组不完整时也能算预览（且不
   ts.append('step/start', { turn: 2, step: 1 });
   const root = 'call_root_set';
   const sub = root + ':ptc:1';
-  const args = { ops: [{ positions: ['this'], new_text: '⟨预览用⟩' }], option: 'set' };
+  const args = { ops: [{ positions: 'this', new_text: '⟨预览用⟩' }], option: 'set' };
   ts.append('assistant/message', {
     turn: 2, step: 1,
     message: { id: 'am-set', role: 'assistant', source: { kind: 'model', provider: 'q', model: 'd' },
@@ -233,7 +233,7 @@ console.log(NL + '⑥ 待决 set 查找认得 PTC 形态');
   const ps = pctx.sessions.create('ptc-set', { seed: ptcSeed() });
   ps.append('turn/start', { turn: 2 });
   ps.append('step/start', { turn: 2, step: 1 });
-  ptcDeclare(ps, { turn: 2, step: 1 }, 'ptc-root-set', { ops: [{ positions: ['this'], new_text: '⟨预览⟩' }], option: 'set' });
+  ptcDeclare(ps, { turn: 2, step: 1 }, 'ptc-root-set', { ops: [{ positions: 'this', new_text: '⟨预览⟩' }], option: 'set' });
   const pending = findLastPendingSet(ps);
   ok(pending !== undefined, '找得到 PTC 形态的 set');
   ok(pending?.callId === 'ptc-root-set:ptc:1', 'callId 是 subCallId', String(pending?.callId));
@@ -248,7 +248,7 @@ console.log(NL + '⑦ PTC + 显式重放：零点属于 set，且只写一条投
   const as = actx.sessions.create('ptc-anchor', { seed: ptcSeed() });
   const quiet2 = { warn: () => {}, info: () => {} };
   const repsOf = (sess) => sess.snapshotEvents().filter((e) => e.surfaceOp?.op === 'replace');
-  const args = { ops: [{ positions: ['this'], new_text: '⟨PTC 预览③⟩' }], option: 'set' };
+  const args = { ops: [{ positions: 'this', new_text: '⟨PTC 预览③⟩' }], option: 'set' };
 
   as.append('turn/start', { turn: 2 });
   as.append('step/start', { turn: 2, step: 1 });

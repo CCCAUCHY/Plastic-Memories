@@ -37,7 +37,7 @@ export function messagesAt(session, before) {
  * 当前上下文的 Message[] 视图。
  * @param {object} session
  * @param {boolean} [preview] - true 时裁剪 text。
- * @param {Array<string|number>} [selectors] - positions 语法；只返回这些单元的行。
+ * @param {string|number} [selectors] - 单值选择器；只返回这个选择器命中的单元行。
  */
 export function retrospectMessages(session, preview = false, selectors = undefined) {
   const rows = compactMessages(session, messagesWithSeqs(session, currentCutoff(session)));
@@ -177,14 +177,14 @@ export function groupRows(messages) {
 /**
  * 按单元选择器裁窗口：行保持原编号，只丢掉未选中的。
  * @param {Array<object>} rows - groupRows / compactMessages 的结果。
- * @param {Array<string|number>|undefined} selectors - positions 语法；undefined 表示不裁。
+ * @param {string|number|undefined} selector - 单值选择器；undefined 表示不裁。
  * @returns {{rows: Array<object>, total: number, selected: number[]|undefined}}
  */
-export function windowRows(rows, selectors) {
-  if (selectors === undefined || selectors === null) return { rows, total: rows.length, selected: undefined };
+export function windowRows(rows, selector) {
+  if (selector === undefined || selector === null) return { rows, total: rows.length, selected: undefined };
   const unitCount = rows.length === 0 ? 0 : rows[rows.length - 1].unit + 1;
   const span = Array.from({ length: unitCount }, (_, index) => ({ n: index }));
-  const selected = selectUnits(span, selectors);
+  const selected = selectUnits(span, [selector]);
   const picked = new Set(selected);
   return { rows: rows.filter((row) => picked.has(row.unit)), total: rows.length, selected };
 }

@@ -30,24 +30,24 @@
 |---|---|---|---|
 | `option` | `"set"` \| `"execute"` | 是 | set 只预览；execute 在提交边界落地 |
 | `ops` | array（非空） | 是 | 段落列表；兑现待决 set 用重放元素，见下 |
-| `preview_positions` | selector array | 否 | **仅 set 有用**：预览只列这些单元；execute 忽略 |
+| `preview_positions` | 单个选择器 | 否 | **仅 set 有用**：预览只列这个选择器命中的单元；execute 忽略 |
 
 ### 一个 op
 
 | 字段 | 类型 | 默认 | 语义 |
 |---|---|---|---|
-| `positions` | selector array | — | 必需，且不能为空数组 |
-| `new_text` | string | `""` | 落在**最后一个**选中单元；空串 = 纯隐藏 |
+| `positions` | 单个选择器 | — | 必需；**单值**（`"unit 5"` / `"unit 5 to 9"` / `"this"` / 数字）。一个 op 只选一段、只产出一条替代文本；多段请写多条 op |
+| `new_text` | string | `""` | 这条 op 的替代文本；空串 = 纯隐藏 |
 | `lock_this` | boolean | `false` | 把替代消息本身锁进安全区 |
 
-未知字段直接报错；`positions` 为空数组报错。
+未知字段直接报错；`positions` 不是合法选择器（含数组）直接报错。
 
 > `types` 已删除：spans 通道移除后它没有任何实现，属于死字段。
 
 ### 语义
 
 - 每个选中单元整体命中（assistant + 它的全部 tool result）；
-- 除最后一个外全部隐藏，最后一个被 `new_text` 取代；
+- 选择器命中的整段被 `new_text` 取代（空串即纯隐藏）；要拆成多段就写多条 op；
 - 一次 run_code 程序（或一条 assistant 消息）只允许一次 plasticize 调用（set/execute 同计）；
 - 命中安全区报错；
 - 成功 execute 后，早于它、含失败 PM 调用 / set 预览 / 成功 letter / 成功 retrospect 的整个单元会被自动隐藏；execute 回执本身保留。
@@ -101,7 +101,7 @@
 |---|---|---|---|
 | `generation` | integer \| string | 必需 | 绝对世代号、`"self"`、`"self - N"` |
 | `preview` | boolean | false | true 时裁剪每条 text |
-| `result_positions` | selector array | — | 结果窗口；`this` 被拒绝 |
+| `result_positions` | 单个选择器 | — | 结果窗口；`this` 被拒绝。要多段就多调一次 retrospect |
 | `units` | boolean | false | 内部迁移用：返回旧单元视图 |
 
 ### 返回（JSON 字符串）
