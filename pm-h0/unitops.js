@@ -8,7 +8,7 @@
  * @module dsh-plugin-plastic-memories-h0/unitops
  */
 
-import { currentUnits, parseUnitRange } from './units.js';
+import { currentUnits, isThisSelector, parseUnitRange } from './units.js';
 
 /** 找出 this 指向的单元：承载本次声明的那条 assistant 单元。 */
 function unitForHere(units, here) {
@@ -50,7 +50,7 @@ export function resolveUnitOps(session, rawOps, here) {
     if (typeof newText !== 'string') throw new Error('op #' + index + ' new_text must be a string');
     const picked = [];
     for (const selector of positions) {
-      if (selector === 'this') {
+      if (isThisSelector(selector)) {
         if (thisUnit === undefined) throw new Error('op #' + index + ': this is not resolvable');
         picked.push(thisUnit.n);
         continue;

@@ -143,29 +143,47 @@ export function unitAt(units, n) {
   return Number.isSafeInteger(n) && n >= 0 && n < units.length ? units[n] : undefined;
 }
 
+/** 区间连接词：to / through / til / 短横线。 */
+const UNIT_RANGE_SEP = '(?:to|through|til|-|–)';
+
+/**
+ * 单元选择器的**唯一权威语法**（非捕获，供外部拼接正则）。
+ *
+ *   - `unit 17` / `17`           单个单元
+ *   - `unit 17 to 28`             闭区间（含两端）
+ *
+ * 允许尾随冒号（`unit 17:`），用于与后面的替代文本分隔；`this` 由上层解析。
+ */
+export const UNIT_SELECTOR_SOURCE = 'unit\\s*\\d+(?:\\s*' + UNIT_RANGE_SEP + '\\s*(?:unit\\s*)?\\d+)?|\\d+';
+
+const SELECTOR_ANY = new RegExp('^(?:' + UNIT_SELECTOR_SOURCE + ')$', 'iu');
+const SELECTOR_ONE = new RegExp('^(?:unit\\s*)?(\\d+)$', 'iu');
+const SELECTOR_SPAN = new RegExp('^unit\\s*(\\d+)\\s*' + UNIT_RANGE_SEP + '\\s*(?:unit\\s*)?(\\d+)$', 'iu');
+
+/** 是否是 `this` 选择器（具体单元号由 unitops 解析）。 */
+export function isThisSelector(raw) {
+  return typeof raw === 'string' && /^this$/iu.test(raw.trim().replace(/:$/, '').trim());
+}
+
 /**
  * 解析单元选择器。
- *
- * 只用自然语言写法，避免模型把 "[17,28]" 这种区间误读成两个单元：
- *   - `17` / `"unit 17"`        单个单元（可写 `"unit 17:"`）
- *   - `"unit 17 to 28"`          闭区间（含两端）
- *   - `"this"`                   由上层解析
  * @param {unknown} raw - 选择器。
  * @returns {number[]} 单元序号（升序，含两端）。
  */
 export function parseUnitRange(raw) {
   if (typeof raw === 'number' && Number.isSafeInteger(raw) && raw >= 0) return [raw];
   if (typeof raw === 'string') {
-    // 选择器可以用冒号结尾（`unit 17:`），方便和后面的替代文本分隔。
     const text = raw.trim().replace(/:$/, '').trim();
-    const one = /^(?:unit\s*)?(\d+)$/iu.exec(text);
-    if (one !== null) return [Number(one[1])];
-    const span = /^unit\s*(\d+)\s*(?:to|through|til|-|–)\s*(?:unit\s*)?(\d+)$/iu.exec(text);
-    if (span !== null) {
-      const a = Number(span[1]);
-      const b = Number(span[2]);
-      if (a <= b) return Array.from({ length: b - a + 1 }, (_, i) => a + i);
-      throw new Error('unit range start must not exceed its end: ' + text);
+    if (SELECTOR_ANY.test(text)) {
+      const span = SELECTOR_SPAN.exec(text);
+      if (span !== null) {
+        const a = Number(span[1]);
+        const b = Number(span[2]);
+        if (a > b) throw new Error('unit range start must not exceed its end: ' + text);
+        return Array.from({ length: b - a + 1 }, (_, i) => a + i);
+      }
+      const one = SELECTOR_ONE.exec(text);
+      if (one !== null) return [Number(one[1])];
     }
   }
   throw new Error('unit selector must look like "unit 17" or "unit 17 to 28" (got ' + JSON.stringify(raw) + ')');

@@ -16,8 +16,10 @@
  */
 
 import { clearStagedOperations, pendingUserOperations, stageUserOperation } from './engine.js';
+import { UNIT_SELECTOR_SOURCE } from './units.js';
 
-const SELECTOR = '(?:unit\\s*\\d+(?:\\s*(?:to|through|til|-|–)\\s*(?:unit\\s*)?\\d+)?|\\d+)';
+/** 选择器语法只有一处定义（units.js），这里只负责把它拼进命令正则。 */
+const SELECTOR = '(?:' + UNIT_SELECTOR_SOURCE + ')';
 const HINT = '<unit 17: 替代文本> 或 <unit 17 to 28: 替代文本> | hide/lock/unlock <选择器> | unlock all | prelock | clear';
 
 /**
