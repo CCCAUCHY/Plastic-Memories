@@ -8,7 +8,7 @@
  */
 
 import { logicalGenerations, lockedSeqs } from './engine.js';
-import { classifyMessage } from './units.js';
+import { classifyMessage, selectUnits } from './units.js';
 
 /**
  * @param {object} session - 当前会话。
@@ -35,18 +35,30 @@ export function messagesAt(session, before) {
 /**
  * 当前上下文的 Message[] 视图。
  * @param {object} session
- * @param {boolean} [preview]
+ * @param {boolean} [preview] - true 时裁剪 text。
+ * @param {Array<string|number>} [selectors] - positions 语法；只返回这些单元的行。
  */
-export function retrospectMessages(session, preview = false) {
-  const messages = compactMessages(session, currentInputMessages(session));
+export function retrospectMessages(session, preview = false, selectors = undefined) {
+  const rows = compactMessages(session, currentInputMessages(session));
+  const window = windowRows(rows, selectors);
   const logical = logicalGenerations(session).total;
-  if (preview) {
-    return { logical, count: messages.length, preview: true, messages: messages.map((message) => ({
+  const messages = window.rows.map((row) => {
+    const { id, ...rest } = row;
+    return rest;
+  });
+  const body = preview
+    ? messages.map((message) => ({
       ...message,
       text: message.text.length <= 240 ? message.text : message.text.slice(0, 180) + '……' + message.text.slice(-40),
-    })) };
-  }
-  return { logical, count: messages.length, messages };
+    }))
+    : messages;
+  const head = {
+    logical,
+    count: body.length,
+    ...(selectors === undefined ? {} : { total: window.total, units: window.selected }),
+    ...(preview ? { preview: true } : {}),
+  };
+  return { ...head, messages: body };
 }
 
 /**
@@ -90,12 +102,27 @@ function callsOf(message) {
  * @returns {Array<object>} [{n,unit,type,text,calls?,locked?}]
  */
 export function compactMessages(session, messages, options = {}) {
+  const rows = groupRows(messages);
+  if (options.locks === false) return rows;
   const byId = new Map();
   for (const event of session.snapshotEvents()) {
     const id = event?.data?.message?.id;
     if (typeof id === 'string') byId.set(id, event);
   }
-  const locks = options.locks === false ? null : lockedSeqs(session);
+  const locks = lockedSeqs(session);
+  for (const row of rows) {
+    const event = byId.get(row.id);
+    if (event !== undefined && Number.isSafeInteger(event.seq) && locks.has(event.seq)) row.locked = true;
+  }
+  return rows;
+}
+
+/**
+ * 只按消息内容分组单元（不依赖会话，预览用的影子工作面也能用）。
+ * @param {Array<object>} messages - DSH Message[]。
+ * @returns {Array<object>} [{n,unit,type,text,calls?,id?}]
+ */
+export function groupRows(messages) {
   const out = [];
   let unit = -1;
   let currentCallIds = new Set();
@@ -111,7 +138,6 @@ export function compactMessages(session, messages, options = {}) {
     } else if (callId !== undefined) {
       currentCallIds.delete(callId);
     }
-    const event = byId.get(message?.id);
     const entry = {
       n: out.length,
       unit,
@@ -119,9 +145,24 @@ export function compactMessages(session, messages, options = {}) {
       text: textOf(message),
     };
     if (calls.length > 0) entry.calls = calls.map((call) => call.name);
-    if (locks !== null && event !== undefined && Number.isSafeInteger(event.seq) && locks.has(event.seq)) entry.locked = true;
+    if (typeof message?.id === 'string') entry.id = message.id;
     out.push(entry);
   }
   return out;
+}
+
+/**
+ * 按单元选择器裁窗口：行保持原编号，只丢掉未选中的。
+ * @param {Array<object>} rows - groupRows / compactMessages 的结果。
+ * @param {Array<string|number>|undefined} selectors - positions 语法；undefined 表示不裁。
+ * @returns {{rows: Array<object>, total: number, selected: number[]|undefined}}
+ */
+export function windowRows(rows, selectors) {
+  if (selectors === undefined || selectors === null) return { rows, total: rows.length, selected: undefined };
+  const unitCount = rows.length === 0 ? 0 : rows[rows.length - 1].unit + 1;
+  const span = Array.from({ length: unitCount }, (_, index) => ({ n: index }));
+  const selected = selectUnits(span, selectors);
+  const picked = new Set(selected);
+  return { rows: rows.filter((row) => picked.has(row.unit)), total: rows.length, selected };
 }
 

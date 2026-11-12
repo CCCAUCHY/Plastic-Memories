@@ -140,7 +140,7 @@ export function messageText(message) {
  * @returns {string} 单行摘要。
  */
 export function clip(text, head = 80, tail = 40) {
-  const oneLine = String(text).replace(/s+/g, ' ').trim();
+  const oneLine = String(text).replace(/\s+/g, ' ').trim();
   if (oneLine.length <= head + tail + 5) return oneLine;
   return oneLine.slice(0, head) + '……' + oneLine.slice(-tail);
 }

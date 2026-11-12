@@ -102,6 +102,28 @@ export function parseOpText(text, options = {}) {
   return op;
 }
 
+/**
+ * 校验工具参数里的 positions（只做形状校验；语义解析在 units.parseUnitRange）。
+ * @param {unknown} value - 原始数组。
+ * @param {string} [label] - 报错用的字段名。
+ * @returns {Array<string|number>|undefined} 归一化后的数组。
+ */
+export function normalizeSelectors(value, label = 'positions') {
+  if (value === undefined || value === null) return undefined;
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new Error(label + ' must be a non-empty array of unit selectors, e.g. ["unit 17"] or ["unit 17 to 28"]');
+  }
+  for (const one of value) {
+    if (typeof one === 'string') {
+      if (one.trim().length === 0) throw new Error(label + ' entries must not be empty strings');
+      continue;
+    }
+    if (typeof one === 'number' && Number.isSafeInteger(one) && one >= 0) continue;
+    throw new Error(label + ' entries must be unit selectors ("unit 17", "unit 17 to 28") or non-negative integers, got ' + JSON.stringify(one));
+  }
+  return [...value];
+}
+
 /** 纯语法解析，不判断 this 的可用性。 */
 function parseOpSource(text) {
   const source = String(text ?? '').trim();

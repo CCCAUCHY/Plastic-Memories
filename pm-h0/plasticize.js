@@ -7,7 +7,8 @@
  * @module dsh-plugin-plastic-memories-h0/plasticize
  */
 
-import { projectNext, renderPreview } from './preview.js';
+import { projectNext, renderPreview, renderRowsPreview } from './preview.js';
+import { groupRows, windowRows } from './messages.js';
 import { closureViolations, openSetProfile, slideToGroupEdge, stepUnitsOf } from './grouping.js';
 import { resolveSpan } from './spans.js';
 import { checkBalanced, derivedMessage, surfaceNodes } from './coords.js';
@@ -245,9 +246,17 @@ export function hypotheticalEvents(session, resolved, callId) {
  * @param {string} callId - 幂等键。
  * @returns {{text: string, generation: number, messageCount: number}} 预览。
  */
-export function previewOf(session, resolved, callId) {
+export function previewOf(session, resolved, callId, options = {}) {
   const next = projectNext(session, hypotheticalEvents(session, resolved, callId));
-  return { text: renderPreview(next.messages), generation: next.generation, messageCount: next.messages.length };
+  const rows = groupRows(next.messages);
+  const window = windowRows(rows, options.positions);
+  return {
+    text: options.positions === undefined ? renderPreview(next.messages) : renderRowsPreview(window.rows),
+    generation: next.generation,
+    messageCount: window.rows.length,
+    total: window.total,
+    units: window.selected,
+  };
 }
 
 /**

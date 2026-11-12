@@ -59,3 +59,18 @@ export function renderPreview(messages, opt = {}) {
   });
   return lines.join(NL);
 }
+
+/**
+ * 按单元渲染预览行（带 unit 号，便于直接写进 plasticize 的 positions）。
+ * @param {Array<object>} rows - compactMessages/groupRows 的行。
+ * @param {{head?: number, tail?: number}} [opt] - 截断参数。
+ * @returns {string} 预览正文。
+ */
+export function renderRowsPreview(rows, opt = {}) {
+  const head = opt.head ?? 100;
+  const tail = opt.tail ?? 60;
+  return rows.map((row) => {
+    const text = String(row.text ?? '').replace(/\s+/g, ' ').trim();
+    return '  #' + row.n + ' [u' + row.unit + ' ' + row.type + '] ' + clip(text, head, tail);
+  }).join(NL);
+}

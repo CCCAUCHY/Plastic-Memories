@@ -13,7 +13,7 @@
 import { SURFACE_TYPES, derivedMessage, messageText } from './coords.js';
 import { logicalGenerations } from './engine.js';
 import { logicalBoundaries } from './boundaries.js';
-import { messagesAt, currentInputMessages, compactMessages } from './messages.js';
+import { messagesAt, currentInputMessages, compactMessages, windowRows } from './messages.js';
 import { renderPreview } from './preview.js';
 
 /** 事件类型到角色名的兜底映射（正常消息直接读 message.role）。 */
@@ -78,7 +78,7 @@ function normalizeGeneration(value, self) {
 export function retrospect(session, args) {
   const value = args?.generation;
   if (value === undefined) throw new Error('retrospect requires generation (a logical generation number, "self", or "self - N")');
-  return retrospectGeneration(session, value, args?.preview === true);
+  return retrospectGeneration(session, value, args?.preview === true, args?.positions);
 }
 
 /**
@@ -104,7 +104,7 @@ function executeResultSeq(events, callId) {
   return found;
 }
 
-export function retrospectGeneration(session, generation, preview = false) {
+export function retrospectGeneration(session, generation, preview = false, selectors = undefined) {
   const events = session.snapshotEvents();
   const info = logicalGenerations(session);
   const self = info.total;
@@ -135,20 +135,27 @@ export function retrospectGeneration(session, generation, preview = false) {
   }
 
   const letter = lettersOfGeneration(events, isCurrent ? Number.POSITIVE_INFINITY : target, info, []);
-  const messages = compactMessages(session, rawMessages, { locks: isCurrent });
+  const window = windowRows(compactMessages(session, rawMessages, { locks: isCurrent }), selectors);
+  // 行里的 id 只用于查锁，不发给模型。
+  const rows = window.rows.map((row) => {
+    const { id, ...rest } = row;
+    return rest;
+  });
+  const scope = selectors === undefined ? {} : { total: window.total, units: window.selected };
   if (preview) {
     return JSON.stringify({
       logical,
-      count: messages.length,
+      count: rows.length,
+      ...scope,
       preview: true,
-      messages: messages.map((message) => ({
+      messages: rows.map((message) => ({
         ...message,
         text: message.text.length <= 240 ? message.text : message.text.slice(0, 180) + '……' + message.text.slice(-40),
       })),
       ...(letter.length === 0 ? {} : { letter }),
     });
   }
-  return JSON.stringify({ logical, count: messages.length, messages, ...(letter.length === 0 ? {} : { letter }) });
+  return JSON.stringify({ logical, count: rows.length, ...scope, messages: rows, ...(letter.length === 0 ? {} : { letter }) });
 }
 
 /** 取某个逻辑世代生命周期内输入的全部 letter（按调用顺序，附消息序号）。 */

@@ -20,6 +20,8 @@ import { GENERATIONS_KEY, generationProjection } from './generations.js';
 import { stepGroup, surfaceNodes } from './coords.js';
 import { resolveOps, previewOf, findLastPendingSet, normalizeOp } from './plasticize.js';
 import { resolveUnitOps } from './unitops.js';
+import { normalizeSelectors } from './opshape.js';
+import { isThisSelector } from './units.js';
 import { retrospect } from './retrospect.js';
 import { retrospectUnits } from './unitretro.js';
 import { retrospectMessages } from './messages.js';
@@ -509,6 +511,11 @@ export function apply(ctx, config) {
             type: 'boolean',
             description: 'Default true. Only valid with option:execute. When true, also commits the most recent unexecuted set; set false to leave it pending.',
           },
+          positions: {
+            type: 'array',
+            items: { oneOf: [{ type: 'integer' }, { type: 'string' }] },
+            description: 'Optional result window for option:"set", same unit syntax as ops[].positions: ["unit 17"] or ["unit 17 to 28"]. The preview then lists only those units of the next generation (with real n/unit, plus a "showing units ... of N" note). Ignored for execute. Use it to keep the preview small outside PTC.',
+          },
         },
         required: ['ops', 'option'],
       },
@@ -516,6 +523,8 @@ export function apply(ctx, config) {
         const session = sessionOf(exec, ctx);
         const option = args?.option;
         if (option !== 'set' && option !== 'execute') throw new Error('option must be "set" or "execute"');
+        // 结果窗口：只返回这些单元的行，用来在非 PTC 模式里主动限制工具结果大小。
+        const previewSelectors = normalizeSelectors(args?.positions);
         if (option === 'set' && args?.also_execute_last_set !== undefined) {
           throw new Error('also_execute_last_set is only valid with option:"execute"');
         }
@@ -549,8 +558,9 @@ export function apply(ctx, config) {
             assertResolvedUnlocked(session, resolved);
             flat.push(...resolved);
           }
-          const pv = previewOf(session, flat, exec.callId);
-          parts.push('Preview only (not committed). The next generation would contain ' + pv.messageCount + ' messages:');
+          const pv = previewOf(session, flat, exec.callId, { positions: previewSelectors });
+          const scope = previewSelectors === undefined ? '' : ' (showing units ' + (pv.units ?? []).join(', ') + ' of ' + pv.total + ')';
+          parts.push('Preview only (not committed). The next generation would contain ' + pv.messageCount + ' messages' + scope + ':');
           parts.push(pv.text);
           parts.push('To commit this preview, call plasticize with option:"execute" while this is still the most recent unexecuted set; it is committed automatically unless also_execute_last_set:false. Otherwise rewrite ops completely, not incrementally.');
         } else {
@@ -598,6 +608,11 @@ export function apply(ctx, config) {
             type: 'boolean',
             description: 'Internal migration flag: when true, return current-generation units with 0-based n.',
           },
+          positions: {
+            type: 'array',
+            items: { oneOf: [{ type: 'integer' }, { type: 'string' }] },
+            description: 'Optional result window, same unit syntax as plasticize: ["unit 17"] or ["unit 17 to 28"]. Only those units are returned (rows keep their real n/unit); the reply then also carries total and units. Use it to keep the tool result small — especially outside PTC, where you cannot post-filter a large result. "this" is not allowed here.',
+          },
         },
         required: ['generation'],
       },
@@ -606,8 +621,13 @@ export function apply(ctx, config) {
         const generation = args?.generation;
         const isSelf = typeof generation === 'string' && /^self(?:\s*-\s*0)?$/iu.test(generation.trim());
         if (args?.units === true) return Promise.resolve({ text: retrospectUnits(session, args ?? {}) });
-        if (isSelf) return Promise.resolve({ text: JSON.stringify(retrospectMessages(session, args?.preview === true)) });
-        return Promise.resolve({ text: retrospect(session, args ?? {}) });
+        // 结果窗口：命令里的 this 没有锚点，这里直接拒绝。
+        const selectors = normalizeSelectors(args?.positions);
+        if (selectors !== undefined && selectors.some((one) => isThisSelector(one))) {
+          throw new Error('retrospect 的 positions 不能用 this：它指模型本次调用所在的单元，而 retrospects 读的是历史快照；请写具体单元号');
+        }
+        if (isSelf) return Promise.resolve({ text: JSON.stringify(retrospectMessages(session, args?.preview === true, selectors)) });
+        return Promise.resolve({ text: retrospect(session, { ...args, positions: selectors }) });
       },
     }),
     { when: ({ agent }) => isPtcSession(ctx, agent?.session) },
