@@ -326,22 +326,6 @@ export function apply(ctx, config) {
   });
   registerCommands(ctx, ctx.logger);
 
-  // 极短的 PM 总纲（仿照 PTC_ONLY 那种 brief instruction 的密度）。
-  const pmGuide = 'Plastic Memories tools are available in this session: plasticize reshapes how your own past appears, ' +
-    'retrospect reads one past logical generation, and letter leaves a note for future generations. They operate on the ' +
-    'session surface; the trajectory itself is never deleted.';
-  try {
-    const systemPrompt = ctx.get('systemPrompt');
-    if (systemPrompt !== undefined && systemPrompt !== null && typeof systemPrompt.section === 'function') {
-      const order = typeof systemPrompt.getSectionOrder === 'function'
-        ? systemPrompt.getSectionOrder('PTC_ONLY') + 10
-        : 810;
-      ctx.effect(() => systemPrompt.section({ name: 'plastic-memories:guide', order, text: pmGuide }));
-    }
-  } catch {
-    // 没有 systemPrompt 服务时静默跳过；工具描述本身仍完整。
-  }
-
   /**
    * 运行期一致性自检：我们的世代投影状态（可见 seq / 世代号）必须与**官方 surface**
    * （真正用于组装推理请求的那一份）完全一致；不一致只告警一次（诊断用途，不降级功能）。
@@ -424,21 +408,19 @@ export function apply(ctx, config) {
     tool({
       name: 'plasticize',
       description: [
-        "Reshape how your own past appears in this context. This is the only tool that changes the surface and starts a new logical generation. The trajectory is never deleted: hidden material remains in the session log and can be inspected with retrospect. Treat this as editing the context, not as a scratch pad.",
-        "POSITIONS. Use the 0-based unit numbers returned by retrospect(self) or shown in the Generation tab. The system prompt is unit 0. An assistant message and its tool results are one unit; tool results are not addressed separately. Forms: 'unit 3', 'unit 3 to 7', 'this'. Hidden units are no longer part of the current generation and cannot be targeted.",
-        "OPS. Each op has positions and new_text. Every selected unit is hidden except the last by position, which is replaced by new_text. An empty new_text is a pure hole (hide). One op may cover several disjoint ranges.",
-        "MODES. ops is required and non-empty in both modes. option:\"set\" previews and writes nothing. option:\"execute\" commits at the next submission boundary. Only ONE plasticize call is allowed per run_code program (or per assistant message); set and execute count the same. To commit the pending set verbatim, use ops:[{positions:[\"the last plasticize(set)\"]}] — that element must be alone in its op and must not carry new_text/lock_this/types. An execute without it does not consume the pending set.",
-        "lock_this:true locks the replacement message itself into the safety zone; default false.",
-        "SAFETY ZONE. Locked units cannot be reshaped. A selection that intersects the safety zone fails and reports the locked region; the user can unlock it with /plasticize unlock.",
-        "AUTO-HIDE. After a successful execute, whole units (assistant message plus all its tool results) written before that execute are auto-hidden when they contain a failed call to any Plastic Memories tool (plasticize, retrospect, letter), any plasticize(set) preview (fulfilled or not), or any successful letter. Other tools mixed into the same unit are hidden with it. The execute receipt itself remains visible.",
-        "WEAK OPERATION. positions [\"this\"] with an empty new_text as the ENTIRE operation hides only this call and its result; its net effect equals not making the call. Hiding it together with other units is useful; to hide a target step, name its unit.",
+        '重塑你自己过去的呈现。它会改写模型当前看到的上下文，并开启一个新的逻辑世代；会话日志不会被删除，被隐藏的消息之后仍可用 retrospect 读回。把它当成编辑上下文，不是草稿纸。',
+        '位置用 retrospect(self) 返回的单元号（0 起），系统提示是 unit 0。一条 assistant 消息连同它的全部工具结果算一个单元，工具结果不能单独选中。ops 是操作数组：每个操作给出一个选择器与一条替代文本，选择器命中的整段会被替代文本取代，替代文本为空即隐藏；要改多段就写多个操作。数组里还可以放 { "the last plasticize(set)": true }，它会在原位展开成上一条尚未提交的 set 的操作，只能出现一次。',
+        'option:"set" 只返回预览，不写入；option:"execute" 在下一个提交边界生效。一次程序（或一条消息）只能调用一次 plasticize。',
+        '安全区里的单元不能被重塑；命中安全区会失败并报出锁定范围，需要用户解锁。',
+        '成功 execute 之后，早于它的单元如果包含失败的 Plastic Memories 调用、set 预览或成功的 letter，会被自动隐藏；execute 的回执保留。',
+        '如果整个 ops 只有 [{ positions: "this" }] 且替代文本为空，就只隐藏这次调用本身，效果等于没有调用。',
       ].join(String.fromCharCode(10) + String.fromCharCode(10)),
       parameters: {
         type: 'object',
         properties: {
           ops: {
             type: 'array',
-            description: 'Required, non-empty. Each entry is either one operation (units + ONE replacement message) or the macro { "the last plasticize(set)": true }, which splices the pending set ops in place. The macro may appear once and is not valid for option:"set".',
+            description: '必填且非空。元素是一条操作，或占位元素 { "the last plasticize(set)": true }（展开上一条未提交的 set；只能出现一次；set 不能用）。',
             items: {
               oneOf: [
                 { type: 'string', const: 'the last plasticize(set)' },
@@ -454,10 +436,10 @@ export function apply(ctx, config) {
                   properties: {
                     positions: {
                       oneOf: [{ type: 'integer' }, { type: 'string' }],
-                      description: "ONE selector for this op: 'unit 3', the range 'unit 3 to 7', 'this', or a unit number. The whole selection is hidden and replaced by new_text (one op = one replacement). For several disjoint segments, write several ops.",
+                      description: "这条操作的选择器，只能填一个：unit 3、unit 3 to 7、this，或数字。",
                     },
-                    new_text: { type: 'string', description: 'Default: "" (pure hole/hide). The replacement message for this op.' },
-                    lock_this: { type: 'boolean', description: 'Default false. If true, lock the replacement message itself into the safety zone.' },
+                    new_text: { type: 'string', description: '替代文本；空表示隐藏。默认空。' },
+                    lock_this: { type: 'boolean', description: 'true 时把替代文本本身放进安全区。默认 false。' },
                   },
                   required: ['positions'],
                 },
@@ -467,11 +449,11 @@ export function apply(ctx, config) {
           option: {
             type: 'string',
             enum: ['set', 'execute'],
-            description: 'Required. set = preview only, writes nothing. execute = commit at the next boundary.',
+            description: 'set 只预览；execute 在下一个提交边界生效。',
           },
           preview_positions: {
             oneOf: [{ type: 'integer' }, { type: 'string' }],
-            description: 'Optional preview window for option:"set" (NOT the same thing as ops[].positions): ONE selector such as "unit 17" or "unit 17 to 28". The preview lists only those units of the next generation (real n/unit plus a "showing units ... of N" note). Ignored for execute. Use it to keep the preview small outside PTC.',
+            description: '仅 set 用：只预览这个选择器命中的单元。默认不过滤。',
           },
         },
         required: ['ops', 'option'],
@@ -530,26 +512,26 @@ export function apply(ctx, config) {
     tool({
       name: 'retrospect',
       description: [
-        "Read the context of a logical generation, past or current. Pure read.",
-        "Pass an absolute 0-based logical generation number, \"self\" (the current generation), or \"self - N\" (for example \"self - 1\"). Past generations are frozen; self returns the current surface as the model sees it now.",
-        "A successful execute freezes logical generation N and returns N; continued reasoning belongs to generation N + 1, so generation N is immediately queryable with self - 1.",
-        "Returns {logical,count,messages,letter?}. messages are compact model-context rows: {n,unit,type,text,calls?,locked?}; n is order, unit is the plasticize position, type is system/user/developer/assistant/tool/agent/skill/other. preview=true clips text. There is no separate units view: unit numbers are on every row.",
-        "Historical generations return the input of the request that produced their execute call. The generation that hid material belongs to the previous generation; read the previous generation to see it.",
+        '读取某个逻辑世代的上下文。只读，不修改任何东西。',
+        'generation 可以是绝对编号、self（当前世代）或 self - N。历史世代已经冻结；self 返回模型此刻看到的上下文。',
+        '成功的 execute 会冻结当前世代并返回它的编号，之后的推理属于下一代，所以刚冻结的世代可以立刻用 self - 1 读到。',
+        '返回 { logical, count, messages, letter? }。messages 每行对应一个单元的一部分：n 是行号，unit 是单元号，type 是来源类型，text 是内容；assistant 行可能带 calls，当前世代的行可能带 locked。preview=true 时裁剪 text。',
+        '历史世代返回它冻结前模型最后一次收到的输入。某个世代隐藏掉的内容属于上一代，要看得读上一代。',
       ].join(String.fromCharCode(10) + String.fromCharCode(10)),
       parameters: {
         type: 'object',
         properties: {
           generation: {
             oneOf: [{ type: 'integer' }, { type: 'string' }],
-            description: 'Required. Logical generation: absolute number (e.g. 3), "self" (current), or "self - N" (e.g. "self - 1").',
+            description: '绝对编号、"self" 或 "self - N"。',
           },
           preview: {
             type: 'boolean',
-            description: 'Default false. When true, clip message text.',
+            description: 'true 时裁剪每条 text。默认 false。',
           },
           result_positions: {
             oneOf: [{ type: 'integer' }, { type: 'string' }],
-            description: 'Optional result window: ONE selector such as "unit 17" or "unit 17 to 28". Only those units are returned (rows keep their real n/unit); the reply then also carries total and units. Use it to keep the tool result small — especially outside PTC. Call retrospect again for another segment. "this" is not allowed here.',
+            description: '只返回这个选择器命中的单元，并附 total 与 units；要看多段就多调一次。不接受 this。',
           },
         },
         required: ['generation'],
@@ -573,13 +555,13 @@ export function apply(ctx, config) {
     tool({
       name: 'letter',
       description: [
-        "Leave a note for future generations. This is not a message sent to them; it is a note intended for retrieval via retrospect. Inherit it only when it will not distort future generations: small stabilizations or hides may carry it forward; major rewrites or stale notes should not. Information that must guide future generations belongs in the shaping operations themselves.",
-        "One plain-text letter per call. No side effects: no surfaceOp, no private data, no generation; the text exists only in this tool call's trajectory. Returns \"Registered.\" retrospect({generation}) returns that logical generation's letters in order, each with its in-generation message index and timestamp.",
+        '给未来世代留一张便条。便条不会留在上下文里：成功调用后，这个单元会在下一次成功 execute 时被自动隐藏，之后只能用 retrospect 读回。',
+        '每次调用一张纯文本。它不写上下文、不产生世代。需要影响未来世代的内容，应该写进塑形操作本身，而不是便条里。',
       ].join(String.fromCharCode(10) + String.fromCharCode(10)),
       parameters: {
         type: 'object',
         properties: {
-          text: { type: 'string', description: 'Required. The note to leave. One letter per call.' },
+          text: { type: 'string', description: '便条内容，每次一张。' },
         },
         required: ['text'],
       },
