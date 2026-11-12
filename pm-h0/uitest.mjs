@@ -58,7 +58,7 @@ console.log(NL + '② 一次投影 = 一代快照；wire 值能还原每一代')
 
   openStep(session, 2, 1);
   plasticizeCall(session, { turn: 2, step: 1 }, 'ui-exec', {
-    ops: [{ spans: ['(5,6)'], new_text: '⟨UI 测试投影⟩' }],
+    ops: [{ positions: ['this'], new_text: '⟨UI 测试投影⟩' }],
     option: 'execute',
   });
   // 第 0 代 = 投影**写入前**的工作面 —— 它包含这次 plasticize 调用自己的两步。
@@ -428,7 +428,7 @@ console.log(NL + '⑥ 投影单元真的能被 host 注册表驱动并发布 wir
 
   openStep(session, 2, 1);
   plasticizeCall(session, { turn: 2, step: 1 }, 'ui-proj-exec', {
-    ops: [{ spans: ['(5,6)'], new_text: '⟨投影后的世代⟩' }],
+    ops: [{ positions: ['this'], new_text: '⟨投影后的世代⟩' }],
     option: 'execute',
   });
   flush(session, { openStep: { turn: 2, step: 1 } });

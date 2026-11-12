@@ -9,6 +9,7 @@
 
 import { logicalGenerations, lockedSeqs } from './engine.js';
 import { classifyMessage, selectUnits } from './units.js';
+import { derivedMessage } from './coords.js';
 
 /**
  * @param {object} session - 当前会话。
@@ -39,7 +40,7 @@ export function messagesAt(session, before) {
  * @param {Array<string|number>} [selectors] - positions 语法；只返回这些单元的行。
  */
 export function retrospectMessages(session, preview = false, selectors = undefined) {
-  const rows = compactMessages(session, currentInputMessages(session));
+  const rows = compactMessages(session, messagesWithSeqs(session, currentCutoff(session)));
   const window = windowRows(rows, selectors);
   const logical = logicalGenerations(session).total;
   const messages = window.rows.map((row) => {
@@ -67,12 +68,40 @@ export function retrospectMessages(session, preview = false, selectors = undefin
  * @param {object} session
  * @returns {Array<object>} DSH Message[]
  */
-export function currentInputMessages(session) {
+
+/** 本次请求输入的截止 seq：最新 assistant 之前。 */
+export function currentCutoff(session) {
   let cutoff;
   for (const event of session.snapshotEvents()) {
     if (event.type === 'assistant/message' && Number.isSafeInteger(event.seq)) cutoff = event.seq;
   }
-  return cutoff === undefined ? session.deriveMessages() : messagesAt(session, cutoff);
+  return cutoff;
+}
+
+export function currentInputMessages(session) {
+  return messagesWithSeqs(session, currentCutoff(session)).map((entry) => entry.message);
+}
+
+/**
+ * 消息 + 它来自的日志 seq（顺序就是 DSH surface 顺序）。
+ * 有 seq 才能做安全区标记；deriveMessages() 只给内容不给 seq。
+ * @param {object} session
+ * @param {number} [before] - 只取 seq < before 的事件。
+ * @returns {Array<{seq: number, message: object}>}
+ */
+export function messagesWithSeqs(session, before) {
+  let view = session;
+  if (Number.isSafeInteger(before)) {
+    const events = session.snapshotEvents().filter((event) => Number.isSafeInteger(event.seq) && event.seq < before);
+    if (events.length === 0) return [];
+    view = session.constructor.create(session.id, events, session.header, 0, session.surfaceManager?.projections);
+  }
+  const out = [];
+  for (const seq of view.surface.nodes) {
+    const message = derivedMessage(view, view.eventAt(seq));
+    if (message !== undefined && message !== null) out.push({ seq, message });
+  }
+  return out;
 }
 
 function textOf(message) {
@@ -101,18 +130,12 @@ function callsOf(message) {
  * @param {{locks?: boolean}} [options] - locks=false 时不标注安全区。
  * @returns {Array<object>} [{n,unit,type,text,calls?,locked?}]
  */
-export function compactMessages(session, messages, options = {}) {
-  const rows = groupRows(messages);
-  if (options.locks === false) return rows;
-  const byId = new Map();
-  for (const event of session.snapshotEvents()) {
-    const id = event?.data?.message?.id;
-    if (typeof id === 'string') byId.set(id, event);
-  }
-  const locks = lockedSeqs(session);
-  for (const row of rows) {
-    const event = byId.get(row.id);
-    if (event !== undefined && Number.isSafeInteger(event.seq) && locks.has(event.seq)) row.locked = true;
+export function compactMessages(session, entries, options = {}) {
+  const rows = groupRows(entries.map((entry) => entry.message));
+  for (let index = 0; index < rows.length; index += 1) rows[index].seq = entries[index].seq;
+  if (options.locks !== false) {
+    const locks = lockedSeqs(session);
+    for (const row of rows) if (locks.has(row.seq)) row.locked = true;
   }
   return rows;
 }

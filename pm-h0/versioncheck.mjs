@@ -27,7 +27,7 @@ console.log(NL + '② bundle patch 通用化');
 
 console.log(NL + '③ 打包完整性');
 {
-  const runtimeModules = ['index.js', 'engine.js', 'coords.js', 'schema.js', 'markers.js', 'units.js', 'unitops.js', 'unitretro.js', 'boundaries.js', 'safetyreplay.js'];
+  const runtimeModules = ['index.js', 'engine.js', 'coords.js', 'schema.js', 'markers.js', 'units.js', 'unitops.js', 'messages.js', 'boundaries.js', 'safetyreplay.js'];
   const imported = new Set();
   for (const mod of runtimeModules) {
     let source;
@@ -36,7 +36,7 @@ console.log(NL + '③ 打包完整性');
   }
   const missing = [...imported].filter((file) => !pkg.files.includes(file));
   ok(missing.length === 0, '被 import 的本地模块都在 files 里（共 ' + imported.size + ' 个）', missing.join(', '));
-  for (const entry of ['index.js', 'engine.js', 'units.js', 'unitops.js', 'unitretro.js', 'boundaries.js', 'safetyreplay.js']) {
+  for (const entry of ['index.js', 'engine.js', 'units.js', 'unitops.js', 'messages.js', 'boundaries.js', 'safetyreplay.js']) {
     ok(pkg.files.includes(entry), 'files 包含 ' + entry);
   }
 }

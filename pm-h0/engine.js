@@ -30,7 +30,6 @@
 import { initState, applyEvent } from './generations.js';
 import { findOverlap } from './overlap.js';
 import { pmSettledCallIds, pmSource } from './markers.js';
-import { resolveOps } from './plasticize.js';
 import { resolveUnitOps } from './unitops.js';
 import { currentUnits } from './units.js';
 import { logicalBoundaries } from './boundaries.js';
@@ -550,12 +549,6 @@ function safetyZoneNote(session, locks) {
   if (zones.length === 0) return '';
   return ' 当前安全区（区间，易过时；后续操作可能改变它）：' + zones + '。';
 }
-/** 解析一个区间为当前工作面上的 seq（不写状态）。 */
-export function resolveLockSeqs(session, interval) {
-  const resolved = resolveOps(session, [{ spans: [interval], new_text: 'lock' }], undefined);
-  return resolved.flatMap((span) => span.shadowed);
-}
-
 /** 追加一条安全区私有事件（append-only；官方 plugin record）。 */
 export function appendSafetyRecord(session, payload) {
   return session.append('plugin:plastic-memories/locks', payload);
@@ -570,10 +563,7 @@ function assertNotLocked(session, locks, shadowed) {
   }
 }
 function resolveDeclarationOps(session, ops, here) {
-  if (Array.isArray(ops) && ops.some((op) => op !== null && typeof op === 'object' && Object.hasOwn(op, 'positions'))) {
-    return resolveUnitOps(session, ops, here);
-  }
-  return resolveOps(session, ops, here);
+  return resolveUnitOps(session, ops, here);
 }
 
 function applyDeclarations(session, declarations, open, state, options = {}) {
@@ -705,7 +695,7 @@ function applyDeclarations(session, declarations, open, state, options = {}) {
     ? autoHideTargets(session, state, claimed, settledBefore, locks)
     : [];
 
-  // 全部解析完再写：上面所有 resolveOps 都针对同一个（尚未改变）的工作面。
+  // 全部解析完再写：上面所有解析都针对同一个（尚未改变）的工作面。
   const batchFirstPhysical = session.surface.replaceGeneration + 1;
   let explicit = 0;
   for (let i = 0; i < planned.length; i++) {

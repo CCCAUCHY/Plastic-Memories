@@ -36,15 +36,6 @@ ok(!tools.includes('undefined'), '没有空工具');
 const store = makeStore();
 const session = store.sessions.create('global-retro', { seed: cookieSeed('subagent-95230f54.jsonl') });
 const retrospect = definitions.find((definition) => definition.name === 'retrospect');
-let unitData;
-try {
-  const result = await retrospect.execute({ generation: 'self', units: true }, { agent: { session } });
-  unitData = JSON.parse(result.text);
-} catch (error) {
-  unitData = { error: String(error.message) };
-}
-ok(unitData.error === undefined && unitData.count > 0 && unitData.units[0].n === 0, 'retrospect(self, units) 返回单元数组', JSON.stringify(unitData).slice(0, 160));
-ok(unitData.units !== undefined && unitData.units[0].type === 'system', '0 号单元是 system');
 let messageData;
 try {
   const result = await retrospect.execute({ generation: 'self' }, { agent: { session } });

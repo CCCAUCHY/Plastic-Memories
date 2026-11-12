@@ -13,7 +13,7 @@
 import { SURFACE_TYPES, derivedMessage, messageText } from './coords.js';
 import { logicalGenerations } from './engine.js';
 import { logicalBoundaries } from './boundaries.js';
-import { messagesAt, currentInputMessages, compactMessages, windowRows } from './messages.js';
+import { messagesWithSeqs, compactMessages, windowRows, currentCutoff } from './messages.js';
 import { renderPreview } from './preview.js';
 
 /** 事件类型到角色名的兜底映射（正常消息直接读 message.role）。 */
@@ -113,9 +113,9 @@ export function retrospectGeneration(session, generation, preview = false, selec
   const isCurrent = normalized.current;
   const logical = isCurrent ? self : target;
 
-  let rawMessages;
+  let rawEntries;
   if (isCurrent) {
-    rawMessages = currentInputMessages(session);
+    rawEntries = messagesWithSeqs(session, currentCutoff(session));
   } else {
     // 世代边界：优先该世代的 execute 声明，其次 compaction checkpoint。
     const execute = info.executes.find((entry) => entry.logical === target);
@@ -131,11 +131,11 @@ export function retrospectGeneration(session, generation, preview = false, selec
       if (event.seq >= boundarySeq) break;
       if (event.type === 'assistant/message') requestSeq = event.seq;
     }
-    rawMessages = messagesAt(session, requestSeq ?? boundarySeq);
+    rawEntries = messagesWithSeqs(session, requestSeq ?? boundarySeq);
   }
 
   const letter = lettersOfGeneration(events, isCurrent ? Number.POSITIVE_INFINITY : target, info, []);
-  const window = windowRows(compactMessages(session, rawMessages, { locks: isCurrent }), selectors);
+  const window = windowRows(compactMessages(session, rawEntries, { locks: isCurrent }), selectors);
   // 行里的 id 只用于查锁，不发给模型。
   const rows = window.rows.map((row) => {
     const { id, ...rest } = row;

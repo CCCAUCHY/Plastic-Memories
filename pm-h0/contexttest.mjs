@@ -30,7 +30,7 @@ console.log(NL + '① live session：rows 就是官方 deriveMessages()');
     const turn = 2 + index;
     openStep(session, turn, 1);
     plasticizeCall(session, { turn, step: 1 }, 'ctx-exec-' + String(index), {
-      ops: [{ spans: ['this'], new_text: '⟨第' + String(index) + '代⟩' }],
+      ops: [{ positions: ['this'], new_text: '⟨第' + String(index) + '代⟩' }],
       option: 'execute',
     });
     flush(session, { openStep: { turn, step: 1 } });

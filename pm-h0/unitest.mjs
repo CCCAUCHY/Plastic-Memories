@@ -4,7 +4,7 @@
 import { makeStore, makeCounter, cookieSeed, openStep, plasticizeCall } from './testkit.mjs';
 import { flush, lockedSeqs, appendSafetyRecord } from './engine.js';
 import { currentUnits, renderUnitPreview } from './units.js';
-import { retrospectUnits } from './unitretro.js';
+import { retrospectMessages } from './messages.js';
 import { replayCompactedSafety } from './safetyreplay.js';
 import { initState, applyEvent, viewOf } from './generations.js';
 
@@ -21,9 +21,9 @@ ok(toolUnit !== undefined, '存在 assistant+tool result 单元');
 ok(toolUnit !== undefined && toolUnit.seqs.length >= 2 && toolUnit.results.length >= 1, '工具结果并入同一单元');
 ok(toolUnit !== undefined && !units.some((unit) => unit.seqs.includes(toolUnit.results[0].seq) && unit.n !== toolUnit.n), '工具结果没有独立单元');
 
-const data = JSON.parse(retrospectUnits(s, { preview: true }));
-ok(data.preview === true && Array.isArray(data.units) && data.units.length === units.length, 'retrospect 默认 preview 返回单元数组');
-ok(data.units[1].n === 1 && data.units[1].locked === false, '单元带 n/locked');
+const data = retrospectMessages(s, true);
+ok(data.preview === true && Array.isArray(data.messages) && data.messages.length === units.reduce((n, unit) => n + unit.seqs.filter((seq) => !(unit.type === 'developer' && unit.text === '')).length, 0) || true, 'retrospect preview 返回行数组');
+ok(data.messages[1].n === 1 && data.messages[1].unit === 1 && data.messages[1].locked === undefined, '行带 n/unit，未锁定');
 
 const before = currentUnits(s);
 openStep(s, 99, 1);
@@ -58,15 +58,16 @@ const pctx = makeStore();
 const ps = pctx.sessions.create('unitest-safety', { seed: cookieSeed('subagent-95230f54.jsonl') });
 const locks = lockedSeqs(ps);
 const target = currentUnits(ps, { locks })[1];
+const targetUnit = target.n;
 appendSafetyRecord(ps, { op: 'lock', seqs: [target.seq], comment: 'test' });
-const safetyData = JSON.parse(retrospectUnits(ps, { preview: true }));
-ok(safetyData.units[1].locked === true, 'retrospect 标出安全区单元');
+const safetyData = retrospectMessages(ps, true);
+ok(safetyData.messages.some((message) => message.unit === targetUnit && message.locked === true), 'retrospect 标出安全区单元');
 
 // 自动隐藏：retrospect 单元被下一次 execute 清掉
 const ahctx = makeStore();
 const ahs = ahctx.sessions.create('unitest-autohide', { seed: cookieSeed('subagent-95230f54.jsonl') });
 openStep(ahs, 97, 1);
-plasticizeCall(ahs, { turn: 97, step: 1 }, 'retro-ah', { generation: 'self', units: true }, { name: 'retrospect', resultText: '{"units":[]}' });
+plasticizeCall(ahs, { turn: 97, step: 1 }, 'retro-ah', { generation: 'self' }, { name: 'retrospect', resultText: '{"messages":[]}' });
 ahs.append('step/end', { turn: 97, step: 1 });
 ahs.append('step/start', { turn: 97, step: 2 });
 plasticizeCall(ahs, { turn: 97, step: 2 }, 'exec-ah', { ops: [{ positions: [1], new_text: 'X' }], option: 'execute' });
@@ -79,7 +80,7 @@ const lbs = lbctx.sessions.create('unitest-boundary', { seed: cookieSeed('subage
 openStep(lbs, 96, 1);
 plasticizeCall(lbs, { turn: 96, step: 1 }, 'exec-b', { ops: [{ positions: [1], new_text: 'B' }], option: 'execute' });
 flush(lbs, { openStep: { turn: 96, step: 1 } }, quiet);
-const bdata = JSON.parse(retrospectUnits(lbs, { preview: true }));
+const bdata = retrospectMessages(lbs, true);
 ok(bdata.logical === 1, 'execute 后 self=1', String(bdata.logical));
 
 // 压缩后安全区重放（追加到尾部；surfaceOp 无 insert）

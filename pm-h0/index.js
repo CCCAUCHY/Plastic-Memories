@@ -18,12 +18,11 @@ import { fileURLToPath } from 'node:url';
 import { registerCommands } from './commands.js';
 import { GENERATIONS_KEY, generationProjection } from './generations.js';
 import { stepGroup, surfaceNodes } from './coords.js';
-import { resolveOps, previewOf, findLastPendingSet, normalizeOp } from './plasticize.js';
+import { previewOf, findLastPendingSet, normalizeOp } from './plasticize.js';
 import { resolveUnitOps } from './unitops.js';
 import { normalizeSelectors } from './opshape.js';
 import { isThisSelector } from './units.js';
 import { retrospect } from './retrospect.js';
-import { retrospectUnits } from './unitretro.js';
 import { retrospectMessages } from './messages.js';
 import { replayCompactedSafety } from './safetyreplay.js';
 import { openSetProfile } from './grouping.js';
@@ -251,6 +250,13 @@ function tool(spec) {
   };
 }
 
+/** ops 选填：缺省即 []（execute with [] 只兑现上一条 set）。 */
+function normalizeOps(value) {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) throw new Error('ops must be an array');
+  return value;
+}
+
 /** 取本次调用所属的 agent 会话。全局注册：任何 preset 都能用。 */
 function sessionOf(exec) {
   const session = exec?.agent?.session;
@@ -423,16 +429,16 @@ export function apply(ctx, config) {
         "OPS. Each op has positions and new_text. Every selected unit is hidden except the last by position, which is replaced by new_text. An empty new_text is a pure hole (hide). One op may cover several disjoint ranges.",
         "MODES. option:\"set\" previews and writes nothing. option:\"execute\" commits at the next submission boundary. Only ONE plasticize call is allowed per run_code program (or per assistant message); set and execute count the same. Do not issue two plasticize calls before the next boundary. also_execute_last_set defaults to true: an execute commits the most recent unexecuted set as well; pass false to leave it pending. The field is not valid on set. A set result states whether committing is available.",
         "lock_this:true locks the replacement message itself into the safety zone; default false.",
-        "SAFETY ZONE. Locked messages cannot be reshaped. A span that intersects the safety zone fails and reports the locked region as cookie intervals; the user can unlock it with /plasticize unlock.",
+        "SAFETY ZONE. Locked units cannot be reshaped. A selection that intersects the safety zone fails and reports the locked region; the user can unlock it with /plasticize unlock.",
         "AUTO-HIDE. After a successful execute, whole units (assistant message plus all its tool results) written before that execute are auto-hidden when they contain a failed call to any Plastic Memories tool (plasticize, retrospect, letter), any plasticize(set) preview (fulfilled or not), or any successful letter. Other tools mixed into the same unit are hidden with it. The execute receipt itself remains visible.",
-        "WEAK OPERATION. spans [\"this\"] with an empty new_text as the ENTIRE operation hides only this call and its result; its net effect equals not making the call. A long run of cookie messages can indicate that this has happened repeatedly. Hiding this together with other spans is useful; to hide a target step, use its cookie interval.",
+        "WEAK OPERATION. positions [\"this\"] with an empty new_text as the ENTIRE operation hides only this call and its result; its net effect equals not making the call. Hiding it together with other units is useful; to hide a target step, name its unit.",
       ].join(String.fromCharCode(10) + String.fromCharCode(10)),
       parameters: {
         type: 'object',
         properties: {
           ops: {
             type: 'array',
-            description: 'One entry per operation. Each entry names one or more spans and ONE replacement message.',
+            description: 'Optional, default []. One entry per operation. Each entry names one or more units and ONE replacement message. An execute with [] only commits the previous pending set.',
             items: {
               type: 'object',
               additionalProperties: false,
@@ -446,12 +452,7 @@ export function apply(ctx, config) {
                   items: { oneOf: [{ type: 'integer' }, { type: 'string' }] },
                   description: "Current-generation unit numbers (0 = system prompt). Write one selector per selected unit: 'unit 3', 'unit 7', or the range 'unit 3 to 7'. 'this' selects the unit carrying this call. Example: positions:['unit 3','unit 7'] selects two units; positions:['unit 3 to 7'] selects 3 through 7. Every selected unit is hidden except the last, which is replaced by new_text. Tool results belong to the assistant unit.",
                 },
-                spans: {
-                  type: 'array',
-                  items: { type: 'string' },
-                  description: 'Deprecated migration form: cookie ranges. Use positions.',
-                },
-                new_text: { type: 'string', description: 'Default: "" (pure hole/hide). Placed at the LAST span: the replacement message. Earlier spans are hidden automatically.' },
+                new_text: { type: 'string', description: 'Default: "" (pure hole/hide). Placed at the LAST selected unit: the replacement message. Earlier units are hidden automatically.' },
                 lock_this: { type: 'boolean', description: 'Default false. If true, lock the replacement message itself into the safety zone (it can never be reshaped afterwards).' },
                 types: {
                   type: 'array',
@@ -459,8 +460,7 @@ export function apply(ctx, config) {
                   description: 'Default: [] (no filter). Type filter inside each resolved span: user/developer match one message; assistant/error/letter match the whole unit (assistant message + its tool results). Cookie messages never match, even as user/developer. Matched units are hidden; the last matched unit is replaced by new_text. If omitted or empty, every message in the interval matches, cookies included.',
                 },
               },
-              // positions 是新语法；spans 保留给旧测试/迁移期，工具层二选一校验。
-              required: [],
+              required: ['positions'],
             },
           },
           option: {
@@ -478,7 +478,7 @@ export function apply(ctx, config) {
             description: 'Optional preview window for option:"set" (NOT the same thing as ops[].positions). Same unit syntax: ["unit 17"] or ["unit 17 to 28"]. The preview lists only those units of the next generation (real n/unit, plus a "showing units ... of N" note). Ignored for execute. Use it to keep the preview small outside PTC.',
           },
         },
-        required: ['ops', 'option'],
+        required: ['option'],
       },
       execute(args, exec) {
         const session = sessionOf(exec);
@@ -510,7 +510,7 @@ export function apply(ctx, config) {
             });
           }
         }
-        batches.push({ from: 'this call', callId: exec.callId, ops: args?.ops, here });
+        batches.push({ from: 'this call', callId: exec.callId, ops: normalizeOps(args?.ops), here });
 
         // execute 允许 ops: []：表示「只兑现上一条 set」，与 engine 的 flush 语义一致。
         // 不能把空 ops 丢给解析器（它会报 ops must be a non-empty array）。
@@ -524,7 +524,7 @@ export function apply(ctx, config) {
         if (option === 'set') {
           const flat = [];
           for (const batch of batches) {
-            const resolved = resolveBatchOps(session, batch.ops, batch.here);
+            const resolved = resolveUnitOps(session, batch.ops, batch.here);
             assertResolvedUnlocked(session, resolved);
             flat.push(...resolved);
           }
@@ -537,7 +537,7 @@ export function apply(ctx, config) {
           // 只登记：真正写入由 flush 在提交边界做（见 engine.js 的说明）。
           let total = 0;
           for (const batch of activeBatches) {
-            const resolved = resolveBatchOps(session, batch.ops, batch.here);
+            const resolved = resolveUnitOps(session, batch.ops, batch.here);
             assertResolvedUnlocked(session, resolved);
             total += resolved.length;
           }
@@ -559,7 +559,7 @@ export function apply(ctx, config) {
         "Read the context of a logical generation, past or current. Pure read.",
         "Pass an absolute 0-based logical generation number, \"self\" (the current generation), or \"self - N\" (for example \"self - 1\"). Past generations are frozen; self returns the current surface as the model sees it now.",
         "A successful execute freezes logical generation N and returns N; continued reasoning belongs to generation N + 1, so generation N is immediately queryable with self - 1.",
-        "Returns {logical,count,messages,letter?}. messages are compact model-context rows: {n,unit,type,text,calls?,locked?}; n is order, unit is the plasticize position, type is system/user/developer/assistant/tool/agent/skill/other. preview=true clips text.",
+        "Returns {logical,count,messages,letter?}. messages are compact model-context rows: {n,unit,type,text,calls?,locked?}; n is order, unit is the plasticize position, type is system/user/developer/assistant/tool/agent/skill/other. preview=true clips text. There is no separate units view: unit numbers are on every row.",
         "Historical generations return the input of the request that produced their execute call. The generation that hid material belongs to the previous generation; read the previous generation to see it.",
       ].join(String.fromCharCode(10) + String.fromCharCode(10)),
       parameters: {
@@ -573,10 +573,6 @@ export function apply(ctx, config) {
             type: 'boolean',
             description: 'Default false. When true, clip message text.',
           },
-          units: {
-            type: 'boolean',
-            description: 'Internal migration flag: when true, return current-generation units with 0-based n.',
-          },
           result_positions: {
             type: 'array',
             items: { oneOf: [{ type: 'integer' }, { type: 'string' }] },
@@ -589,7 +585,6 @@ export function apply(ctx, config) {
         const session = sessionOf(exec);
         const generation = args?.generation;
         const isSelf = typeof generation === 'string' && /^self(?:\s*-\s*0)?$/iu.test(generation.trim());
-        if (args?.units === true) return Promise.resolve({ text: retrospectUnits(session, args ?? {}) });
         // 结果窗口：命令里的 this 没有锚点，这里直接拒绝。
         const selectors = normalizeSelectors(args?.result_positions, 'result_positions');
         if (selectors !== undefined && selectors.some((one) => isThisSelector(one))) {
@@ -629,12 +624,6 @@ export function apply(ctx, config) {
    * @param {object} exec - 工具执行上下文。
    * @returns {object|undefined} 本步整组。
    */
-  function resolveBatchOps(session, ops, here) {
-    return Array.isArray(ops) && ops.some((op) => op !== null && typeof op === 'object' && Object.hasOwn(op, 'positions'))
-      ? resolveUnitOps(session, ops, here)
-      : resolveOps(session, ops, here);
-  }
-
   function stepGroupFor(session, exec) {
     const callId = exec?.callId;
     if (typeof callId !== 'string') return undefined;
