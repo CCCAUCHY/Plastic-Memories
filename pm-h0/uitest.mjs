@@ -159,6 +159,12 @@ console.log(NL + '④ 客户端 bundle 与命令解析');
   try { parseOpText('hide [1,2]'); } catch (error) { sharedBad = String(error.message); }
   ok(typeof sharedBad === 'string' && sharedBad.includes('unit'), '非法选择器的报错也来自同一处', sharedBad?.slice(0, 40));
 
+  // this 只属于模型调用：命令里直接拒绝，并给出可执行的替代写法。
+  let thisRejected;
+  try { parsePlasticizeCommand('this: 摘要'); } catch (error) { thisRejected = String(error.message); }
+  ok(typeof thisRejected === 'string' && thisRejected.includes('this') && thisRejected.includes('unit 17'), '命令拒绝 this 并提示具体单元号', thisRejected?.slice(0, 40));
+  ok(parseOpText('this: 摘要').positions[0] === 'this', '工具路径仍然允许 this');
+
   // 不变式：命令文本 = 单元素 positions 的 op。
   for (const sample of ['unit 17: 文本', 'unit 17 to 28: 文本', 'this: 文本', 'unit 17']) {
     const asText = parseOpText(sample);

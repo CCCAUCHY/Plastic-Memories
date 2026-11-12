@@ -17,6 +17,10 @@
 
 import { clearStagedOperations, pendingUserOperations, stageUserOperation } from './engine.js';
 import { parseOpText } from './opshape.js';
+import { isThisSelector } from './units.js';
+
+/** `this` 只有模型在 run_code 里调用时才有意义。 */
+const THIS_HINT = '命令里不能用 this：它指模型本次工具调用所在的单元，只有模型在 run_code 里调用时才有；请写具体单元号，例如 unit 17';
 
 const HINT = '<unit 17: 替代文本> 或 <unit 17 to 28: 替代文本> | hide/lock/unlock <选择器> | unlock all | prelock | clear';
 
@@ -41,15 +45,19 @@ export function parsePlasticizeCommand(rawInput, locale = 'zh') {
       if (kind !== 'unlock') throw new Error(en ? 'lock all is not supported; name units explicitly.' : 'lock all 已取消；请逐个指定单元。');
       return { action: 'stage', kind: 'unlock', mode: 'all', newText: '' };
     }
+    if (isThisSelector(rest)) throw new Error(THIS_HINT);
     return { action: 'stage', kind: kind === 'hide' ? 'project' : kind, mode: 'range', positions: [rest], newText: '' };
   }
 
   // 投影与工具共用同一套 op 语法：<selector>: <new_text>；没有冒号就是纯隐藏。
   let op;
   try {
-    op = parseOpText(text);
+    op = parseOpText(text, { allowThis: false });
   } catch (error) {
-    if (String(error.message).includes('unit') || String(error.message).includes('选择器')) {
+    const message = String(error.message);
+    // this 是语义错误，原样抛出（它自带解释）；其余按语法错误提示通用用法。
+    if (message.includes('this')) throw error;
+    if (message.includes('unit') || message.includes('选择器')) {
       throw new Error((en ? 'Write the selector, then a colon, then the replacement: /plasticize unit 17: text' : '选择器后面要用冒号接替代文本：/plasticize unit 17: 要写入的文本'));
     }
     throw new Error((en ? 'Usage: /plasticize ' : '用法：/plasticize ') + hint);
