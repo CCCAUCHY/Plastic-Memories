@@ -10,13 +10,12 @@
 import { UNIT_SELECTOR_SOURCE, isThisSelector } from './units.js';
 
 /** 段落里允许出现的字段。 */
-const OP_FIELDS = new Set(['positions', 'new_text', 'lock_this', 'types']);
-const TYPE_NAMES = new Set(['user', 'developer', 'assistant', 'error', 'letter']);
+const OP_FIELDS = new Set(['positions', 'new_text', 'lock_this']);
 
 /** 所有 op 可选字段的唯一默认值来源。 */
 export const LAST_SET_SELECTOR = 'the last plasticize(set)';
 
-export const OP_DEFAULTS = Object.freeze({ new_text: '', lock_this: false, types: [] });
+export const OP_DEFAULTS = Object.freeze({ new_text: '', lock_this: false });
 
 /**
  * 校验并归一化一个段落。
@@ -25,7 +24,7 @@ export const OP_DEFAULTS = Object.freeze({ new_text: '', lock_this: false, types
  *
  * @param {unknown} raw - 模型给的段落。
  * @param {number} index - 段落序号（错误信息用）。
- * @returns {{positions: Array<string|number>, new_text: string, lock_this: boolean, types: string[]}} 段落。
+ * @returns {{positions: Array<string|number>, new_text: string, lock_this: boolean}} 段落。
  * @throws {Error} 字段非法时。
  */
 export function normalizeOp(raw, index) {
@@ -49,15 +48,7 @@ export function normalizeOp(raw, index) {
   if (typeof newText !== 'string') throw new Error('op #' + index + ' new_text must be a string');
   const lockThis = raw.lock_this === undefined ? OP_DEFAULTS.lock_this : raw.lock_this;
   if (typeof lockThis !== 'boolean') throw new Error('op #' + index + ' lock_this must be a boolean');
-  const rawTypes = raw.types === undefined ? OP_DEFAULTS.types : raw.types;
-  if (!Array.isArray(rawTypes)) throw new Error('op #' + index + ' types must be an array');
-  const types = [...new Set(rawTypes)];
-  for (const type of types) {
-    if (typeof type !== 'string' || !TYPE_NAMES.has(type)) {
-      throw new Error('op #' + index + ' types contains unknown type ' + JSON.stringify(type) + '; allowed: ' + [...TYPE_NAMES].join(', '));
-    }
-  }
-  return { positions: [...raw.positions], new_text: newText, lock_this: lockThis, types };
+  return { positions: [...raw.positions], new_text: newText, lock_this: lockThis };
 }
 
 const COLON_OP = new RegExp('^(' + UNIT_SELECTOR_SOURCE + ')\\s*:\\s*([\\s\\S]*)$', 'iu');
@@ -76,7 +67,7 @@ const BARE_OP = new RegExp('^(' + UNIT_SELECTOR_SOURCE + ')\\s*:?$', 'iu');
  * @param {string} text - 命令剩余部分。
  * @param {{allowThis?: boolean}} [options] - allowThis=false 时 `this` 直接报错
  *   （它指模型本次调用所在单元，用户手打命令时没有这个锚点）。
- * @returns {{positions: string[], new_text: string, lock_this: boolean, types: string[]}} op。
+ * @returns {{positions: string[], new_text: string, lock_this: boolean}} op。
  */
 export function parseOpText(text, options = {}) {
   const op = parseOpSource(text);

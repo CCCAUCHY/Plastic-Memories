@@ -109,13 +109,13 @@ ok(parseOpText('this: x').positions[0] === 'this', 'this 在工具侧可用');
 ok(errorOf(() => parseOpText('unit 17 文本'))?.includes('冒号') === true, '缺冒号时提示加冒号');
 ok(errorOf(() => parseOpText('this: x', { allowThis: false }))?.includes('this') === true, 'allowThis:false 拒绝 this');
 
-ok(JSON.stringify(normalizeOp({ positions: ['unit 1'] }, 0)) === JSON.stringify({ positions: ['unit 1'], new_text: '', lock_this: false, types: [] }), 'normalizeOp 默认值');
+ok(JSON.stringify(normalizeOp({ positions: ['unit 1'] }, 0)) === JSON.stringify({ positions: ['unit 1'], new_text: '', lock_this: false }), 'normalizeOp 默认值');
 ok(errorOf(() => normalizeOp({ spans: ['(1,2)'] }, 0))?.includes('unknown field') === true, 'spans 已不是合法字段');
 ok(errorOf(() => normalizeOp({}, 0))?.includes('positions') === true, '缺 positions 报错');
 ok(errorOf(() => normalizeOp({ positions: [] }, 0))?.includes('non-empty') === true, '空 positions 报错');
 ok(errorOf(() => normalizeOp({ positions: ['unit 1'], new_text: 1 }, 0))?.includes('new_text') === true, 'new_text 必须是字符串');
 ok(errorOf(() => normalizeOp({ positions: ['unit 1'], lock_this: 1 }, 0))?.includes('lock_this') === true, 'lock_this 必须是布尔');
-ok(errorOf(() => normalizeOp({ positions: ['unit 1'], types: ['nope'] }, 0))?.includes('types') === true, 'types 枚举校验');
+ok(errorOf(() => normalizeOp({ positions: ['unit 1'], types: ['user'] }, 0))?.includes('unknown field') === true, 'types 已删除（未知字段）');
 ok(errorOf(() => normalizeSelectors([])) !== undefined && normalizeSelectors(undefined) === undefined, 'normalizeSelectors 形状校验');
 
 const cmd = (text) => parsePlasticizeCommand(text, 'zh');

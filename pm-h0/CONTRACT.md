@@ -39,9 +39,10 @@
 | `positions` | selector array | — | 必需，且不能为空数组 |
 | `new_text` | string | `""` | 落在**最后一个**选中单元；空串 = 纯隐藏 |
 | `lock_this` | boolean | `false` | 把替代消息本身锁进安全区 |
-| `types` | enum array | `[]` | user/developer 匹配单条；assistant/error/letter 匹配整个单元；cookie 永不匹配 |
 
 未知字段直接报错；`positions` 为空数组报错。
+
+> `types` 已删除：spans 通道移除后它没有任何实现，属于死字段。
 
 ### 语义
 
