@@ -14,6 +14,8 @@ const OP_FIELDS = new Set(['positions', 'new_text', 'lock_this', 'types']);
 const TYPE_NAMES = new Set(['user', 'developer', 'assistant', 'error', 'letter']);
 
 /** 所有 op 可选字段的唯一默认值来源。 */
+export const LAST_SET_SELECTOR = 'the last plasticize(set)';
+
 export const OP_DEFAULTS = Object.freeze({ new_text: '', lock_this: false, types: [] });
 
 /**
@@ -104,6 +106,11 @@ export function normalizeSelectors(value, label = 'positions') {
     throw new Error(label + ' entries must be unit selectors ("unit 17", "unit 17 to 28") or non-negative integers, got ' + JSON.stringify(one));
   }
   return [...value];
+}
+
+/** 是否是「重放上一条 set」的特殊元素。 */
+export function isLastSetSelector(value) {
+  return typeof value === 'string' && value.trim().toLowerCase() === LAST_SET_SELECTOR;
 }
 
 /** 纯语法解析，不判断 this 的可用性。 */

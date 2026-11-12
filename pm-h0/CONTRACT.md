@@ -29,15 +29,14 @@
 | 字段 | 类型 | 必需 | 语义 |
 |---|---|---|---|
 | `option` | `"set"` \| `"execute"` | 是 | set 只预览；execute 在提交边界落地 |
-| `ops` | array，默认 `[]` | 否 | 段落列表；`execute` 传 `[]` 表示只兑现上一条 set |
-| `also_execute_last_set` | boolean，默认 true | 否 | **仅 execute 合法**；连带最近一次未执行的 set |
+| `ops` | array（非空） | 是 | 段落列表；兑现待决 set 用重放元素，见下 |
 | `preview_positions` | selector array | 否 | **仅 set 有用**：预览只列这些单元；execute 忽略 |
 
 ### 一个 op
 
 | 字段 | 类型 | 默认 | 语义 |
 |---|---|---|---|
-| `positions` | selector array | — | 必需，且不能为空数组 |
+| `positions` | selector array | — | 必需，且不能为空数组；可含 `"the last plasticize(set)"` |
 | `new_text` | string | `""` | 落在**最后一个**选中单元；空串 = 纯隐藏 |
 | `lock_this` | boolean | `false` | 把替代消息本身锁进安全区 |
 | `types` | enum array | `[]` | user/developer 匹配单条；assistant/error/letter 匹配整个单元；cookie 永不匹配 |
@@ -58,15 +57,22 @@
 - **逻辑世代**：每次成功的 execute 加一（自动隐藏不另计）；
 - 因此「一次 set+execute」通常产生 2 个物理页、1 个逻辑世代。
 
+### 重放待决 set
+
+```json
+{ "option": "execute", "ops": [{ "positions": ["the last plasticize(set)"] }] }
+```
+
+- 这个元素**必须单独成段**，且该段不能再带 `new_text` / `lock_this` / `types`（会与 set 的声明冲突）；
+- 它按原样重放待决 set 的 ops（含 new_text），并把它标记为已了结；
+- 没有待决 set 时报 `there is no pending plasticize(set) to replay`；
+- `option:"set"` 不能用它（set 必须自己带 ops 才有预览）。
+
+不写这个元素时，`execute` **不会**消费待决 set。
+
 ### set 的合法性
 
-`option:"set"` 必须至少有一个 op：没有 op 就没有可预览的下一代，属于非法调用
-（`option:"set" requires at least one op`）。想兑现待决 set 请用 `execute`（可省略 ops）。
-
-### 待决 set 的识别
-
-`execute` 省略 ops 时，会兑现**最近一条尚未执行且 ops 非空**的 set。
-ops 为空（或被判失败）的 set 不算待决——它永远无法落地，不能挡住后面的 execute。
+`ops` 在两种模式下都必填且非空：`option:"set"` 没有 op 就没有可预览的下一代。
 
 ### 返回（`{ text }`）
 
@@ -75,8 +81,9 @@ ops 为空（或被判失败）的 set 不算待决——它永远无法落地�
 
 ### 错误（消息要可断言）
 
-`option must be "set" or "execute"`、`also_execute_last_set is only valid with option:"execute"`、
-`nothing to execute: ops is empty and there is no pending set to commit`、
+`option must be "set" or "execute"`、`ops is required (an array of ops)`、`ops must be a non-empty array`、
+`option:"set" requires at least one op`、`option:"set" cannot replay the last set`、
+`there is no pending plasticize(set) to replay`、`"the last plasticize(set)" must be the only position in its op`、
 `op #N: ...`（来自 opshape / unitops）、`operation touches the safety zone ...`。
 
 ---

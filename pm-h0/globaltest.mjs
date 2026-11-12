@@ -78,7 +78,7 @@ const windowPreview = previewOf(previewSession, [], 'window-probe', { selectors:
 ok(windowPreview.messageCount === 1 && windowPreview.total === fullPreview.messageCount && JSON.stringify(windowPreview.units) === JSON.stringify([1]), 'set 预览支持同一套 positions', JSON.stringify({ shown: windowPreview.messageCount, total: windowPreview.total }));
 ok(!String(fullPreview.text).includes('\u0000'), '预览文本不含控制字符');
 
-// execute 允许 ops: []（只兑现上一条 set）—— d013 实测：模型这样写会撞上 ops must be a non-empty array。
+// execute 用重放元素兑现待决 set（旧的空 ops 写法已废除）。
 {
   const emptyOps = store.sessions.create('global-empty-ops', { seed: cookieSeed('subagent-95230f54.jsonl') });
   emptyOps.append('turn/start', { turn: 9 });
@@ -101,12 +101,12 @@ ok(!String(fullPreview.text).includes('\u0000'), '预览文本不含控制字符
   try {
     say('eo-set', { option: 'set', ops: [{ positions: ['unit 2'], new_text: '⟨预览⟩' }] });
     setText = (await plasticize.execute({ option: 'set', ops: [{ positions: ['unit 2'], new_text: '⟨预览⟩' }] }, { agent: { session: emptyOps }, callId: 'eo-set' })).text;
-    say('eo-exec', { option: 'execute', ops: [] });
-    emptyExec = (await plasticize.execute({ option: 'execute', ops: [] }, { agent: { session: emptyOps }, callId: 'eo-exec' })).text;
+    say('eo-exec', { option: 'execute', ops: [{ positions: ['the last plasticize(set)'] }] });
+    emptyExec = (await plasticize.execute({ option: 'execute', ops: [{ positions: ['the last plasticize(set)'] }] }, { agent: { session: emptyOps }, callId: 'eo-exec' })).text;
   } catch (error) {
     emptyExec = 'ERR ' + String(error.message);
   }
   ok(typeof setText === 'string' && setText.startsWith('Preview only'), 'set 预览正常', String(setText).slice(0, 40));
-  ok(typeof emptyExec === 'string' && emptyExec.includes('Registered') && !emptyExec.startsWith('ERR'), 'execute 接受空 ops（只兑现上一条 set）', String(emptyExec).slice(0, 80));
+  ok(typeof emptyExec === 'string' && emptyExec.includes('Registered') && !emptyExec.startsWith('ERR'), 'execute 可以重放待决 set', String(emptyExec).slice(0, 80));
 }
 done();

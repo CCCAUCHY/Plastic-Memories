@@ -20,7 +20,7 @@ import { GENERATIONS_KEY, generationProjection } from './generations.js';
 import { stepGroup, surfaceNodes } from './coords.js';
 import { previewOf, findLastPendingSet, normalizeOp } from './plasticize.js';
 import { resolveUnitOps } from './unitops.js';
-import { normalizeSelectors } from './opshape.js';
+import { normalizeSelectors, isLastSetSelector } from './opshape.js';
 import { isThisSelector } from './units.js';
 import { retrospect } from './retrospect.js';
 import { retrospectMessages } from './messages.js';
@@ -427,7 +427,7 @@ export function apply(ctx, config) {
         "Reshape how your own past appears in this context. This is the only tool that changes the surface and starts a new logical generation. The trajectory is never deleted: hidden material remains in the session log and can be inspected with retrospect. Treat this as editing the context, not as a scratch pad.",
         "POSITIONS. Use the 0-based unit numbers returned by retrospect(self) or shown in the Generation tab. The system prompt is unit 0. An assistant message and its tool results are one unit; tool results are not addressed separately. Forms: 'unit 3', 'unit 3 to 7', 'this'. Hidden units are no longer part of the current generation and cannot be targeted.",
         "OPS. Each op has positions and new_text. Every selected unit is hidden except the last by position, which is replaced by new_text. An empty new_text is a pure hole (hide). One op may cover several disjoint ranges.",
-        "MODES. option:\"set\" previews and writes nothing. option:\"execute\" commits at the next submission boundary. Only ONE plasticize call is allowed per run_code program (or per assistant message); set and execute count the same. Do not issue two plasticize calls before the next boundary. also_execute_last_set defaults to true: an execute commits the most recent unexecuted set as well; pass false to leave it pending. The field is not valid on set. A set result states whether committing is available.",
+        "MODES. ops is required and non-empty in both modes. option:\"set\" previews and writes nothing. option:\"execute\" commits at the next submission boundary. Only ONE plasticize call is allowed per run_code program (or per assistant message); set and execute count the same. To commit the pending set verbatim, use ops:[{positions:[\"the last plasticize(set)\"]}] — that element must be alone in its op and must not carry new_text/lock_this/types. An execute without it does not consume the pending set.",
         "lock_this:true locks the replacement message itself into the safety zone; default false.",
         "SAFETY ZONE. Locked units cannot be reshaped. A selection that intersects the safety zone fails and reports the locked region; the user can unlock it with /plasticize unlock.",
         "AUTO-HIDE. After a successful execute, whole units (assistant message plus all its tool results) written before that execute are auto-hidden when they contain a failed call to any Plastic Memories tool (plasticize, retrospect, letter), any plasticize(set) preview (fulfilled or not), or any successful letter. Other tools mixed into the same unit are hidden with it. The execute receipt itself remains visible.",
@@ -468,17 +468,13 @@ export function apply(ctx, config) {
             enum: ['set', 'execute'],
             description: 'Required. set = preview only, writes nothing. execute = commit at the next boundary.',
           },
-          also_execute_last_set: {
-            type: 'boolean',
-            description: 'Default true. Only valid with option:execute. When true, also commits the most recent unexecuted set; set false to leave it pending.',
-          },
           preview_positions: {
             type: 'array',
             items: { oneOf: [{ type: 'integer' }, { type: 'string' }] },
             description: 'Optional preview window for option:"set" (NOT the same thing as ops[].positions). Same unit syntax: ["unit 17"] or ["unit 17 to 28"]. The preview lists only those units of the next generation (real n/unit, plus a "showing units ... of N" note). Ignored for execute. Use it to keep the preview small outside PTC.',
           },
         },
-        required: ['option'],
+        required: ['ops', 'option'],
       },
       execute(args, exec) {
         const session = sessionOf(exec);
@@ -486,9 +482,6 @@ export function apply(ctx, config) {
         if (option !== 'set' && option !== 'execute') throw new Error('option must be "set" or "execute"');
         // 结果窗口：只返回这些单元的行，用来在非 PTC 模式里主动限制工具结果大小。
         const previewSelectors = normalizeSelectors(args?.preview_positions, 'preview_positions');
-        if (option === 'set' && args?.also_execute_last_set !== undefined) {
-          throw new Error('also_execute_last_set is only valid with option:"execute"');
-        }
         assertSinglePendingPlasticize(session, exec.callId);
 
         // 「本步整组」：容纳本次调用的 assistant 消息 … 它的全部工具结果。
@@ -497,58 +490,35 @@ export function apply(ctx, config) {
         const here = group.here;
 
         const parts = [];
-        const batches = [];
-        if (option === 'execute' && args?.also_execute_last_set !== false) {
-          const pending = findLastPendingSet(session);
-          if (pending !== undefined) {
-            // **零点属于写下这条 ops 的那条 plasticize（set）**，与 engine 的 flush 一致。
-            // 预览与落实必须同源，否则「看过的」和「落实的」不是同一个。
-            const pendingGroup = stepGroupFor(session, { callId: pending.callId });
-            batches.push({
-              from: 'previous set', callId: pending.callId, ops: pending.ops,
-              here: pendingGroup === undefined ? here : pendingGroup.here,
-            });
-          }
+        const ops = normalizeOps(args?.ops);
+        const wantsReplay = ops.some((op) => Array.isArray(op?.positions) && op.positions.some((one) => isLastSetSelector(one)));
+        if (option === 'set' && wantsReplay) {
+          throw new Error('option:"set" cannot replay the last set: a set must carry its own ops so it has something to preview');
         }
-        batches.push({ from: 'this call', callId: exec.callId, ops: normalizeOps(args?.ops), here });
-
-        // execute 允许 ops: []：表示「只兑现上一条 set」，与 engine 的 flush 语义一致。
-        // 不能把空 ops 丢给解析器（它会报 ops must be a non-empty array）。
-        const activeBatches = option === 'execute'
-          ? batches.filter((batch) => Array.isArray(batch.ops) && batch.ops.length > 0)
-          : batches;
-        if (option === 'execute' && activeBatches.length === 0) {
-          throw new Error('nothing to execute: ops is empty and there is no pending set to commit; pass the ops explicitly');
-        }
+        const batch = { from: 'this call', callId: exec.callId, ops, here };
 
         if (option === 'set') {
           // set 的全部意义就是「给出一个可预览的下一代」；没有 op 就没有预览，属于非法调用。
-          if (!batches.some((batch) => Array.isArray(batch.ops) && batch.ops.length > 0)) {
-            throw new Error('option:"set" requires at least one op: a set with no ops has no preview to show. To commit a pending set, call option:"execute" without ops.');
+          if (ops.length === 0) {
+            throw new Error('option:"set" requires at least one op: a set with no ops has no preview to show.');
           }
-          const flat = [];
-          for (const batch of batches) {
-            const resolved = resolveUnitOps(session, batch.ops, batch.here);
-            assertResolvedUnlocked(session, resolved);
-            flat.push(...resolved);
-          }
+          const flat = resolveUnitOps(session, batch.ops, batch.here);
+          assertResolvedUnlocked(session, flat);
           const pv = previewOf(session, flat, exec.callId, { selectors: previewSelectors });
           const scope = previewSelectors === undefined ? '' : ' (showing units ' + (pv.units ?? []).join(', ') + ' of ' + pv.total + ')';
           parts.push('Preview only (not committed). The next generation would contain ' + pv.messageCount + ' messages' + scope + ':');
           parts.push(pv.text);
-          parts.push('To commit this preview, call plasticize with option:"execute" while this is still the most recent unexecuted set; it is committed automatically unless also_execute_last_set:false. Otherwise rewrite ops completely, not incrementally.');
+          parts.push('To commit this preview, call plasticize with option:"execute" while this is still the most recent unexecuted set; to commit it verbatim, call option:"execute" with ops:[{positions:["the last plasticize(set)"]}]; otherwise rewrite ops completely, not incrementally.');
         } else {
           // 只登记：真正写入由 flush 在提交边界做（见 engine.js 的说明）。
           let total = 0;
-          for (const batch of activeBatches) {
-            const resolved = resolveUnitOps(session, batch.ops, batch.here);
-            assertResolvedUnlocked(session, resolved);
-            total += resolved.length;
-          }
+          const resolved = resolveUnitOps(session, batch.ops, batch.here);
+          assertResolvedUnlocked(session, resolved);
+          total += resolved.length;
           parts.push('Registered ' + total + ' segment(s); they will be written at the next submission boundary.');
           const logicalGeneration = logicalGenerationForCall(session, exec.callId);
           parts.push('Logical generation ' + logicalGeneration + ' (pm-logical-generation=' + logicalGeneration + ').');
-          for (const batch of activeBatches) parts.push('  · ' + batch.from + ': ' + batch.ops.length + ' segment(s)');
+          parts.push('  · ' + batch.from + ': ' + batch.ops.length + ' op(s)');
         }
         return Promise.resolve({ text: parts.join(String.fromCharCode(10)) });
       },

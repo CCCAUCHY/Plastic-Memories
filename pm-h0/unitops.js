@@ -9,7 +9,8 @@
  */
 
 import { currentUnits, isThisSelector, parseUnitRange } from './units.js';
-import { normalizeOp } from './opshape.js';
+import { normalizeOp, isLastSetSelector } from './opshape.js';
+import { findLastPendingSet } from './pending.js';
 
 /** 找出 this 指向的单元：承载本次声明的那条 assistant 单元。 */
 function unitForHere(units, here) {
@@ -37,8 +38,22 @@ function unitRanges(numbers) {
  * @param {{thisSeq?: number, thisEndSeq?: number}} here - this 定位点。
  * @returns {Array<{op: object, shadowed: number[]}>} 与 resolveOps 同形。
  */
-export function resolveUnitOps(session, rawOps, here) {
+export function resolveUnitOps(session, rawOps, here, options = {}) {
   if (!Array.isArray(rawOps) || rawOps.length === 0) throw new Error('ops must be a non-empty array');
+  // `positions: ["the last plasticize(set)"]`：重放上一条待决 set 的 ops。
+  // 它必须单独成段，且不能自带 new_text / lock_this / types —— 那会与 set 的声明冲突。
+  if (!options.replayed && rawOps.length === 1 && rawOps[0] !== null && typeof rawOps[0] === 'object' && !Array.isArray(rawOps[0])) {
+    const only = rawOps[0];
+    if (Array.isArray(only.positions) && only.positions.some((one) => isLastSetSelector(one))) {
+      if (only.positions.length !== 1) throw new Error('op #0: "the last plasticize(set)" must be the only position in its op');
+      for (const field of ['new_text', 'lock_this', 'types']) {
+        if (Object.hasOwn(only, field)) throw new Error('op #0: "the last plasticize(set)" replays that set verbatim; do not add ' + field);
+      }
+      const pending = findLastPendingSet(session);
+      if (pending === undefined) throw new Error('there is no pending plasticize(set) to replay; pass the ops explicitly');
+      return resolveUnitOps(session, pending.ops, here, { replayed: true });
+    }
+  }
   const units = currentUnits(session);
   const thisUnit = unitForHere(units, here);
   const out = [];
@@ -46,7 +61,7 @@ export function resolveUnitOps(session, rawOps, here) {
     // 与命令路径共用同一个 op 校验器（opshape.js），不在这里重复一套规则。
     const raw = normalizeOp(rawOps[index], index);
     const positions = raw.positions;
-    if (!Array.isArray(positions) || positions.length === 0) throw new Error('op #' + index + ' 需要 positions；spans 是旧语法');
+    if (!Array.isArray(positions) || positions.length === 0) throw new Error('op #' + index + ' 需要 positions');
     const newText = raw.new_text;
     const picked = [];
     for (const selector of positions) {

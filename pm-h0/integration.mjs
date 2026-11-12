@@ -69,7 +69,7 @@ console.log(NL + '⑤ 非 agent 调用被拒绝');
   ok(typeof msg === 'string' && msg.includes('agent'), '非 agent 调用抛错', String(msg).slice(0, 60));
 }
 
-console.log(NL + '⑥ option/also_execute_last_set 的组合约束');
+console.log(NL + '⑥ option 与重放元素的组合约束');
 {
   const s = ctx.sessions.create('itest2', { seed: fixture('subagent-95230f54.jsonl').filter((r) => r.type !== 'session') });
   s.append('turn/start', { turn: 2 });
@@ -84,8 +84,11 @@ console.log(NL + '⑥ option/also_execute_last_set 的组合约束');
   const exec = { agent: { session: s }, callId, name: 'plasticize', arguments: args, signal: new AbortController().signal };
   const d = defs.get('plasticize');
   let msg = null;
-  try { d.execute({ ops: args.ops, option: 'set', also_execute_last_set: true }, exec); } catch (e) { msg = e.message; }
-  ok(typeof msg === 'string' && msg.includes('also_execute_last_set'), 'set + also_execute_last_set 被拒绝', String(msg).slice(0, 70));
+  try { d.execute({ ops: [{ positions: ['the last plasticize(set)'] }], option: 'set' }, exec); } catch (e) { msg = e.message; }
+  ok(typeof msg === 'string' && msg.includes('cannot replay'), 'set 不能重放上一条 set', String(msg).slice(0, 70));
+  let msgMissing = null;
+  try { d.execute({ option: 'set' }, exec); } catch (e) { msgMissing = e.message; }
+  ok(typeof msgMissing === 'string' && msgMissing.includes('ops'), '缺 ops 被拒绝', String(msgMissing).slice(0, 70));
   let msg2 = null;
   try { d.execute({ ops: args.ops, option: 'bogus' }, exec); } catch (e) { msg2 = e.message; }
   ok(typeof msg2 === 'string' && msg2.includes('option'), '非法 option 被拒绝', String(msg2).slice(0, 60));

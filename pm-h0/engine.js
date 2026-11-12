@@ -31,6 +31,7 @@ import { initState, applyEvent } from './generations.js';
 import { findOverlap } from './overlap.js';
 import { pmSettledCallIds, pmSource } from './markers.js';
 import { resolveUnitOps } from './unitops.js';
+import { isLastSetSelector } from './opshape.js';
 import { currentUnits } from './units.js';
 import { logicalBoundaries } from './boundaries.js';
 import {
@@ -578,7 +579,7 @@ function applyDeclarations(session, declarations, open, state, options = {}) {
   // 两条消息之间隔着的节点会让区间漂移（实测：-13..-10 从 #1..#4 漂到 #3..#6，
   // 于是「看过的预览」和「真正落实的东西」不是同一个）。
   //
-  // 所以 execute 带 also_execute_last_set 时，它自己的 ops 也按 set 的零点解析。
+  // 所以 execute 显式重放（“the last plasticize(set)”）时，它自己的 ops 也按 set 的零点解析。
   // **每条声明独立解析**：一条写错的声明（例如引用了不存在的 cookie）只应当自己失败，
   // 不能把同一批里其它正确的声明一起拖死 —— 否则一次手滑会让这个会话后面的
   // plasticize 全部失效（待办永远清不掉）。实测过：这正是「半绿」之外最容易忽略的死法。
@@ -599,7 +600,7 @@ function applyDeclarations(session, declarations, open, state, options = {}) {
       const group = stepGroup(session, declaration.ownerCallId);
       if (group === undefined) throw new Error('could not locate the message carrying this declaration');
       if (!group.complete) throw new Error('this step still has pending tool results; wait for the next boundary');
-      // 用 set 的零点（若这条 execute 声明了 also_execute_last_set 且 set 在批里）
+      // 用 set 的零点（若这条 execute 显式重放了待决 set）
       let anchor = hereOf(group);
       if (declaration.opsAnchorCallId !== undefined) {
         const anchorGroup = stepGroup(session, declaration.opsAnchorCallId);
@@ -849,19 +850,21 @@ export function flush(session, options, logger) {
     state.shapeIssues.clear();
   }
 
-  // also_execute_last_set：一条 execute 声明可以连带消费**最近一条未执行的 set**。
+  // 显式重放：ops 里出现 “the last plasticize(set)” 时，连带消费**最近一条未执行的 set**。
   // 这必须在 flush 里展开 —— 待决 set 的 ops 需要对**当前**工作面重新解析（工具执行时算不出）。
   const todo = [];
   for (const d of state.declarations) {
     if (d.args?.option !== 'execute') continue;
     if (isDone(state, d)) continue;
     let anchor;
-    if (d.args?.also_execute_last_set !== false) {
+    // 只有显式要求重放（ops 里出现 “the last plasticize(set)”）才会消费待决 set。
+    const replay = Array.isArray(d.args?.ops)
+      && d.args.ops.some((op) => Array.isArray(op?.positions) && op.positions.some((one) => isLastSetSelector(one)));
+    if (replay) {
       const pending = findLastPendingSet(state.declarations, d, state.failedCallIds);
       if (pending !== undefined && !isDone(state, pending)) {
         if (!todo.includes(pending)) todo.push(pending);
-        // execute 重传的 ops 属于 set 那条消息 —— 零点也必须用 set 的。
-        // 锚点必须是**承载消息的调用 id**（PTC 下是 rootCallId；subCallId 反查不到消息）
+        // 重放的 this 必须锚在 set 那条消息上。
         anchor = pending.ownerCallId ?? pending.callId;
       }
     }
@@ -1151,7 +1154,7 @@ export function pendingReport(session) {
  * 逻辑世代表（只读推导；不改变投影行为）。
  *
  * 物理世代 = 每条 surfaceOp replace（一次 execute 可能写多条）；
- * 逻辑世代 = 成功的 execute 操作本身（含 also_execute_last_set 消费的 set）。
+ * 逻辑世代 = 成功的 execute 操作本身（含显式重放消费的 set）。
  *
  * @param {object} session - 目标会话。
  * @returns {{total:number, executes:Array<{callId:string, logical:number, seq:number}>}}
