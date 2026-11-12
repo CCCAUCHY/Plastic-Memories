@@ -512,6 +512,15 @@ export function apply(ctx, config) {
         }
         batches.push({ from: 'this call', callId: exec.callId, ops: args?.ops, here });
 
+        // execute 允许 ops: []：表示「只兑现上一条 set」，与 engine 的 flush 语义一致。
+        // 不能把空 ops 丢给解析器（它会报 ops must be a non-empty array）。
+        const activeBatches = option === 'execute'
+          ? batches.filter((batch) => Array.isArray(batch.ops) && batch.ops.length > 0)
+          : batches;
+        if (option === 'execute' && activeBatches.length === 0) {
+          throw new Error('nothing to execute: ops is empty and there is no pending set to commit; pass the ops explicitly');
+        }
+
         if (option === 'set') {
           const flat = [];
           for (const batch of batches) {
@@ -527,7 +536,7 @@ export function apply(ctx, config) {
         } else {
           // 只登记：真正写入由 flush 在提交边界做（见 engine.js 的说明）。
           let total = 0;
-          for (const batch of batches) {
+          for (const batch of activeBatches) {
             const resolved = resolveBatchOps(session, batch.ops, batch.here);
             assertResolvedUnlocked(session, resolved);
             total += resolved.length;
@@ -535,7 +544,7 @@ export function apply(ctx, config) {
           parts.push('Registered ' + total + ' segment(s); they will be written at the next submission boundary.');
           const logicalGeneration = logicalGenerationForCall(session, exec.callId);
           parts.push('Logical generation ' + logicalGeneration + ' (pm-logical-generation=' + logicalGeneration + ').');
-          for (const batch of batches) parts.push('  · ' + batch.from + ': ' + batch.ops.length + ' segment(s)');
+          for (const batch of activeBatches) parts.push('  · ' + batch.from + ': ' + batch.ops.length + ' segment(s)');
         }
         return Promise.resolve({ text: parts.join(String.fromCharCode(10)) });
       },
