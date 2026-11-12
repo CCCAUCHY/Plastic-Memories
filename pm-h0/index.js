@@ -251,50 +251,11 @@ function tool(spec) {
   };
 }
 
-/** 当前会话的 agent preset：header 优先，其次最新 agent-preset/selected 事件。 */
-function sessionPreset(session) {
-  const fromHeader = session?.header?.agentPreset;
-  if (typeof fromHeader === 'string') return fromHeader;
-  let latest;
-  for (const event of session?.snapshotEvents?.() ?? []) {
-    if (event.type === 'agent-preset/selected' && typeof event.data?.agentPreset === 'string') latest = event.data.agentPreset;
-  }
-  return latest;
-}
-
-/**
- * 会话的 preset：优先读 agentPresets 官方读面（presetForSession），
- * 它认得 header 与 profile 侧的选择记录；服务缺席时退回本地扫描。
- */
-function presetOfSession(ctx, session) {
-  try {
-    const service = ctx.get('agentPresets');
-    const recorded = service?.presetForSession?.(session);
-    if (typeof recorded === 'string') return recorded;
-  } catch {
-    // 服务未加载：退回本地扫描
-  }
-  return sessionPreset(session);
-}
-
-/**
- * PM 只服务 PTC 会话：工具由 run_code 转发，标准模式里根本不该出现。
- * 旧会话可能没有任何 preset 记录，此时按 PTC 处理（历史兼容）。
- */
-function isPtcSession(ctx, session) {
-  const preset = presetOfSession(ctx, session);
-  return preset === undefined || preset === 'ptc';
-}
-
-/** 取本次调用所属的 agent 会话。 */
-function sessionOf(exec, ctx) {
+/** 取本次调用所属的 agent 会话。全局注册：任何 preset 都能用。 */
+function sessionOf(exec) {
   const session = exec?.agent?.session;
   if (session === undefined || session === null) {
     throw new Error('this tool requires an agent session (exec.agent.session is unavailable)');
-  }
-  if (ctx !== undefined && !isPtcSession(ctx, session)) {
-    const preset = presetOfSession(ctx, session) ?? 'unknown';
-    throw new Error('Plastic Memories requires the PTC preset (current preset: ' + preset + '); retrospect unit lookup depends on run_code filtering');
   }
   return session;
 }
@@ -520,7 +481,7 @@ export function apply(ctx, config) {
         required: ['ops', 'option'],
       },
       execute(args, exec) {
-        const session = sessionOf(exec, ctx);
+        const session = sessionOf(exec);
         const option = args?.option;
         if (option !== 'set' && option !== 'execute') throw new Error('option must be "set" or "execute"');
         // 结果窗口：只返回这些单元的行，用来在非 PTC 模式里主动限制工具结果大小。
@@ -579,7 +540,6 @@ export function apply(ctx, config) {
         return Promise.resolve({ text: parts.join(String.fromCharCode(10)) });
       },
     }),
-    { when: ({ agent }) => isPtcSession(ctx, agent?.session) },
   );
 
 
@@ -617,7 +577,7 @@ export function apply(ctx, config) {
         required: ['generation'],
       },
       execute(args, exec) {
-        const session = sessionOf(exec, ctx);
+        const session = sessionOf(exec);
         const generation = args?.generation;
         const isSelf = typeof generation === 'string' && /^self(?:\s*-\s*0)?$/iu.test(generation.trim());
         if (args?.units === true) return Promise.resolve({ text: retrospectUnits(session, args ?? {}) });
@@ -630,7 +590,6 @@ export function apply(ctx, config) {
         return Promise.resolve({ text: retrospect(session, { ...args, positions: selectors }) });
       },
     }),
-    { when: ({ agent }) => isPtcSession(ctx, agent?.session) },
   );
 
   ctx.tools.register(
@@ -648,12 +607,11 @@ export function apply(ctx, config) {
         required: ['text'],
       },
       execute(args, exec) {
-        sessionOf(exec, ctx);
+        sessionOf(exec);
         // Minimal English receipt.
         return Promise.resolve({ text: 'Registered.' });
       },
     }),
-    { when: ({ agent }) => isPtcSession(ctx, agent?.session) },
   );
 
   /**

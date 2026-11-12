@@ -55,21 +55,8 @@ try {
 ok(messageData.error === undefined && Array.isArray(messageData.messages) && messageData.messages.length > 0, 'retrospect(self) 返回 Message[]', JSON.stringify(messageData).slice(0, 160));
 ok(messageData.messages[0].type === 'system', 'Message[] 第一条是 system');
 
-// preset 门控：标准模式不提供服务，PTC 提供。
-const standardSession = { header: { agentPreset: 'standard' }, snapshotEvents: () => [] };
-const ptcSession = { header: { agentPreset: 'ptc' }, snapshotEvents: () => [] };
-const gate = toolOptions[0] ?? {};
-const allowed = async (session) => {
-  try {
-    return (await gate.when === undefined) ? 'no-when' : (await gate.when({ agent: { session }, signal: new AbortController().signal })) === true;
-  } catch {
-    return 'threw';
-  }
-};
-ok((await allowed(standardSession)) === false, 'standard 会话不提供服务');
-ok((await allowed(ptcSession)) === true, 'ptc 会话提供服务');
-const legacySession = { header: {}, snapshotEvents: () => [] };
-ok((await allowed(legacySession)) === true, '无 preset 记录的旧会话保持兼容');
+// 全局注册：工具不再按 preset 门控（结果窗口让非 PTC 也能限制结果大小）。
+ok(toolOptions.every((options) => options.when === undefined), '三个工具都是无条件全局注册', JSON.stringify(toolOptions.map((options) => typeof options.when)));
 
 // 安全区只属于当前世代。
 const lockSession = store.sessions.create('global-lock', { seed: cookieSeed('subagent-95230f54.jsonl') });
