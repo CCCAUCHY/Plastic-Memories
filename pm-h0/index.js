@@ -522,6 +522,10 @@ export function apply(ctx, config) {
         }
 
         if (option === 'set') {
+          // set 的全部意义就是「给出一个可预览的下一代」；没有 op 就没有预览，属于非法调用。
+          if (!batches.some((batch) => Array.isArray(batch.ops) && batch.ops.length > 0)) {
+            throw new Error('option:"set" requires at least one op: a set with no ops has no preview to show. To commit a pending set, call option:"execute" without ops.');
+          }
           const flat = [];
           for (const batch of batches) {
             const resolved = resolveUnitOps(session, batch.ops, batch.here);

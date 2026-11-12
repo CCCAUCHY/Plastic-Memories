@@ -167,7 +167,10 @@ console.log('B 工具层');
   const session = freshSession('contract-plasticize');
   const set = await callTool('plasticize', { option: 'set', ops: [{ positions: ['unit 2'], new_text: '⟨X⟩' }], preview_positions: ['unit 2'] }, session, 'p-set');
   ok(set.text.startsWith('Preview only') && set.text.includes('showing units'), 'set 预览带窗口说明');
-  ok((await callTool('plasticize', { option: 'set' }, session, 'p-empty-set')).error !== undefined, 'set 无 ops 报错');
+  const emptySet = await callTool('plasticize', { option: 'set' }, session, 'p-empty-set');
+  ok(emptySet.error?.includes('at least one op') === true, 'set 无 ops 明确报错（没有预览就没有 set）', String(emptySet.error).slice(0, 60));
+  const emptyOpsSet = await callTool('plasticize', { option: 'set', ops: [] }, session, 'p-empty-ops');
+  ok(emptyOpsSet.error?.includes('at least one op') === true, 'set 传空 ops 同样报错');
   ok((await callTool('plasticize', { option: 'execute', also_execute_last_set: true }, session, 'p-bad-flag')).error === undefined, 'execute 省略 ops 合法');
 }
 

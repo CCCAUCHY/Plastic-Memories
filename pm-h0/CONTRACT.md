@@ -58,6 +58,11 @@
 - **逻辑世代**：每次成功的 execute 加一（自动隐藏不另计）；
 - 因此「一次 set+execute」通常产生 2 个物理页、1 个逻辑世代。
 
+### set 的合法性
+
+`option:"set"` 必须至少有一个 op：没有 op 就没有可预览的下一代，属于非法调用
+（`option:"set" requires at least one op`）。想兑现待决 set 请用 `execute`（可省略 ops）。
+
 ### 待决 set 的识别
 
 `execute` 省略 ops 时，会兑现**最近一条尚未执行且 ops 非空**的 set。

@@ -98,7 +98,7 @@ export function findLastPendingSet(session) {
         if (args?.option !== 'set') continue;
         const callId = block.id ?? block.callId;
         if (typeof callId !== 'string' || applied.has(callId) || failed.has(callId)) continue;
-        // 空的 / 非数组的 ops 不是可兑现的 set：它永远无法落地，不能挡住后面的 execute。
+        // set 必须有至少一个 op（工具层会直接拒绝空 set）；旧日志里残留的空 set 不可能是待决。
         if (!Array.isArray(args.ops) || args.ops.length === 0) continue;
         found = { callId, ops: args.ops };
       }
