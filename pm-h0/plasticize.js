@@ -249,9 +249,9 @@ export function hypotheticalEvents(session, resolved, callId) {
 export function previewOf(session, resolved, callId, options = {}) {
   const next = projectNext(session, hypotheticalEvents(session, resolved, callId));
   const rows = groupRows(next.messages);
-  const window = windowRows(rows, options.positions);
+  const window = windowRows(rows, options.selectors);
   return {
-    text: options.positions === undefined ? renderPreview(next.messages) : renderRowsPreview(window.rows),
+    text: options.selectors === undefined ? renderPreview(next.messages) : renderRowsPreview(window.rows),
     generation: next.generation,
     messageCount: window.rows.length,
     total: window.total,
