@@ -83,6 +83,12 @@ export function resolveUnitOps(session, rawOps, here, options = {}) {
     for (let r = 0; r < ranges.length; r += 1) {
       const [start, end] = ranges[r];
       const selected = units.slice(start, end + 1);
+      // DSH 只允许 system/message 改写系统提示；用 developer 替代会被宿主拒绝，
+      // 所以这里提前给出可读的错误，而不是让整批投影在提交边界静默跳过。
+      const systemUnit = selected.find((unit) => unit.role === 'system');
+      if (systemUnit !== undefined) {
+        throw new Error('op #' + index + ' 命中了系统提示（unit ' + String(systemUnit.n) + '），它只能查看、不能被重塑；请选择其它单元');
+      }
       const shadowed = selected.flatMap((unit) => unit.seqs);
       out.push({
         op: { ...raw, new_text: r === ranges.length - 1 ? newText : '', positions: undefined },

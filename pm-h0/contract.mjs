@@ -182,6 +182,17 @@ console.log('B 工具层');
   ok(withText.error !== undefined, '宏不能附带其它字段', String(withText.error).slice(0, 60));
 }
 
+{
+  const session = freshSession('contract-errors');
+  ok((await callTool('plasticize', { ops: [{ positions: 'unit 1' }] }, session, 'e-1')).error?.includes('option') === true, '缺 option 报错');
+  ok((await callTool('plasticize', { option: 'set', ops: [{ positions: 'unit 999' }] }, session, 'e-2')).error?.includes('out of range') === true, '单元越界报错');
+  ok((await callTool('plasticize', { option: 'set', ops: [{ positions: 'unit 0', new_text: 'X' }] }, session, 'e-3')).error?.includes('系统提示') === true, '系统提示（unit 0）不可重塑');
+  ok((await callTool('plasticize', { option: 'set', ops: [{ positions: '[1,2]' }] }, session, 'e-4')).error !== undefined, '旧区间写法被拒绝');
+  const unknownField = await callTool('plasticize', { option: 'set', ops: [{ positions: 'unit 1', nope: 1 }] }, session, 'e-5');
+  ok(unknownField.error?.includes('does not match any allowed shape') === true, '未知字段被 schema 拒绝', String(unknownField.error).slice(0, 50));
+  ok((await callTool('plasticize', { option: 'set', ops: [{ positions: 'unit 1' }], preview_positions: [] }, session, 'e-6')).error !== undefined, 'preview_positions 必须是单值');
+}
+
 console.log('C 行为层');
 
 {
