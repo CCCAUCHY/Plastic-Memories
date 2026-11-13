@@ -600,13 +600,9 @@ function applyDeclarations(session, declarations, open, state, options = {}) {
       const group = stepGroup(session, declaration.ownerCallId);
       if (group === undefined) throw new Error('could not locate the message carrying this declaration');
       if (!group.complete) throw new Error('this step still has pending tool results; wait for the next boundary');
-      // 用 set 的零点（若这条 execute 显式重放了待决 set）
-      let anchor = hereOf(group);
-      if (declaration.opsAnchorCallId !== undefined) {
-        const anchorGroup = stepGroup(session, declaration.opsAnchorCallId);
-        if (anchorGroup !== undefined && anchorGroup.complete) anchor = hereOf(anchorGroup);
-      }
-      const resolved = ops === undefined ? [] : resolveDeclarationOps(session, ops, anchor);
+      // 零点就是承载这条声明的消息。set 不能写 this（重放时会指向重放者），
+      // 所以重放不需要另找锚点：整份 ops 里没有任何依赖锚点的选择器。
+      const resolved = ops === undefined ? [] : resolveDeclarationOps(session, ops, hereOf(group));
       for (const span of resolved) assertNotLocked(session, locks, span.shadowed);
       planned.push({ declaration, resolved, group });
     } catch (error) {
@@ -856,18 +852,13 @@ export function flush(session, options, logger) {
   for (const d of state.declarations) {
     if (d.args?.option !== 'execute') continue;
     if (isDone(state, d)) continue;
-    let anchor;
     // 只有显式要求重放（ops 里出现 “the last plasticize(set)”）才会消费待决 set。
     const replay = Array.isArray(d.args?.ops) && d.args.ops.some((one) => isLastSetMacro(one));
     if (replay) {
       const pending = findLastPendingSet(state.declarations, d, state.failedCallIds);
-      if (pending !== undefined && !isDone(state, pending)) {
-        if (!todo.includes(pending)) todo.push(pending);
-        // 重放的 this 必须锚在 set 那条消息上。
-        anchor = pending.ownerCallId ?? pending.callId;
-      }
+      if (pending !== undefined && !isDone(state, pending) && !todo.includes(pending)) todo.push(pending);
     }
-    todo.push(anchor === undefined ? d : Object.assign(Object.create(Object.getPrototypeOf(d)), d, { opsAnchorCallId: anchor }));
+    todo.push(d);
   }
 
   const hasExecute = todo.some((d) => d.args?.option === 'execute');
