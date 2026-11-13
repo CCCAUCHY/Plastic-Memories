@@ -885,6 +885,11 @@ export function flush(session, options, logger) {
     applied = written.applied;
     skipped = written.failed.length;
     for (const { declaration, error } of written.failed) {
+      // 写一条私有事件：否则「被拒绝」和「漏写」在日志里长得一样，
+      // 审计器只能瞎猜，模型也无从知道这次 execute 没落地。
+      try {
+        session.append('plugin:plastic-memories/reject', { callId: declaration.callId, message: String(error?.message ?? error) });
+      } catch { /* 记录失败不影响主流程 */ }
       const key = 'd:' + declaration.callId;
       if (state.warned.has(key)) continue;
       state.warned.add(key);
@@ -894,6 +899,9 @@ export function flush(session, options, logger) {
     skipped = todo.length;
     applied = 0;
     for (const declaration of todo) {
+      try {
+        session.append('plugin:plastic-memories/reject', { callId: declaration.callId, message: String(error?.message ?? error) });
+      } catch { /* 记录失败不影响主流程 */ }
       const key = 'd:' + declaration.callId;
       if (state.warned.has(key)) continue;
       state.warned.add(key);

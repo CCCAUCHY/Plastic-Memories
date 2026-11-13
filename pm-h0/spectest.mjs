@@ -160,9 +160,7 @@ for (let index = 0; index < CASES; index += 1) {
     ops = [{ positions: 'unit ' + String(a), new_text: '⟨L' + String(index) + '⟩' }];
   }
   const result = runCase(name, ops, options);
-  // 被规格拒绝的用例（安全区等）本来就不会写事件；audit 会误报，跳过。
-  const auditOk = result.spec.error !== null || result.audit.length === 0;
-  const clean = result.diffs.length === 0 && auditOk;
+  const clean = result.diffs.length === 0 && result.audit.length === 0;
   if (clean) pass += 1;
   else fails.push({ index, scenario, ops, diffs: result.diffs.slice(0, 2), audit: result.audit.slice(0, 1), applied: result.flushed?.applied });
 }

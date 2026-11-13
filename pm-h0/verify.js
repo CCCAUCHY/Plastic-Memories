@@ -23,6 +23,7 @@ export function verifyPmSemantics(events) {
   const fail = (message) => errors.push(message);
   const declarations = new Map();
   const failed = new Set();
+  const rejected = new Set();
   const applied = new Map();
   const surface = [];
   let replaceCount = 0;
@@ -58,6 +59,9 @@ export function verifyPmSemantics(events) {
         fail('logical event at seq ' + event.seq + ' physical ' + data.physical + ' != first replace generation ' + pendingFirst);
       }
       pendingFirst = undefined;
+    } else if (event.type === 'plugin:plastic-memories/reject') {
+      const callId = event.data?.callId;
+      if (typeof callId === 'string') rejected.add(callId);
     } else if (event.type === 'plugin:plastic-memories/locks') {
       const data = event.data ?? {};
       const seqs = Array.isArray(data.seqs) ? data.seqs : [];
@@ -123,8 +127,8 @@ export function verifyPmSemantics(events) {
   }
 
   for (const declaration of declarations.values()) {
-    if (failed.has(declaration.callId)) {
-      if (applied.has(declaration.callId)) fail('failed declaration ' + declaration.callId + ' was applied');
+    if (failed.has(declaration.callId) || rejected.has(declaration.callId)) {
+      if (applied.has(declaration.callId)) fail('rejected declaration ' + declaration.callId + ' was applied');
       continue;
     }
     if (declaration.option === 'execute' && !applied.has(declaration.callId)) fail('successful execute ' + declaration.callId + ' has no explicit replacement');
