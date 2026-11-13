@@ -556,7 +556,7 @@ function safetyZoneNote(session, locks) {
  * 把「这次 execute 没生效」写进上下文，模型下一轮才看得见。
  * 工具在调用时只能回「已登记」；真正的写入发生在提交边界，所以失败必须在这里告知。
  */
-function appendRejectNotice(session, open, callId, reason) {
+function appendRejectNotice(session, open, callId, reason, kind = 'safety-zone') {
   const step = open?.openStep ?? { turn: 0, step: 0 };
   session.append('developer/message', {
     turn: step.turn ?? 0,
@@ -564,7 +564,7 @@ function appendRejectNotice(session, open, callId, reason) {
     message: {
       id: 'pm-reject-' + String(callId),
       role: 'developer',
-      content: [{ type: 'text', text: '[plasticize] NOT applied: ' + reason + '. The surface is unchanged; re-issue the call if it is still needed.' }],
+      content: [{ type: 'text', text: (kind === 'internal' ? '[plasticize] INTERNAL ERROR, nothing was written: ' : '[plasticize] NOT applied: ') + reason + '. The surface is unchanged; re-issue the call if it is still needed.' }],
       source: { kind: 'pm-notice', v: 1, callId },
     },
   }, { surfaceOp: 'append' });
@@ -907,14 +907,18 @@ export function flush(session, options, logger) {
       // 写一条私有事件：否则「被拒绝」和「漏写」在日志里长得一样，
       // 审计器只能瞎猜，模型也无从知道这次 execute 没落地。
       const reason = String(error?.message ?? error);
+      // 只有「安全区在调用之后被改动」是预期内的拒绝；
+      // 其它原因（越界 / 重叠 / 找不到承载消息）说明工具层与边界不一致，属于插件 bug。
+      const kind = /safety zone/u.test(reason) ? 'safety-zone' : 'internal';
       try {
-        session.append('plugin:plastic-memories/reject', { callId: declaration.callId, message: reason });
-        appendRejectNotice(session, open, declaration.callId, reason);
+        session.append('plugin:plastic-memories/reject', { callId: declaration.callId, message: reason, kind });
+        appendRejectNotice(session, open, declaration.callId, reason, kind);
       } catch { /* 记录失败不影响主流程 */ }
       const key = 'd:' + declaration.callId;
       if (state.warned.has(key)) continue;
       state.warned.add(key);
-      logger?.warn?.('[pm-h0] ' + PM_TOOL + ' 投影失败：' + String(error?.message ?? error));
+      const log = kind === 'internal' ? (logger?.error ?? logger?.warn) : logger?.warn;
+      log?.call(logger, '[pm-h0] ' + PM_TOOL + ' 投影失败（' + kind + '）：' + reason);
     }
   } catch (error) {
     skipped = todo.length;
