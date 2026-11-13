@@ -12,28 +12,6 @@ import { classifyMessage, selectUnits } from './units.js';
 import { derivedMessage } from './coords.js';
 
 /**
- * @param {object} session - 当前会话。
- * @param {number} [before] - 只取 seq < before 的事件；省略表示当前全部。
- * @returns {Array<object>} DSH Message[]。
- */
-export function messagesAt(session, before) {
-  if (before === undefined || before === null || !Number.isSafeInteger(before)) {
-    return session.deriveMessages();
-  }
-  const events = session.snapshotEvents().filter((event) => Number.isSafeInteger(event.seq) && event.seq < before);
-  if (events.length === 0) return [];
-  const SessionCtor = session.constructor;
-  const probe = SessionCtor.create(
-    session.id,
-    events,
-    session.header,
-    0,
-    session.surfaceManager?.projections,
-  );
-  return probe.deriveMessages();
-}
-
-/**
  * 任意切点的单元行：retrospect 的 self 与历史都只调这一个函数，只有 cut 不同。
  * @param {object} session
  * @param {number|undefined} cut - 折叠 seq < cut 的日志前缀；undefined 表示全量。
@@ -83,20 +61,12 @@ export function retrospectMessages(session, preview = false, selectors = undefin
  */
 
 /** 本次请求输入的截止 seq：最新 assistant 之前。 */
-export function currentCutoff(session) {
-  let cutoff;
-  for (const event of session.snapshotEvents()) {
-    if (event.type === 'assistant/message' && Number.isSafeInteger(event.seq)) cutoff = event.seq;
-  }
-  return cutoff;
-}
-
 /**
  * 承载某次工具调用的 assistant 消息 seq（不含）。
  *
- * 与 currentCutoff 的区别：这里锚定**这一次调用**，而不是「最后一条 assistant 消息」。
+ * 锚定**这一次调用**，而不是「最后一条 assistant 消息」。
  * 提交边界刚写过替代节点时，替代节点的 seq 会比最后一条 assistant 消息大；
- * 用 currentCutoff 会把它们一起裁掉，读到的是提交前的旧内容。
+ * 用 seq 截止会连带裁掉这些节点。
  *
  * @param {object} session - 目标会话。
  * @param {string} [callId] - 本次调用的 id。
@@ -112,9 +82,6 @@ export function cutoffForCall(session, callId) {
   return undefined;
 }
 
-export function currentInputMessages(session) {
-  return messagesWithSeqs(session, currentCutoff(session)).map((entry) => entry.message);
-}
 
 /**
  * 消息 + 它来自的日志 seq（顺序就是 DSH surface 顺序）。

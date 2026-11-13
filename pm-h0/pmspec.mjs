@@ -15,8 +15,22 @@
  *   4. 一个操作恰好写出一条 replace 事件；空文本 = 纯隐藏；
  *   5. 命中系统提示（unit 0）→ 'system-prompt'；
  *   6. 命中安全区 → 'safety-zone'；
- *   7. 越界 → 'out-of-range'；多个操作不得重叠。
+ *   7. 越界 → 'out-of-range'；多个操作不得重叠；
+ *   8. 宏 { "the last plasticize(set)": true } 在原位置展开成待决 set 的 ops；
+ *      只能出现一次；没有待决 set 时 → 'no-pending'。
  */
+
+
+/** 是否是「重放待决 set」的宏元素。
+ * @param {unknown} op
+ * @returns {boolean}
+ */
+export function isMacro(op) {
+  if (typeof op === 'string') return op.trim().toLowerCase() === 'the last plasticize(set)';
+  if (op === null || typeof op !== 'object' || Array.isArray(op)) return false;
+  const keys = Object.keys(op);
+  return keys.length === 1 && keys[0].trim().toLowerCase() === 'the last plasticize(set)';
+}
 
 /** 单元切分：返回 [{from, to, type}]，from/to 是节点下标（含）。 */
 export function unitsOf(nodes) {
@@ -63,11 +77,20 @@ export function unitsOfSelector(selector) {
  */
 export function specExecute(nodes, ops, env = {}) {
   const locks = env.locks ?? new Set();
+  // 规则 8：先展开宏，再逐条解析。
+  const marks = ops.filter((one) => isMacro(one));
+  if (marks.length > 1) return { events: [], error: { code: 'macro-twice', index: 0 } };
+  let expanded = ops;
+  if (marks.length === 1) {
+    if (!Array.isArray(env.pendingOps)) return { events: [], error: { code: 'no-pending', index: 0 } };
+    const at = ops.indexOf(marks[0]);
+    expanded = [...ops.slice(0, at), ...env.pendingOps, ...ops.slice(at + 1)];
+  }
   const units = unitsOf(nodes);
   const events = [];
   const seen = [];
-  for (let index = 0; index < ops.length; index += 1) {
-    const op = ops[index];
+  for (let index = 0; index < expanded.length; index += 1) {
+    const op = expanded[index];
     let range;
     try {
       if (String(op?.positions).trim().toLowerCase() === 'this') {

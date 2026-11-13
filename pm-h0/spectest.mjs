@@ -7,6 +7,7 @@
 import { makeCounter, makeStore, cookieSeed, openStep, plasticizeCall } from './testkit.mjs';
 import { flush, lockedSeqs, appendSafetyRecord } from './engine.js';
 import { specExecute, diffEvents, unitsOf } from './pmspec.mjs';
+import { textOf } from './testkit.mjs';
 import { verifyPmSemantics } from './verify.js';
 
 const { ok, done } = makeCounter('spectest');
@@ -98,6 +99,22 @@ console.log(NL + '③b 安全区');
   const actual = session.snapshotEvents().filter((event) => event.surfaceOp?.op === 'replace');
   ok(spec.error?.code === 'safety-zone', '规格判定为 safety-zone', JSON.stringify(spec.error));
   ok(flushed.applied === 0 && actual.length === 0, '真实实现不写任何事件', JSON.stringify(flushed));
+}
+
+console.log(NL + '⑤ 宏重放：规格展开 == 实际')
+{
+  const session = fresh('spec-replay');
+  const setOps = [{ positions: 'unit 2', new_text: '⟨REPLAY⟩' }];
+  plasticizeCall(session, { turn: 2, step: 1 }, 'rp-set', { ops: setOps, option: 'set' });
+  plasticizeCall(session, { turn: 2, step: 1 }, 'rp-exec', { ops: [{ 'the last plasticize(set)': true }], option: 'execute' });
+  const nodes = nodesOf(session);
+  const spec = specExecute(nodes, [{ 'the last plasticize(set)': true }], { pendingOps: setOps });
+  const flushed = flush(session, { openStep: { turn: 2, step: 1 } }, quiet);
+  const actual = session.snapshotEvents().filter((event) => event.surfaceOp?.op === 'replace');
+  const diffs = diffEvents(spec, actual);
+  ok(flushed.applied >= 1, '重放落地', JSON.stringify(flushed));
+  ok(diffs.length === 0, '重放事件与规格一致', JSON.stringify(diffs).slice(0, 240));
+  ok((textOf(session).match(/⟨REPLAY⟩/g) ?? []).length === 1, '替代文本只出现一次');
 }
 
 console.log(NL + '④ 随机差分（30 例）');
