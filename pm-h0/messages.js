@@ -39,8 +39,9 @@ export function messagesAt(session, before) {
  * @param {boolean} [preview] - true 时裁剪 text。
  * @param {string|number} [selectors] - 单值选择器；只返回这个选择器命中的单元行。
  */
-export function retrospectMessages(session, preview = false, selectors = undefined) {
-  const rows = compactMessages(session, messagesWithSeqs(session, currentCutoff(session)));
+export function retrospectMessages(session, preview = false, selectors = undefined, callId = undefined) {
+  const cutoff = cutoffForCall(session, callId) ?? currentCutoff(session);
+  const rows = compactMessages(session, messagesWithSeqs(session, cutoff));
   const window = windowRows(rows, selectors);
   const logical = logicalGenerations(session).total;
   const messages = window.rows.map((row) => {
@@ -76,6 +77,27 @@ export function currentCutoff(session) {
     if (event.type === 'assistant/message' && Number.isSafeInteger(event.seq)) cutoff = event.seq;
   }
   return cutoff;
+}
+
+/**
+ * 承载某次工具调用的 assistant 消息 seq（不含）。
+ *
+ * 与 currentCutoff 的区别：这里锚定**这一次调用**，而不是「最后一条 assistant 消息」。
+ * 提交边界刚写过替代节点时，替代节点的 seq 会比最后一条 assistant 消息大；
+ * 用 currentCutoff 会把它们一起裁掉，读到的是提交前的旧内容。
+ *
+ * @param {object} session - 目标会话。
+ * @param {string} [callId] - 本次调用的 id。
+ * @returns {number|undefined} 该 assistant 消息的 seq。
+ */
+export function cutoffForCall(session, callId) {
+  if (typeof callId !== 'string') return undefined;
+  for (const event of session.snapshotEvents()) {
+    if (event.type !== 'assistant/message') continue;
+    const content = Array.isArray(event.data?.message?.content) ? event.data.message.content : [];
+    if (content.some((block) => block?.type === 'tool-call' && block.id === callId)) return event.seq;
+  }
+  return undefined;
 }
 
 export function currentInputMessages(session) {

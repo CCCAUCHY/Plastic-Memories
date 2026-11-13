@@ -545,8 +545,8 @@ export function apply(ctx, config) {
         if (selectors !== undefined && isThisSelector(selectors)) {
           throw new Error('result_positions 不能用 this：它指模型本次调用所在的单元，而 retrospect 读的是历史快照；请写具体单元号');
         }
-        if (isSelf) return Promise.resolve({ text: JSON.stringify(retrospectMessages(session, args?.preview === true, selectors)) });
-        return Promise.resolve({ text: retrospect(session, { ...args, positions: selectors }) });
+        if (isSelf) return Promise.resolve({ text: JSON.stringify(retrospectMessages(session, args?.preview === true, selectors, exec.callId)) });
+        return Promise.resolve({ text: retrospect(session, { ...args, positions: selectors, callId: exec.callId }) });
       },
     }),
   );

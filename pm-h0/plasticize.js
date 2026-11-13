@@ -27,19 +27,22 @@ export function hypotheticalEvents(session, resolved, callId) {
       callId, generation,
       refs: [...span.shadowed],
     };
+    // 替身消息必须与 engine 真正写下的形状一致（role: developer），
+    // 否则预览显示的类型与提交后的类型不同 —— 预览就骗了模型。
     const message = {
       id: 'pm-hyp-' + callId + '-' + i,
-      role: isHole ? 'developer' : 'user',
+      role: 'developer',
       content: isHole ? [] : [{ type: 'text', text: span.op.new_text }],
       source,
     };
     return {
-      type: isHole ? 'developer/message' : 'user/message',
+      type: 'developer/message',
       seq: session.seq + i,
       time: Date.now(),
       surfaceOp: { op: 'replace', startSeq: span.shadowed[0], endSeq: span.shadowed[span.shadowed.length - 1] },
       sourceEventSeqs: [...span.shadowed],
-      data: isHole ? { turn: 0, step: 0, message } : message,
+      // developer/message 要求外层信封（turn/step/message），与 engine 一致。
+      data: { turn: 0, step: 0, message },
     };
   });
 }
@@ -61,6 +64,8 @@ export function previewOf(session, resolved, callId, options = {}) {
     messageCount: window.rows.length,
     total: window.total,
     units: window.selected,
+    // 结构化的行，供测试比对（不发给模型）。
+    rows: window.rows,
   };
 }
 

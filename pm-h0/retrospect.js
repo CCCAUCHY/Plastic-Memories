@@ -13,7 +13,7 @@
 import { SURFACE_TYPES, derivedMessage, messageText } from './coords.js';
 import { logicalGenerations } from './engine.js';
 import { logicalBoundaries } from './boundaries.js';
-import { messagesWithSeqs, compactMessages, windowRows, currentCutoff } from './messages.js';
+import { messagesWithSeqs, compactMessages, windowRows, currentCutoff, cutoffForCall } from './messages.js';
 import { renderPreview } from './preview.js';
 
 /** 事件类型到角色名的兜底映射（正常消息直接读 message.role）。 */
@@ -78,7 +78,7 @@ function normalizeGeneration(value, self) {
 export function retrospect(session, args) {
   const value = args?.generation;
   if (value === undefined) throw new Error('retrospect requires generation (a logical generation number, "self", or "self - N")');
-  return retrospectGeneration(session, value, args?.preview === true, args?.positions);
+  return retrospectGeneration(session, value, args?.preview === true, args?.positions, args?.callId);
 }
 
 /**
@@ -104,7 +104,7 @@ function executeResultSeq(events, callId) {
   return found;
 }
 
-export function retrospectGeneration(session, generation, preview = false, selectors = undefined) {
+export function retrospectGeneration(session, generation, preview = false, selectors = undefined, callId = undefined) {
   const events = session.snapshotEvents();
   const info = logicalGenerations(session);
   const self = info.total;
@@ -115,7 +115,7 @@ export function retrospectGeneration(session, generation, preview = false, selec
 
   let rawEntries;
   if (isCurrent) {
-    rawEntries = messagesWithSeqs(session, currentCutoff(session));
+    rawEntries = messagesWithSeqs(session, cutoffForCall(session, callId) ?? currentCutoff(session));
   } else {
     // 世代边界：优先该世代的 execute 声明，其次 compaction checkpoint。
     const execute = info.executes.find((entry) => entry.logical === target);
@@ -124,14 +124,10 @@ export function retrospectGeneration(session, generation, preview = false, selec
     if (!Number.isSafeInteger(boundarySeq)) {
       throw new Error('no context found for logical generation ' + String(target) + ' (no write recorded for that generation)');
     }
-    // 输入消息是产生该边界的那次请求：取边界前最后一条 assistant 消息，
-    // 它的 seq 就是该请求输出的位置，前缀 < 它刚好是模型输入。
-    let requestSeq;
-    for (const event of events) {
-      if (event.seq >= boundarySeq) break;
-      if (event.type === 'assistant/message') requestSeq = event.seq;
-    }
-    rawEntries = messagesWithSeqs(session, requestSeq ?? boundarySeq);
+    // 输入消息 = 边界事件之前的工作面。
+    // 边界就是承载 execute 的那条 assistant 消息（或 compact checkpoint），
+    // 直接用它做前缀截止点；不要退到「再往前一条 assistant」，那会少一代内容。
+    rawEntries = messagesWithSeqs(session, boundarySeq);
   }
 
   const letter = lettersOfGeneration(events, isCurrent ? Number.POSITIVE_INFINITY : target, info, []);
