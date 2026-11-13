@@ -27,8 +27,13 @@ let shadowCounter = 0;
  * @param {Array<object>} hypothetical - 假想的 surface 事件。
  * @returns {{messages: Array<object>, generation: number}} 影子结果。
  */
-export function projectNext(session, hypothetical) {
-  const events = [...session.snapshotEvents(), ...hypothetical];
+export function projectNext(session, hypothetical, cutoff = undefined) {
+  // 和 retrospect 同一条规则：折叠**前缀**，再叠加假想事件。
+  // 切点 = 承载本次调用的 assistant 消息（预览不该把自己那条调用也画进去）。
+  const base = Number.isSafeInteger(cutoff)
+    ? session.snapshotEvents().filter((event) => Number.isSafeInteger(event.seq) && event.seq < cutoff)
+    : session.snapshotEvents();
+  const events = [...base, ...hypothetical];
   const shadow = session.constructor.create(
     'pm-preview-' + String(++shadowCounter),
     JSON.parse(JSON.stringify(events)),

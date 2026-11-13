@@ -34,15 +34,27 @@ export function messagesAt(session, before) {
 }
 
 /**
+ * 任意切点的单元行：retrospect 的 self 与历史都只调这一个函数，只有 cut 不同。
+ * @param {object} session
+ * @param {number|undefined} cut - 折叠 seq < cut 的日志前缀；undefined 表示全量。
+ * @param {{locks?: boolean, selectors?: (string|number)}} [options]
+ * @returns {{window: object, entries: Array<object>}}
+ */
+export function rowsAt(session, cut, options = {}) {
+  const entries = messagesWithSeqs(session, cut);
+  const rows = compactMessages(session, entries, options.locks === false ? { locks: false } : {});
+  return { window: windowRows(rows, options.selectors), entries };
+}
+
+/**
  * 当前上下文的 Message[] 视图。
  * @param {object} session
  * @param {boolean} [preview] - true 时裁剪 text。
  * @param {string|number} [selectors] - 单值选择器；只返回这个选择器命中的单元行。
  */
 export function retrospectMessages(session, preview = false, selectors = undefined, callId = undefined) {
-  const cutoff = cutoffForCall(session, callId) ?? currentCutoff(session);
-  const rows = compactMessages(session, messagesWithSeqs(session, cutoff));
-  const window = windowRows(rows, selectors);
+  // self = 「本次调用的 assistant 消息之前」的日志前缀折叠，与历史世代同一条规则。
+  const { window } = rowsAt(session, cutoffForCall(session, callId), { selectors });
   const logical = logicalGenerations(session).total;
   const messages = window.rows.map((row) => {
     const { id, ...rest } = row;

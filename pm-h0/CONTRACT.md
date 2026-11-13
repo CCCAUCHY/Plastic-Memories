@@ -36,7 +36,7 @@
 
 | 字段 | 类型 | 默认 | 语义 |
 |---|---|---|---|
-| `positions` | 单个选择器 | — | 必需；**单值**（`"unit 5"` / `"unit 5 to 9"` / `"this"` / 数字）。一个 op 只选一段、只产出一条替代文本；多段请写多条 op |
+| `positions` | 单个选择器 | — | 必需；**单值**（`"unit 5"` / `"unit 5 to 9"` / `"this"`（仅 execute） / 数字）。一个 op 只选一段、只产出一条替代文本；多段请写多条 op。set 不允许 this：重放时它会指向重放者 |
 | `new_text` | string | `""` | 这条 op 的替代文本；空串 = 纯隐藏 |
 | `lock_this` | boolean | `false` | 把替代消息本身锁进安全区 |
 
@@ -53,6 +53,20 @@
 - 一次 run_code 程序（或一条 assistant 消息）只允许一次 plasticize 调用（set/execute 同计）；
 - 命中安全区报错；
 - 成功 execute 后，早于它、含失败 PM 调用 / set 预览 / 成功 letter / 成功 retrospect 的整个单元会被自动隐藏；execute 回执本身保留。
+
+### 读取规则：一个 fold，三个切点
+
+retrospect 与 set 预览走同一条管线：折叠日志前缀 → DSH 推导消息，只换切点。
+
+| 读取 | 折叠范围 | 取值 |
+|---|---|---|
+| retrospect(self) | seq < 承载本次调用的 assistant 消息 | 全量行 |
+| retrospect(self - n) | seq < 冻结该世代的事件（execute 声明 / 压缩 checkpoint） | 全量行 |
+| set 预览 | 同上切点 + 假想 surfaceOp | 全量行 |
+
+- 三者共用 rowsAt(session, cut, ...)；
+- 本步其余工具结果不在 self 里：它们不是本次请求的输入；
+- 同一切点下，set 预览的正文与提交后该段内容逐行一致（调用单元除外）。
 
 ### 执行规格（execute → surfaceOp）
 

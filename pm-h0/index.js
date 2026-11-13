@@ -409,7 +409,7 @@ export function apply(ctx, config) {
       name: 'plasticize',
       description: [
         '重塑你自己过去的呈现。它会改写模型当前看到的上下文，并开启一个新的逻辑世代；会话日志不会被删除，被隐藏的消息之后仍可用 retrospect 读回。把它当成编辑上下文，不是草稿纸。',
-        '位置用 retrospect(self) 返回的单元号（0 起）；系统提示是 unit 0，它只能查看、不能被重塑。一条 assistant 消息连同它的全部工具结果算一个单元，工具结果不能单独选中。ops 是操作数组：每个操作给出一个选择器与一条替代文本，选择器命中的整段会被替代文本取代，替代文本为空即隐藏；要改多段就写多个操作。数组里还可以放 { "the last plasticize(set)": true }，它会在原位展开成上一条尚未提交的 set 的操作，只能出现一次。',
+        '位置用 retrospect(self) 返回的单元号（0 起）；系统提示是 unit 0，它只能查看、不能被重塑。set 不支持 this（set 会被原样重放，this 会指向重放者）。一条 assistant 消息连同它的全部工具结果算一个单元，工具结果不能单独选中。ops 是操作数组：每个操作给出一个选择器与一条替代文本，选择器命中的整段会被替代文本取代，替代文本为空即隐藏；要改多段就写多个操作。数组里还可以放 { "the last plasticize(set)": true }，它会在原位展开成上一条尚未提交的 set 的操作，只能出现一次。',
         'option:"set" 只返回预览，不写入；option:"execute" 在下一个提交边界生效。一次程序（或一条消息）只能调用一次 plasticize。',
         '安全区里的单元不能被重塑；命中安全区会失败并报出锁定范围，需要用户解锁。',
         '成功 execute 之后，早于它的单元如果包含失败的 Plastic Memories 调用、set 预览或成功的 letter，会被自动隐藏；execute 的回执保留。',
@@ -476,6 +476,14 @@ export function apply(ctx, config) {
         const wantsReplay = ops.some((one) => isLastSetMacro(one));
         if (option === 'set' && wantsReplay) {
           throw new Error('option:"set" cannot replay the last set: a set must carry its own ops so it has something to preview');
+        }
+        // set 不支持 this：它只是预览，将来被宏原样重放时，
+        // 「this」会指向重放者（execute）那条消息，而不是当初的 set —— 语义会飘。
+        if (option === 'set') {
+          const anchored = ops.findIndex((one) => one !== null && typeof one === 'object' && isThisSelector(one.positions));
+          if (anchored >= 0) {
+            throw new Error('option:"set" does not support this: a set is replayed later, so "this" would point at the replayer. Name the unit explicitly, e.g. unit 17.');
+          }
         }
         const batch = { from: 'this call', callId: exec.callId, ops, here };
 

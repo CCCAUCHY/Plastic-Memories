@@ -13,7 +13,7 @@
 import { SURFACE_TYPES, derivedMessage, messageText } from './coords.js';
 import { logicalGenerations } from './engine.js';
 import { logicalBoundaries } from './boundaries.js';
-import { messagesWithSeqs, compactMessages, windowRows, currentCutoff, cutoffForCall } from './messages.js';
+import { rowsAt, cutoffForCall } from './messages.js';
 import { renderPreview } from './preview.js';
 
 /** 事件类型到角色名的兜底映射（正常消息直接读 message.role）。 */
@@ -113,25 +113,23 @@ export function retrospectGeneration(session, generation, preview = false, selec
   const isCurrent = normalized.current;
   const logical = isCurrent ? self : target;
 
-  let rawEntries;
+  // 统一：self 与历史只差一个切点，折叠与取行都是同一套。
+  //   self      切点 = 承载本次调用的 assistant 消息
+  //   历史世代  切点 = 冻结该世代的事件（execute 声明 / 压缩 checkpoint）
+  let cut;
   if (isCurrent) {
-    rawEntries = messagesWithSeqs(session, cutoffForCall(session, callId) ?? currentCutoff(session));
+    cut = cutoffForCall(session, callId);
   } else {
-    // 世代边界：优先该世代的 execute 声明，其次 compaction checkpoint。
     const execute = info.executes.find((entry) => entry.logical === target);
     const boundary = logicalBoundaries(events).boundaries.find((entry) => entry.logical === target);
-    const boundarySeq = execute?.seq ?? boundary?.seq;
-    if (!Number.isSafeInteger(boundarySeq)) {
+    cut = execute?.seq ?? boundary?.seq;
+    if (!Number.isSafeInteger(cut)) {
       throw new Error('no context found for logical generation ' + String(target) + ' (no write recorded for that generation)');
     }
-    // 输入消息 = 边界事件之前的工作面。
-    // 边界就是承载 execute 的那条 assistant 消息（或 compact checkpoint），
-    // 直接用它做前缀截止点；不要退到「再往前一条 assistant」，那会少一代内容。
-    rawEntries = messagesWithSeqs(session, boundarySeq);
   }
+  const { window } = rowsAt(session, cut, { locks: isCurrent, selectors });
 
   const letter = lettersOfGeneration(events, isCurrent ? Number.POSITIVE_INFINITY : target, info, []);
-  const window = windowRows(compactMessages(session, rawEntries, { locks: isCurrent }), selectors);
   // 行里的 id 只用于查锁，不发给模型。
   const rows = window.rows.map((row) => {
     const { id, ...rest } = row;

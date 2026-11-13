@@ -8,7 +8,7 @@
  */
 
 import { projectNext, renderPreview, renderRowsPreview } from './preview.js';
-import { groupRows, windowRows } from './messages.js';
+import { groupRows, windowRows, cutoffForCall } from './messages.js';
 import { derivedMessage, surfaceNodes } from './coords.js';
 import { pmSettledCallIds } from './markers.js';
 import { normalizeOp } from './opshape.js';
@@ -17,7 +17,8 @@ const NL = String.fromCharCode(10);
 
 export { normalizeOp, OP_DEFAULTS } from './opshape.js';
 
-export function hypotheticalEvents(session, resolved, callId) {
+export function hypotheticalEvents(session, resolved, callId, startSeq = undefined) {
+  const start = Number.isSafeInteger(startSeq) ? startSeq : session.seq;
   const generation = session.surface.replaceGeneration + 1;
   return resolved.map((span, i) => {
     const isHole = span.op.new_text.length === 0;
@@ -37,7 +38,7 @@ export function hypotheticalEvents(session, resolved, callId) {
     };
     return {
       type: 'developer/message',
-      seq: session.seq + i,
+      seq: start + i,
       time: Date.now(),
       surfaceOp: { op: 'replace', startSeq: span.shadowed[0], endSeq: span.shadowed[span.shadowed.length - 1] },
       sourceEventSeqs: [...span.shadowed],
@@ -55,7 +56,8 @@ export function hypotheticalEvents(session, resolved, callId) {
  * @returns {{text: string, generation: number, messageCount: number}} 预览。
  */
 export function previewOf(session, resolved, callId, options = {}) {
-  const next = projectNext(session, hypotheticalEvents(session, resolved, callId));
+  const cut = cutoffForCall(session, callId);
+  const next = projectNext(session, hypotheticalEvents(session, resolved, callId, cut), cut);
   const rows = groupRows(next.messages);
   const window = windowRows(rows, options.selectors);
   return {

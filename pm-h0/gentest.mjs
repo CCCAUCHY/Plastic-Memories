@@ -17,6 +17,12 @@ const { ok, done } = makeCounter('gentest');
 const quiet = { warn() {}, info() {} };
 const NL = String.fromCharCode(10);
 
+function showDiff(got, want) {
+  const index = got.findIndex((line, i) => line !== want[i]);
+  if (index < 0) return '同';
+  return '#' + String(index) + ' got ' + JSON.stringify(String(got[index]).slice(0, 40)) + ' / want ' + JSON.stringify(String(want[index]).slice(0, 40));
+}
+
 const ctx = makeStore();
 const session = ctx.sessions.create('gen-view', { seed: cookieSeed('subagent-95230f54.jsonl') });
 openStep(session, 2, 1);
@@ -33,7 +39,7 @@ console.log(NL + 'P1 set 预览 = 语法描述');
 {
   const want = shapeOfRows(expectedBeforeCall);
   const got = shapeOfRows(preview.rows);
-  ok(JSON.stringify(got) === JSON.stringify(want), '预览与语法一致', JSON.stringify({ gotLen: got.length, wantLen: want.length, firstDiff: got.findIndex((line, index) => line !== want[index]) }).slice(0, 200));
+  ok(JSON.stringify(got) === JSON.stringify(want), '预览与语法一致', showDiff(got, want));
 }
 
 // 提交
@@ -59,7 +65,7 @@ console.log(NL + 'P2 retrospect(self) = 语法描述');
   const got = shapeOfRows(JSON.parse(retrospect(session, { generation: 'self', callId: 'retro-1' })).messages
     .map((row) => ({ unit: row.unit, text: row.text })));
   const want = shapeOfRows(expectedAfter);
-  ok(JSON.stringify(got) === JSON.stringify(want), 'self 与语法一致', JSON.stringify({ gotLen: got.length, wantLen: want.length, firstDiff: got.findIndex((line, index) => line !== want[index]) }).slice(0, 200));
+  ok(JSON.stringify(got) === JSON.stringify(want), 'self 与语法一致', showDiff(got, want));
 }
 
 console.log(NL + 'P3 retrospect(self-1) = 提交前那一代');
@@ -67,7 +73,7 @@ console.log(NL + 'P3 retrospect(self-1) = 提交前那一代');
   const got = shapeOfRows(JSON.parse(retrospect(session, { generation: 'self - 1' })).messages
     .map((row) => ({ unit: row.unit, type: row.type, text: row.text })));
   const want = shapeOfRows(baseRows);
-  ok(JSON.stringify(got) === JSON.stringify(want), 'self-1 等于基线', JSON.stringify({ gotLen: got.length, wantLen: want.length, firstDiff: got.findIndex((line, index) => line !== want[index]) }).slice(0, 200));
+  ok(JSON.stringify(got) === JSON.stringify(want), 'self-1 等于基线', showDiff(got, want));
 }
 
 done();

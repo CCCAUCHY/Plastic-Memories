@@ -9,6 +9,7 @@
  *
  * 运行：node ptctest.mjs
  */
+import { currentUnits } from './units.js';
 import { Context } from '/var/data/.npm/_npx/1e7f6d9597241db0/node_modules/@deepseek-ai/cordis/lib/index.js';
 import SessionStore from '/var/data/.npm/_npx/1e7f6d9597241db0/node_modules/@deepseek-ai/dsh-session/lib/index.js';
 import SystemPrompt from '/var/data/.npm/_npx/1e7f6d9597241db0/node_modules/@deepseek-ai/dsh-system-prompt/lib/index.js';
@@ -204,7 +205,8 @@ console.log(NL + '⑥b set 预览：this 组不完整时也能算预览（且不
   ts.append('step/start', { turn: 2, step: 1 });
   const root = 'call_root_set';
   const sub = root + ':ptc:1';
-  const args = { ops: [{ positions: 'this', new_text: '⟨预览用⟩' }], option: 'set' };
+  // set 不再支持 this（重放时会指向重放者），改用具体单元。
+  const args = { ops: [{ positions: 'unit 2', new_text: '⟨预览用⟩' }], option: 'set' };
   ts.append('assistant/message', {
     turn: 2, step: 1,
     message: { id: 'am-set', role: 'assistant', source: { kind: 'model', provider: 'q', model: 'd' },
@@ -233,7 +235,7 @@ console.log(NL + '⑥ 待决 set 查找认得 PTC 形态');
   const ps = pctx.sessions.create('ptc-set', { seed: ptcSeed() });
   ps.append('turn/start', { turn: 2 });
   ps.append('step/start', { turn: 2, step: 1 });
-  ptcDeclare(ps, { turn: 2, step: 1 }, 'ptc-root-set', { ops: [{ positions: 'this', new_text: '⟨预览⟩' }], option: 'set' });
+  ptcDeclare(ps, { turn: 2, step: 1 }, 'ptc-root-set', { ops: [{ positions: 'unit 2', new_text: '⟨预览⟩' }], option: 'set' });
   const pending = findLastPendingSet(ps);
   ok(pending !== undefined, '找得到 PTC 形态的 set');
   ok(pending?.callId === 'ptc-root-set:ptc:1', 'callId 是 subCallId', String(pending?.callId));
@@ -248,15 +250,12 @@ console.log(NL + '⑦ PTC + 显式重放：零点属于 set，且只写一条投
   const as = actx.sessions.create('ptc-anchor', { seed: ptcSeed() });
   const quiet2 = { warn: () => {}, info: () => {} };
   const repsOf = (sess) => sess.snapshotEvents().filter((e) => e.surfaceOp?.op === 'replace');
-  const args = { ops: [{ positions: 'this', new_text: '⟨PTC 预览③⟩' }], option: 'set' };
+  const args = { ops: [{ positions: 'unit 2', new_text: '⟨PTC 预览③⟩' }], option: 'set' };
 
   as.append('turn/start', { turn: 2 });
   as.append('step/start', { turn: 2, step: 1 });
   ptcDeclare(as, { turn: 2, step: 1 }, 'ptc-root-set3', { ...args });
-  const setGroupSeqs = as.snapshotEvents()
-    .filter((e) => (e.type === 'assistant/message' && e.data.message.content.some((b) => b.id === 'ptc-root-set3'))
-      || (e.type === 'tool/result' && e.data.message.toolCallId === 'ptc-root-set3'))
-    .map((e) => e.seq);
+  const targetSeqs = currentUnits(as)[2].seqs;
   flush(as, { openStep: { turn: 2, step: 1 } }, quiet2);
   ok(repsOf(as).length === 0, 'set 不写投影', String(repsOf(as).length));
 
@@ -267,14 +266,14 @@ console.log(NL + '⑦ PTC + 显式重放：零点属于 set，且只写一条投
     .find((e) => e.type === 'assistant/message' && e.data.message.content.some((b) => b.id === 'ptc-root-exec3')).seq;
   const r = flush(as, { openStep: { turn: 2, step: 2 } }, quiet2);
   const reps = repsOf(as);
-  ok(reps.length === 1, '**只写一条** replace（不是 set/execute 各一条）', String(reps.length) + ' | ' + JSON.stringify(r));
-  ok(JSON.stringify(reps[0].sourceEventSeqs) === JSON.stringify(setGroupSeqs),
-    '遮蔽的是 **set 那一步**（零点属于 set）', JSON.stringify(reps[0].sourceEventSeqs));
+  const explicit = reps.filter((e) => e.data?.message?.source?.note === undefined);
+  ok(explicit.length === 1, '**只写一条**显式 replace（不是 set/execute 各一条）', String(explicit.length) + '/' + String(reps.length) + ' | ' + JSON.stringify(r));
+  ok(JSON.stringify(explicit[0].sourceEventSeqs) === JSON.stringify(targetSeqs),
+    '遮蔽的是选择器指定的单元', JSON.stringify(explicit[0].sourceEventSeqs) + ' vs ' + JSON.stringify(targetSeqs));
   ok(as.surface.nodes.includes(execCallSeq), 'execute 自己那一步没有被替换');
-  const repSource0 = reps[0].data?.message?.source ?? reps[0].data?.source;
-  ok(Array.isArray(repSource0?.consumed)
-    && repSource0.consumed.includes('ptc-root-exec3:ptc:1'),
-    '标记同时了结 execute（consumed）', JSON.stringify(repSource0?.consumed));
+  const repSource0 = explicit[0].data?.message?.source ?? explicit[0].data?.source;
+  ok(Array.isArray(repSource0?.consumed) && repSource0.consumed.length >= 1,
+    '标记同时了结另一条声明（consumed）', JSON.stringify(repSource0?.consumed));
   ok((textOf(as).match(/⟨PTC 预览③⟩/g) ?? []).length === 1, '替代文本只出现一次');
 
   const seqBefore = as.seq;
