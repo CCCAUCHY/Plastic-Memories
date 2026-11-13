@@ -505,7 +505,7 @@ export function apply(ctx, config) {
           const resolved = resolveUnitOps(session, batch.ops, batch.here);
           assertResolvedUnlocked(session, resolved);
           total += resolved.length;
-          parts.push('Registered ' + total + ' segment(s); they will be written at the next submission boundary.');
+          parts.push('Registered ' + total + ' segment(s); they will be written at the next submission boundary. If the surface changes before then, nothing is written and a notice is left instead.');
           const logicalGeneration = logicalGenerationForCall(session, exec.callId);
           parts.push('Logical generation ' + logicalGeneration + ' (pm-logical-generation=' + logicalGeneration + ').');
           parts.push('  · ' + batch.from + ': ' + batch.ops.length + ' op(s)');

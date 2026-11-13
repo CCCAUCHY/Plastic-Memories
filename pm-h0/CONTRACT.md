@@ -63,6 +63,15 @@ plugin:plastic-memories/reject { callId, message }
 ```
 
 这样日志里能区分「执行被拒绝」与「执行漏写」——否则两者长得一模一样（都只有声明、没有 replace）。
+
+同时会追加一条**可见**的 developer 提示（`source.kind = pm-notice`）：
+
+```text
+plugin:plastic-memories/reject  → 日志记录（模型看不见）
+developer/message: [plasticize] NOT applied: …  → 下一轮模型能看见
+```
+
+原因：工具调用时只能回「已登记」，真正写入在提交边界；不在边界告知，模型会一直以为自己生效了。
 工具层自己挡下的错误（安全区、系统提示、越界）不会走到这一步，它们在调用时就报错了。
 
 ### 读取规则：一个 fold，三个切点

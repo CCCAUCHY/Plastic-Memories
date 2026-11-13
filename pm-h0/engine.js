@@ -551,6 +551,25 @@ function safetyZoneNote(session, locks) {
   return ' 当前安全区（区间，易过时；后续操作可能改变它）：' + zones + '。';
 }
 /** 追加一条安全区私有事件（append-only；官方 plugin record）。 */
+
+/**
+ * 把「这次 execute 没生效」写进上下文，模型下一轮才看得见。
+ * 工具在调用时只能回「已登记」；真正的写入发生在提交边界，所以失败必须在这里告知。
+ */
+function appendRejectNotice(session, open, callId, reason) {
+  const step = open?.openStep ?? { turn: 0, step: 0 };
+  session.append('developer/message', {
+    turn: step.turn ?? 0,
+    step: step.step ?? 0,
+    message: {
+      id: 'pm-reject-' + String(callId),
+      role: 'developer',
+      content: [{ type: 'text', text: '[plasticize] NOT applied: ' + reason + '. The surface is unchanged; re-issue the call if it is still needed.' }],
+      source: { kind: 'pm-notice', v: 1, callId },
+    },
+  }, { surfaceOp: 'append' });
+}
+
 export function appendSafetyRecord(session, payload) {
   return session.append('plugin:plastic-memories/locks', payload);
 }
@@ -887,8 +906,10 @@ export function flush(session, options, logger) {
     for (const { declaration, error } of written.failed) {
       // 写一条私有事件：否则「被拒绝」和「漏写」在日志里长得一样，
       // 审计器只能瞎猜，模型也无从知道这次 execute 没落地。
+      const reason = String(error?.message ?? error);
       try {
-        session.append('plugin:plastic-memories/reject', { callId: declaration.callId, message: String(error?.message ?? error) });
+        session.append('plugin:plastic-memories/reject', { callId: declaration.callId, message: reason });
+        appendRejectNotice(session, open, declaration.callId, reason);
       } catch { /* 记录失败不影响主流程 */ }
       const key = 'd:' + declaration.callId;
       if (state.warned.has(key)) continue;

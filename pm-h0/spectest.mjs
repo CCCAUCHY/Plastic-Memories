@@ -104,6 +104,9 @@ console.log(NL + '③b 安全区');
   const actual = session.snapshotEvents().filter((event) => event.surfaceOp?.op === 'replace');
   ok(spec.error?.code === 'safety-zone', '规格判定为 safety-zone', JSON.stringify(spec.error));
   ok(flushed.applied === 0 && actual.length === 0, '真实实现不写任何事件', JSON.stringify(flushed));
+  const notice = session.deriveMessages().slice(-1)[0];
+  ok(String(notice?.content?.[0]?.text ?? '').includes('NOT applied'), '拒绝会留下可见提示', String(notice?.content?.[0]?.text ?? '').slice(0, 60));
+  ok(session.snapshotEvents().some((event) => event.type === 'plugin:plastic-memories/reject'), '并留下 reject 记录');
 }
 
 console.log(NL + '⑤ 宏重放：规格展开 == 实际')
