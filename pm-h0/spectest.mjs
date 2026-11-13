@@ -7,6 +7,7 @@
 import { makeCounter, makeStore, cookieSeed, openStep, plasticizeCall } from './testkit.mjs';
 import { flush, lockedSeqs, appendSafetyRecord } from './engine.js';
 import { specExecute, diffEvents, unitsOf } from './pmspec.mjs';
+import { cutoffForCall } from './messages.js';
 import { textOf } from './testkit.mjs';
 import { verifyPmSemantics } from './verify.js';
 
@@ -28,26 +29,30 @@ function nodesOf(session) {
 
 function runCase(name, ops, options = {}) {
   const session = fresh(name);
-  const callId = name + '-call';
-  const args = { ops, option: 'execute' };
-  let thrown = null;
-  try {
-    plasticizeCall(session, { turn: 2, step: 1 }, callId, args);
-    const callSeq = session.snapshotEvents()
-      .find((event) => event.type === 'assistant/message' && event.data.message.content.some((block) => block.id === callId)).seq;
-    const nodes = nodesOf(session);
-    const spec = specExecute(nodes, ops, { locks: options.locks ?? new Set(), thisSeq: callSeq });
-    const flushed = flush(session, { openStep: { turn: 2, step: 1 } }, quiet);
-    const actual = session.snapshotEvents().filter((event) => event.surfaceOp?.op === 'replace');
-    const diffs = diffEvents(spec, actual);
-    const audit = verifyPmSemantics(session.snapshotEvents());
-    return { spec, actual, diffs, audit, thrown, flushed, session };
-  } catch (error) {
-    thrown = error;
-    const nodes = nodesOf(session);
-    const spec = specExecute(nodes, ops, { locks: options.locks ?? new Set() });
-    return { spec, actual: [], diffs: [], audit: [], thrown, flushed: null, session };
+  let locks = new Set();
+  if (Number.isSafeInteger(options.lockUnit)) {
+    const units = unitsOf(nodesOf(session));
+    const target = units[options.lockUnit];
+    if (target !== undefined) {
+      appendSafetyRecord(session, { op: 'lock', seqs: [nodesOf(session)[target.from].seq], comment: 'test' });
+      locks = lockedSeqs(session);
+    }
   }
+  if (Array.isArray(options.setOps)) {
+    plasticizeCall(session, { turn: 2, step: 1 }, name + '-set', { ops: options.setOps, option: 'set' });
+  }
+  const callId = name + '-call';
+  plasticizeCall(session, { turn: 2, step: 1 }, callId, { ops, option: 'execute' });
+  const thisSeq = cutoffForCall(session, callId);
+  const spec = specExecute(nodesOf(session), ops, { locks, thisSeq, pendingOps: options.setOps });
+  const flushed = flush(session, { openStep: { turn: 2, step: 1 } }, quiet);
+  const actual = session.snapshotEvents().filter((event) => event.surfaceOp?.op === 'replace');
+  const diffs = diffEvents(spec, actual);
+  if (spec.error !== null && (flushed.applied !== 0 || actual.length !== 0)) {
+    diffs.push('规格报 ' + spec.error.code + '，实际 applied=' + String(flushed.applied) + ' replaces=' + String(actual.length));
+  }
+  const audit = verifyPmSemantics(session.snapshotEvents());
+  return { spec, actual, diffs, audit, flushed, thrown: null, session };
 }
 
 console.log(NL + '① 单段替换 / 区间 / 隐藏');
@@ -117,7 +122,7 @@ console.log(NL + '⑤ 宏重放：规格展开 == 实际')
   ok((textOf(session).match(/⟨REPLAY⟩/g) ?? []).length === 1, '替代文本只出现一次');
 }
 
-console.log(NL + '④ 随机差分（30 例）');
+console.log(NL + '④ 随机差分（40 例：普通 / this / 宏重放 / 安全区）');
 function rng(seed) {
   let state = seed >>> 0;
   return () => {
@@ -128,29 +133,39 @@ function rng(seed) {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
+const CASES = 40;
 let pass = 0;
 const fails = [];
-for (let index = 0; index < 30; index += 1) {
+for (let index = 0; index < CASES; index += 1) {
   const random = rng(7000 + index);
-  const session = fresh('spec-rand-' + String(index));
-  const scratch = [];
-  const total = unitsOf(nodesOf(session)).length;
-  const picks = 1 + Math.floor(random() * 2);
-  for (let attempt = 0; attempt < 12 && scratch.length < picks; attempt += 1) {
-    const a = 1 + Math.floor(random() * Math.max(1, total - 2));
-    const b = Math.min(total - 1, a + Math.floor(random() * 2));
-    if (scratch.some(([lo, hi]) => !(b < lo || a > hi))) continue;
-    scratch.push([a, b]);
+  const name = 'spec-rand-' + String(index);
+  const total = unitsOf(nodesOf(fresh(name + '-probe'))).length;
+  const scenario = index % 4;
+  const pickUnit = () => 1 + Math.floor(random() * Math.max(1, total - 3));
+  let ops;
+  let options = {};
+  if (scenario === 0) {
+    const a = pickUnit();
+    const b = Math.min(total - 2, a + Math.floor(random() * 2));
+    ops = [{ positions: a === b ? 'unit ' + String(a) : 'unit ' + String(a) + ' to ' + String(b), new_text: random() < 0.5 ? '' : '⟨P' + String(index) + '⟩' }];
+  } else if (scenario === 1) {
+    ops = [{ positions: 'this', new_text: random() < 0.5 ? '' : '⟨T' + String(index) + '⟩' }];
+  } else if (scenario === 2) {
+    const a = pickUnit();
+    options = { setOps: [{ positions: 'unit ' + String(a), new_text: '⟨M' + String(index) + '⟩' }] };
+    ops = [{ 'the last plasticize(set)': true }];
+  } else {
+    const a = pickUnit();
+    options = { lockUnit: a };
+    ops = [{ positions: 'unit ' + String(a), new_text: '⟨L' + String(index) + '⟩' }];
   }
-  scratch.sort((left, right) => left[0] - right[0]);
-  const ops = scratch.map(([a, b], order) => ({
-    positions: a === b ? 'unit ' + String(a) : 'unit ' + String(a) + ' to ' + String(b),
-    new_text: random() < 0.5 ? '' : '⟨R' + String(index) + '-' + String(order) + '⟩',
-  }));
-  const result = runCase('spec-rand-' + String(index), ops);
-  if (result.thrown === null && result.diffs.length === 0 && result.audit.length === 0) pass += 1;
-  else fails.push({ index, ops, diffs: result.diffs.slice(0, 2), err: String(result.thrown?.message ?? '').slice(0, 60) });
+  const result = runCase(name, ops, options);
+  // 被规格拒绝的用例（安全区等）本来就不会写事件；audit 会误报，跳过。
+  const auditOk = result.spec.error !== null || result.audit.length === 0;
+  const clean = result.diffs.length === 0 && auditOk;
+  if (clean) pass += 1;
+  else fails.push({ index, scenario, ops, diffs: result.diffs.slice(0, 2), audit: result.audit.slice(0, 1), applied: result.flushed?.applied });
 }
-ok(pass === 30, '随机 30 例与规格一致：' + String(pass) + '/30', JSON.stringify(fails.slice(0, 2)).slice(0, 400));
+ok(pass === CASES, '随机 ' + String(CASES) + ' 例与规格一致：' + String(pass) + '/' + String(CASES), JSON.stringify(fails.slice(0, 2)).slice(0, 500));
 
 done();
