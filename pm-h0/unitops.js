@@ -87,7 +87,10 @@ export function resolveUnitOps(session, rawOps, here, options = {}) {
       // 所以这里提前给出可读的错误，而不是让整批投影在提交边界静默跳过。
       const systemUnit = selected.find((unit) => unit.role === 'system');
       if (systemUnit !== undefined) {
-        throw new Error('op #' + index + ' 命中了系统提示（unit ' + String(systemUnit.n) + '），它只能查看、不能被重塑；请选择其它单元');
+        // 独立错误码：系统提示只读是宿主约束，与安全区（用户锁定）无关。
+        const error = new Error('op #' + index + ' 命中了系统提示（unit ' + String(systemUnit.n) + '），它只能查看、不能被重塑；请选择其它单元');
+        error.code = 'system-prompt';
+        throw error;
       }
       const shadowed = selected.flatMap((unit) => unit.seqs);
       out.push({

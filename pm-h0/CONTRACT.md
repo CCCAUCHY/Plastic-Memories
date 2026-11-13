@@ -54,6 +54,38 @@
 - 命中安全区报错；
 - 成功 execute 后，早于它、含失败 PM 调用 / set 预览 / 成功 letter / 成功 retrospect 的整个单元会被自动隐藏；execute 回执本身保留。
 
+### 执行规格（execute → surfaceOp）
+
+`pmspec.mjs` 把「一次 execute 应该写出什么事件」写成纯函数，**不依赖 DSH 的消息推导**：
+
+```text
+输入：执行前工作面节点（seq + 事件类型）、ops、安全区锁
+输出：事件列表 [{ startSeq, endSeq, seqs, text }] 或错误 { code, index }
+```
+
+规则：
+
+1. 单元 = 一条 `assistant/message` + 紧随其后的 `tool/result`；其余节点各自成单元；
+2. 选择器命中一段**连续**单元区间；
+3. 区间对应的 seq 是工作面上的连续片段（首单元首 seq … 末单元末 seq）；
+4. 一个操作恰好写出一条 `replace`；空文本 = 纯隐藏；
+5. 命中系统提示 → `system-prompt`（独立规则，与安全区无关）；
+6. 命中安全区 → `safety-zone`；
+7. 越界 → `out-of-range`；多个操作重叠 → `overlap`。
+
+`spectest.mjs` 拿这个规格和真实 `flush` 写出的事件逐条比对（区间、`sourceEventSeqs`、文本），
+再加 30 例随机差分与 `verify.js` 审计。
+
+### 两种拒绝：系统提示 vs 安全区
+
+| 拒绝 | 触发条件 | 错误码 |
+|---|---|---|
+| 系统提示只读 | 选择命中 unit 0（`system/message`） | `system-prompt` |
+| 安全区 | 选择命中被用户锁定的 seq | `safety-zone` |
+
+两者是**独立的规则与实现**：前者是宿主对 node 0 的约束（只允许 `system/message` 改写），
+后者是用户锁定；代码上互不调用，报错措辞也不共用。
+
 ### 世代计数
 
 - **物理世代**：每次 surface replacement 加一，包括自动隐藏写出的空替代；
