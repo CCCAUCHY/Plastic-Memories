@@ -8,8 +8,6 @@
  * @module dsh-plugin-plastic-memories-h0/pending
  */
 
-import { isLastSetMacro } from './opshape.js';
-
 /** 解析一次工具调用的参数。 */
 function argsOf(block) {
   try { return typeof block.arguments === 'string' ? JSON.parse(block.arguments) : block.arguments; } catch { return undefined; }
@@ -56,7 +54,6 @@ export function findLastPendingSet(session) {
         const callId = block.callId ?? block.id;
         if (typeof callId !== 'string' || failed.has(callId)) continue;
         if (!Array.isArray(args.ops) || args.ops.length === 0) continue;
-        if (args.ops.some((one) => isLastSetMacro(one))) continue;
         return { callId, ops: args.ops };
       }
       continue;
