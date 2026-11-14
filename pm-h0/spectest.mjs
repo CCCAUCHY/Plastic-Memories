@@ -134,6 +134,16 @@ console.log(NL + '③c 日志损坏检测');
   session.append('plugin:plastic-memories/locks', { op: 'lock', seqs: [], comment: 'test' });
   const flushed = flush(session, { openStep: { turn: 2, step: 1 } }, { warn() {}, info() {}, error() {} });
   const damaged = session.snapshotEvents().filter((event) => event.type === 'plugin:plastic-memories/damaged');
+  // 哈希不匹配（条数对得上）也要能抓到。
+  {
+    const s2 = fresh('spec-damage-hash');
+    const from2 = s2.seq + 1;
+    s2.append('plugin:plastic-memories/commit', { callId: 'broken2', from: from2, to: from2, count: 1, hash: 'beef' });
+    s2.append('plugin:plastic-memories/locks', { op: 'lock', seqs: [], comment: 'test' });
+    flush(s2, { openStep: { turn: 2, step: 1 } }, { warn() {}, info() {}, error() {} });
+    const hit = s2.snapshotEvents().filter((event) => event.type === 'plugin:plastic-memories/damaged');
+    ok(hit.length === 1 && String(hit[0].data?.reason ?? '').includes('哈希'), '哈希不符也会被发现', JSON.stringify(hit[0]?.data ?? {}).slice(0, 80));
+  }
   ok(damaged.length === 1, '损坏被发现并记录', String(damaged.length));
   const notice = session.deriveMessages().slice(-1)[0];
   ok(String(notice?.content?.[0]?.text ?? '').includes('incomplete'), '并给模型一条可见提示', String(notice?.content?.[0]?.text ?? '').slice(0, 60));
