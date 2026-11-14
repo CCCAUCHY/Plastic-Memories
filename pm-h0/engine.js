@@ -878,6 +878,11 @@ function applyDeclarations(session, declarations, open, state, options = {}) {
       const entry = plan[index];
       session.append(entry.type, resolveData(entry), entry.opts);
     }
+    // 整批写完才写 checkpoint：它表示「这之前的 commit 不必再校验」。
+    // 若在写完数据前崩溃，最后一条标记仍是 commit，下次 flush 会校验它。
+    try {
+      session.append('plugin:plastic-memories/checkpoint', { upTo: session.seq });
+    } catch { /* 忽略持久化失败 */ }
   }
   return { explicit, auto, applied: planned.length, failed };
 }
@@ -927,6 +932,9 @@ function findLastPendingSet(declarations, before, failedCallIds) {
 
 const DAMAGED = new WeakMap();
 
+/** 回溯最后一条 commit/checkpoint 的最大事件数。 */
+const CHECKPOINT_SCAN_LIMIT = 2000;
+
 /**
  * 校验日志最后一条 commit（或 checkpoint）。
  *
@@ -940,7 +948,9 @@ const DAMAGED = new WeakMap();
 export function verifyLastCommit(session, logger) {
   const events = session.snapshotEvents();
   let mark;
-  for (let index = events.length - 1; index >= 0; index -= 1) {
+  // 回溯有上限：长会话里最后一条标记可能很远，扫到上限就按「太旧、不查」处理。
+  const floor = Math.max(0, events.length - CHECKPOINT_SCAN_LIMIT);
+  for (let index = events.length - 1; index >= floor; index -= 1) {
     const type = events[index].type;
     if (type === 'plugin:plastic-memories/commit' || type === 'plugin:plastic-memories/checkpoint') {
       mark = events[index];

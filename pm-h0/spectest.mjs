@@ -150,6 +150,20 @@ console.log(NL + '③c 日志损坏检测');
   void flushed;
 }
 
+console.log(NL + '③d checkpoint 封住校验成本');
+{
+  const session = fresh('spec-checkpoint');
+  plasticizeCall(session, { turn: 2, step: 1 }, 'cp-1', { ops: [{ positions: 'unit 2', new_text: '⟨CP⟩' }], option: 'execute' });
+  flush(session, { openStep: { turn: 2, step: 1 } }, quiet);
+  const marks = session.snapshotEvents().filter((event) => event.type === 'plugin:plastic-memories/checkpoint');
+  ok(marks.length === 1, '一批写完留下一条 checkpoint', String(marks.length));
+  const commitEvent = session.snapshotEvents().find((event) => event.type === 'plugin:plastic-memories/commit');
+  ok(Number(marks[0]?.data?.upTo) >= Number(commitEvent?.data?.to), 'checkpoint 覆盖到本批末尾', JSON.stringify({ upTo: marks[0]?.data?.upTo, to: commitEvent?.data?.to }));
+  // 下一次 flush 只会看到 checkpoint，不会再报损坏。
+  flush(session, { openStep: { turn: 2, step: 1 } }, quiet);
+  ok(session.snapshotEvents().filter((event) => event.type === 'plugin:plastic-memories/damaged').length === 0, 'checkpoint 之后的 flush 不误报损坏');
+}
+
 console.log(NL + '④ 随机差分（40 例：普通 / this / 宏重放 / 安全区）');
 function rng(seed) {
   let state = seed >>> 0;
