@@ -813,24 +813,14 @@ function applyDeclarations(session, declarations, open, state, options = {}) {
         candidates.push({ from, to, reason: target.reason, callId: target.callId, anchor: segment[0] });
       }
     }
-    candidates.sort((left, right) => left.from - right.from);
-    const merged = [];
-    for (const candidate of candidates) {
-      const last = merged[merged.length - 1];
-      // 相邻（或重叠，理论上不会）的区间合成一条，避免写出一串连续的 developer 消息。
-      if (last !== undefined && candidate.from <= last.to + 1) {
-        last.to = Math.max(last.to, candidate.to);
-        continue;
-      }
-      merged.push({ ...candidate });
-    }
-    const autoOps = merged.map((range) => ({
+    // 一条候选 = 一条 op = 一条 surfaceOp。空文本本身就是空洞，不需要归并。
+    const autoOps = candidates.map((range) => ({
       positions: range.from === range.to ? 'unit ' + String(range.from) : 'unit ' + String(range.from) + ' to ' + String(range.to),
       new_text: '',
     }));
     const autoSpans = autoOps.length === 0 ? [] : resolveUnitOps(session, autoOps, undefined);
     for (let i = 0; i < autoSpans.length; i++) {
-      const range = merged[i];
+      const range = candidates[i];
       const generation = session.surface.replaceGeneration + 1;
       const autoSeqs = autoSpans[i].shadowed;
       const source = pmSource({

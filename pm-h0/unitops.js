@@ -19,18 +19,6 @@ function unitForHere(units, here) {
   return units.find((unit) => seqs.some((seq) => unit.seqs.includes(seq)));
 }
 
-/** 把一组单元序号合并成连续区间。 */
-function unitRanges(numbers) {
-  const sorted = [...new Set(numbers)].sort((left, right) => left - right);
-  const ranges = [];
-  for (const n of sorted) {
-    const last = ranges[ranges.length - 1];
-    if (last !== undefined && n === last[1] + 1) last[1] = n;
-    else ranges.push([n, n]);
-  }
-  return ranges;
-}
-
 /**
  * 把 ops 里的宏元素替换成待决 set 的 ops（原地展开，顺序保持）。
  * @param {object} session
@@ -78,26 +66,23 @@ export function resolveUnitOps(session, rawOps, here, options = {}) {
       try { picked.push(...parseUnitRange(selector)); } catch (error) { throw new Error('op #' + index + ': ' + error.message); }
     }
     for (const n of picked) if (n < 0 || n >= units.length) throw new Error('op #' + index + ': unit ' + n + ' is out of range (0..' + (units.length - 1) + ')');
-    const ranges = unitRanges(picked);
-    if (ranges.length === 0) throw new Error('op #' + index + ' selects no units');
-    for (let r = 0; r < ranges.length; r += 1) {
-      const [start, end] = ranges[r];
-      const selected = units.slice(start, end + 1);
-      // DSH 只允许 system/message 改写系统提示；用 developer 替代会被宿主拒绝，
-      // 所以这里提前给出可读的错误，而不是让整批投影在提交边界静默跳过。
-      const systemUnit = selected.find((unit) => unit.role === 'system');
-      if (systemUnit !== undefined) {
-        // 独立错误码：系统提示只读是宿主约束，与安全区（用户锁定）无关。
-        const error = new Error('op #' + index + ' 命中了系统提示（unit ' + String(systemUnit.n) + '），它只能查看、不能被重塑；请选择其它单元');
-        error.code = 'system-prompt';
-        throw error;
-      }
-      const shadowed = selected.flatMap((unit) => unit.seqs);
-      out.push({
-        op: { ...raw, new_text: r === ranges.length - 1 ? newText : '', positions: undefined },
-        shadowed,
-      });
+    // 一个 op 只对应一个连续单元区间 → 一条 surfaceOp。
+    // positions 已经是单值选择器，不会再出现「多段里只有最后一段拿到 new_text」的旧规则。
+    const start = picked[0];
+    const end = picked[picked.length - 1];
+    if (end - start + 1 !== picked.length) throw new Error('op #' + index + ' selected a non-contiguous range');
+    const selected = units.slice(start, end + 1);
+    // DSH 只允许 system/message 改写系统提示；用 developer 替代会被宿主拒绝，
+    // 所以这里提前给出可读的错误，而不是让整批投影在提交边界静默跳过。
+    const systemUnit = selected.find((unit) => unit.role === 'system');
+    if (systemUnit !== undefined) {
+      // 独立错误码：系统提示只读是宿主约束，与安全区（用户锁定）无关。
+      const error = new Error('op #' + index + ' 命中了系统提示（unit ' + String(systemUnit.n) + '），它只能查看、不能被重塑；请选择其它单元');
+      error.code = 'system-prompt';
+      throw error;
     }
+    const shadowed = selected.flatMap((unit) => unit.seqs);
+    out.push({ op: { ...raw, new_text: newText, positions: undefined }, shadowed });
   }
   return out;
 }
