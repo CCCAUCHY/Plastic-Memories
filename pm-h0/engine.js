@@ -878,10 +878,10 @@ function applyDeclarations(session, declarations, open, state, options = {}) {
       const entry = plan[index];
       session.append(entry.type, resolveData(entry), entry.opts);
     }
-    // 整批写完才写 checkpoint：它表示「这之前的 commit 不必再校验」。
+    // 整批写完才写 commit checkpoint：它表示「这之前的 WAL commit 不必再校验」。
     // 若在写完数据前崩溃，最后一条标记仍是 commit，下次 flush 会校验它。
     try {
-      session.append('plugin:plastic-memories/checkpoint', { upTo: session.seq });
+      session.append('plugin:plastic-memories/commit-checkpoint', { upTo: session.seq });
     } catch { /* 忽略持久化失败 */ }
   }
   return { explicit, auto, applied: planned.length, failed };
@@ -932,14 +932,14 @@ function findLastPendingSet(declarations, before, failedCallIds) {
 
 const DAMAGED = new WeakMap();
 
-/** 回溯最后一条 commit/checkpoint 的最大事件数。 */
+/** 回溯最后一条 WAL commit / commit checkpoint 的最大事件数。 */
 const CHECKPOINT_SCAN_LIMIT = 2000;
 
 /**
- * 校验日志最后一条 commit（或 checkpoint）。
+ * 校验日志最后一条 WAL commit（或 commit checkpoint）。
  *
  * 无状态设计：每次 flush 都要看，因为崩溃后内存状态没了，无从知道「该不该校验」。
- * checkpoint 之前的 commit 不再检查 —— 那是长会话的性能护栏。
+ * commit checkpoint 之前的 WAL commit 不再检查 —— 那是长会话的性能护栏。
  *
  * @param {object} session - 目标会话。
  * @param {object} [logger] - 日志器。
@@ -952,12 +952,12 @@ export function verifyLastCommit(session, logger) {
   const floor = Math.max(0, events.length - CHECKPOINT_SCAN_LIMIT);
   for (let index = events.length - 1; index >= floor; index -= 1) {
     const type = events[index].type;
-    if (type === 'plugin:plastic-memories/commit' || type === 'plugin:plastic-memories/checkpoint') {
+    if (type === 'plugin:plastic-memories/commit' || type === 'plugin:plastic-memories/commit-checkpoint') {
       mark = events[index];
       break;
     }
   }
-  if (mark === undefined || mark.type === 'plugin:plastic-memories/checkpoint') return { ok: true };
+  if (mark === undefined || mark.type === 'plugin:plastic-memories/commit-checkpoint') return { ok: true };
   const { from, to, count, hash } = mark.data ?? {};
   if (!Number.isSafeInteger(from) || !Number.isSafeInteger(to) || !Number.isSafeInteger(count)) {
     return { ok: false, reason: 'commit 记录本身不完整', commit: mark };

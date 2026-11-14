@@ -54,6 +54,23 @@
 - 命中安全区报错；
 - 成功 execute 后，早于它、含失败 PM 调用 / set 预览 / 成功 letter / 成功 retrospect 的整个单元会被自动隐藏；execute 回执本身保留。
 
+### 写入协议（WAL）
+
+一批 = 显式投影 + 私有事件（安全区锁、自动隐藏、世代边界）。写入顺序固定：
+
+```text
+1. plugin:plastic-memories/commit { callId, from, to, count, hash }   ← 先落盘
+2. 数据事件（developer/message、locks、logical …）
+3. plugin:plastic-memories/commit-checkpoint { upTo }                 ← 整批写完才落盘
+```
+
+- `hash` = 第 2 步那批事件的 sha256（字段 { seq, type, data, surfaceOp, sourceEventSeqs }，不含 time）；
+- 每次 flush 回溯**最后一条** `commit` / `commit-checkpoint`：遇到 commit 就重算哈希比对，
+  遇到 commit-checkpoint 就跳过（它之前的一律不查）；
+- 回溯上限 2000 条事件，扫不到标记按「太旧、不查」处理；
+- 名字里带 `commit` 是为了和「压缩 checkpoint」区分：这里的 commit-checkpoint 只表示
+  「这一批 WAL 已完整写入」，与逻辑世代的压缩检查点无关。
+
 ### 被拒绝的执行会留下记录
 
 提交边界上被拒绝的声明会写一条私有事件：

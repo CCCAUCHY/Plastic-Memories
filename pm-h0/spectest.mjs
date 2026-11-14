@@ -155,7 +155,7 @@ console.log(NL + '③d checkpoint 封住校验成本');
   const session = fresh('spec-checkpoint');
   plasticizeCall(session, { turn: 2, step: 1 }, 'cp-1', { ops: [{ positions: 'unit 2', new_text: '⟨CP⟩' }], option: 'execute' });
   flush(session, { openStep: { turn: 2, step: 1 } }, quiet);
-  const marks = session.snapshotEvents().filter((event) => event.type === 'plugin:plastic-memories/checkpoint');
+  const marks = session.snapshotEvents().filter((event) => event.type === 'plugin:plastic-memories/commit-checkpoint');
   ok(marks.length === 1, '一批写完留下一条 checkpoint', String(marks.length));
   const commitEvent = session.snapshotEvents().find((event) => event.type === 'plugin:plastic-memories/commit');
   ok(Number(marks[0]?.data?.upTo) >= Number(commitEvent?.data?.to), 'checkpoint 覆盖到本批末尾', JSON.stringify({ upTo: marks[0]?.data?.upTo, to: commitEvent?.data?.to }));
