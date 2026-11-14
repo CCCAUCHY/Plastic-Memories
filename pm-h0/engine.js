@@ -800,10 +800,26 @@ function applyDeclarations(session, declarations, open, state, options = {}) {
 
   // 自动隐藏一律是纯空洞 —— 没有打开的 step 就留到下一个边界（可见性检查天然幂等）。
   let auto = 0;
-  if (open !== undefined) {
+  if (open !== undefined && autoTargets.length > 0) {
+    // 自动隐藏也走**同一个解析器**：先把目标折成合成的 ops（positions + 空文本），
+    // 再和模型写的 ops 一样交给 resolveUnitOps。这样「单元边界 / 重叠 / 锁 / 系统提示」
+    // 只有一份判定，而不是两套。
+    const units = currentUnits(session, { locks });
+    const unitOfSeq = (seq) => units.findIndex((unit) => unit.seqs.includes(seq));
+    const autoOps = [];
+    const kept = [];
     for (const target of autoTargets) {
+      const from = unitOfSeq(target.shadowed[0]);
+      const to = unitOfSeq(target.shadowed[target.shadowed.length - 1]);
+      if (from < 0 || to < 0) continue;
+      autoOps.push({ positions: from === to ? 'unit ' + String(from) : 'unit ' + String(from) + ' to ' + String(to), new_text: '' });
+      kept.push(target);
+    }
+    const autoSpans = autoOps.length === 0 ? [] : resolveUnitOps(session, autoOps, undefined);
+    for (let i = 0; i < autoSpans.length; i++) {
+      const target = kept[i];
       const generation = session.surface.replaceGeneration + 1;
-      const autoSeqs = surfaceRangeSeqs(session, target.shadowed[0], target.shadowed[target.shadowed.length - 1], target.shadowed);
+      const autoSeqs = autoSpans[i].shadowed;
       const source = pmSource({
         op: 'hide',
         generation,
