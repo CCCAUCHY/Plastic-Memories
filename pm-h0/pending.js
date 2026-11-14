@@ -14,9 +14,9 @@ function argsOf(block) {
 }
 
 /** 这条调用是否以错误收场。 */
-function failedCallIds(session) {
+function failedCallIds(session, from = 0) {
   const failed = new Set();
-  for (const event of session.snapshotEvents()) {
+  for (const event of session.snapshotEvents(from)) {
     if (event.type === 'tool/result' && event.data?.message?.isError === true) {
       const callId = event.data.message.toolCallId ?? event.data.message.source?.callId;
       if (typeof callId === 'string') failed.add(callId);
@@ -38,7 +38,7 @@ export function findLastPendingSet(session) {
   const visible = new Set(nodes);
   const oldest = Math.min(...nodes);
   const events = session.snapshotEvents();
-  const failed = failedCallIds(session);
+  const failed = failedCallIds(session, oldest);
 
   // 从日志尾部往前扫，跨过最老可见节点就停：更早的 set 不可能还在工作面上。
   for (let index = events.length - 1; index >= 0; index -= 1) {
@@ -66,7 +66,7 @@ export function findLastPendingSet(session) {
       const rootCallId = event.data?.rootCallId ?? event.data?.parentCallId;
       if (typeof callId !== 'string' || failed.has(callId)) continue;
       if (!Array.isArray(args.ops) || args.ops.length === 0) continue;
-      const owner = ownerEventOf(events, rootCallId);
+      const owner = ownerEventOf(events, rootCallId, index);
       if (owner === undefined || !visible.has(owner.seq)) continue;
       return { callId, ops: args.ops };
     }
@@ -75,9 +75,11 @@ export function findLastPendingSet(session) {
 }
 
 /** 找到承载某次 run_code 调用的 assistant 消息。 */
-function ownerEventOf(events, rootCallId) {
+function ownerEventOf(events, rootCallId, fromIndex) {
   if (typeof rootCallId !== 'string') return undefined;
-  for (const event of events) {
+  // 承载消息一定在调用之前，从调用位置往回找即可。
+  for (let index = fromIndex - 1; index >= 0; index -= 1) {
+    const event = events[index];
     if (event.type !== 'assistant/message') continue;
     const content = Array.isArray(event.data?.message?.content) ? event.data.message.content : [];
     if (content.some((block) => block?.type === 'tool-call' && (block.id === rootCallId || block.callId === rootCallId))) return event;
