@@ -166,35 +166,23 @@ console.log('B 工具层');
 
 {
   const session = freshSession('contract-plasticize');
-  const set = await callTool('plasticize', { option: 'set', ops: [{ positions: 'unit 2', new_text: '⟨X⟩' }], preview_positions: 'unit 2' }, session, 'p-set');
-  ok(set.text.startsWith('Preview only') && set.text.includes('showing units'), 'set 预览带窗口说明');
-  const emptySet = await callTool('plasticize', { option: 'set', ops: [] }, session, 'p-empty-set');
-  ok(emptySet.error?.includes('at least one op') === true, 'set 传空 ops 报错', String(emptySet.error).slice(0, 50));
-  const replayInSet = await callTool('plasticize', { option: 'set', ops: [{ 'the last plasticize(set)': true }] }, session, 'p-replay-set');
-  ok(replayInSet.error?.includes('cannot replay') === true, 'set 不能重放上一条 set', String(replayInSet.error).slice(0, 50));
-  const thisInSet = await callTool('plasticize', { option: 'set', ops: [{ positions: 'this', new_text: 'X' }] }, session, 'p-this-set');
-  ok(thisInSet.error?.includes('does not support this') === true, 'set 不支持 this', String(thisInSet.error).slice(0, 50));
-  const thisInExecute = await callTool('plasticize', { option: 'execute', ops: [{ positions: 'this', new_text: 'X' }] }, session, 'p-this-exec');
-  ok(thisInExecute.error === undefined, 'execute 仍然支持 this', String(thisInExecute.error ?? '').slice(0, 50));
-  const replayOk = await callTool('plasticize', { option: 'execute', ops: [{ 'the last plasticize(set)': true }] }, session, 'p-replay-ok');
-  ok(replayOk.error === undefined && replayOk.text.includes('Registered'), 'execute 可以重放待决 set', String(replayOk.error ?? replayOk.text).slice(0, 50));
-  const mixed = await callTool('plasticize', { option: 'execute', ops: [{ 'the last plasticize(set)': true }, { positions: 'unit 1', new_text: 'Y' }] }, session, 'p-mixed');
-  ok(mixed.error === undefined, '宏可以和普通 op 并存', String(mixed.error ?? '').slice(0, 60));
-  const twoMacros = await callTool('plasticize', { option: 'execute', ops: [{ 'the last plasticize(set)': true }, { 'the last plasticize(set)': true }] }, session, 'p-two-macros');
-  ok(twoMacros.error?.includes('only once') === true, '宏只能出现一次', String(twoMacros.error).slice(0, 50));
-  const withText = await callTool('plasticize', { option: 'execute', ops: [{ 'the last plasticize(set)': true, new_text: 'x' }] }, session, 'p-with-text');
-  ok(withText.error !== undefined, '宏不能附带其它字段', String(withText.error).slice(0, 60));
+  const first = await callTool('plasticize', { ops: [{ positions: 'unit 2', new_text: '⟨X⟩' }] }, session, 'p-1');
+  ok(first.error === undefined && first.text.includes('Registered'), 'ops 直接登记', String(first.error ?? first.text).slice(0, 60));
+  const emptyOps = await callTool('plasticize', { ops: [] }, session, 'p-empty');
+  ok(emptyOps.error?.includes('non-empty') === true, '空 ops 报错', String(emptyOps.error).slice(0, 50));
+  const thisOp = await callTool('plasticize', { ops: [{ positions: 'this', new_text: 'X' }] }, session, 'p-this');
+  ok(thisOp.error === undefined, '支持 this', String(thisOp.error ?? '').slice(0, 50));
+  const noOps = await callTool('plasticize', {}, session, 'p-none');
+  ok(noOps.error?.includes('ops') === true, '缺 ops 被拒绝', String(noOps.error).slice(0, 50));
 }
 
 {
   const session = freshSession('contract-errors');
-  ok((await callTool('plasticize', { ops: [{ positions: 'unit 1' }] }, session, 'e-1')).error?.includes('option') === true, '缺 option 报错');
-  ok((await callTool('plasticize', { option: 'set', ops: [{ positions: 'unit 999' }] }, session, 'e-2')).error?.includes('out of range') === true, '单元越界报错');
-  ok((await callTool('plasticize', { option: 'set', ops: [{ positions: 'unit 0', new_text: 'X' }] }, session, 'e-3')).error?.includes('系统提示') === true, '系统提示（unit 0）不可重塑');
-  ok((await callTool('plasticize', { option: 'set', ops: [{ positions: '[1,2]' }] }, session, 'e-4')).error !== undefined, '旧区间写法被拒绝');
-  const unknownField = await callTool('plasticize', { option: 'set', ops: [{ positions: 'unit 1', nope: 1 }] }, session, 'e-5');
-  ok(unknownField.error?.includes('does not match any allowed shape') === true, '未知字段被 schema 拒绝', String(unknownField.error).slice(0, 50));
-  ok((await callTool('plasticize', { option: 'set', ops: [{ positions: 'unit 1' }], preview_positions: [] }, session, 'e-6')).error !== undefined, 'preview_positions 必须是单值');
+  ok((await callTool('plasticize', { ops: [{ positions: 'unit 999' }] }, session, 'e-1')).error?.includes('out of range') === true, '单元越界报错');
+  ok((await callTool('plasticize', { ops: [{ positions: 'unit 0', new_text: 'X' }] }, session, 'e-2')).error?.includes('系统提示') === true, '系统提示（unit 0）不可重塑');
+  ok((await callTool('plasticize', { ops: [{ positions: '[1,2]' }] }, session, 'e-3')).error !== undefined, '旧区间写法被拒绝');
+  const unknownField = await callTool('plasticize', { ops: [{ positions: 'unit 1', nope: 1 }] }, session, 'e-4');
+  ok(unknownField.error?.includes('unknown field') === true, '未知字段被 schema 拒绝', String(unknownField.error).slice(0, 50));
 }
 
 console.log('C 行为层');
@@ -202,10 +190,9 @@ console.log('C 行为层');
 {
   const session = freshSession('contract-set-exec');
   const before = session.surface.replaceGeneration;
-  await callTool('plasticize', { option: 'set', ops: [{ positions: 'unit 2', new_text: '⟨SET⟩' }] }, session, 'b-set');
-  await callTool('plasticize', { option: 'execute', ops: [{ 'the last plasticize(set)': true }] }, session, 'b-exec');
+  await callTool('plasticize', { ops: [{ positions: 'unit 2', new_text: '⟨SET⟩' }] }, session, 'b-exec');
   const result = flush(session, { openStep: { turn: 9, step: 1 } }, quiet);
-  ok(result.applied >= 1, '显式重放落地（兑现 set）', JSON.stringify(result));
+  ok(result.applied >= 1, '落地', JSON.stringify(result));
   const replaces = session.snapshotEvents().filter((event) => event.surfaceOp?.op === 'replace');
   const explicit = replaces.filter((event) => event.data?.message?.source?.note === undefined);
   ok(explicit.length === 1, '只写一条显式 replace（其余是自动隐藏）', String(explicit.length) + '/' + String(replaces.length));
@@ -215,16 +202,11 @@ console.log('C 行为层');
 }
 
 {
-  const session = freshSession('contract-empty-ops-none');
-  const none = await callTool('plasticize', { option: 'execute', ops: [{ 'the last plasticize(set)': true }] }, session, 'n-exec');
-  ok(none.error?.includes('no pending') === true, '无待决 set 时重放报错', String(none.error).slice(0, 60));}
-
-{
   const session = freshSession('contract-safety');
   const target = currentUnits(session)[1];
   appendSafetyRecord(session, { op: 'lock', seqs: [target.seq], comment: 'contract' });
   ok(lockedSeqs(session).has(target.seq), '锁已写入');
-  const hit = await callTool('plasticize', { option: 'set', ops: [{ positions: 'unit ' + target.n, new_text: 'X' }] }, session, 's-hit');
+  const hit = await callTool('plasticize', { ops: [{ positions: 'unit ' + target.n, new_text: 'X' }] }, session, 's-hit');
   ok(hit.error?.includes('safety zone') === true, '命中安全区报错', String(hit.error).slice(0, 60));
   const rows = JSON.parse((await callTool('retrospect', { generation: 'self' }, session, 's-self', false)).text);
   ok(rows.messages.some((row) => row.unit === target.n && row.locked === true), 'self 标出锁定单元');
@@ -232,8 +214,7 @@ console.log('C 行为层');
 
 {
   const session = freshSession('contract-reload');
-  await callTool('plasticize', { option: 'set', ops: [{ positions: 'unit 2', new_text: '⟨RELOAD⟩' }] }, session, 'r-set');
-  await callTool('plasticize', { option: 'execute', ops: [{ 'the last plasticize(set)': true }] }, session, 'r-exec');
+  await callTool('plasticize', { ops: [{ positions: 'unit 2', new_text: '⟨RELOAD⟩' }] }, session, 'r-exec');
   flush(session, { openStep: { turn: 9, step: 1 } }, quiet);
   const events = JSON.parse(JSON.stringify(session.snapshotEvents())).filter((event) => event.type !== 'session');
   const ctx2 = makeStore();
@@ -244,8 +225,7 @@ console.log('C 行为层');
 
 {
   const session = freshSession('contract-generations');
-  await callTool('plasticize', { option: 'set', ops: [{ positions: 'unit 2', new_text: '⟨G⟩' }] }, session, 'g-set');
-  await callTool('plasticize', { option: 'execute', ops: [{ 'the last plasticize(set)': true }] }, session, 'g-exec');
+  await callTool('plasticize', { ops: [{ positions: 'unit 2', new_text: '⟨G⟩' }] }, session, 'g-exec');
   flush(session, { openStep: { turn: 9, step: 1 } }, quiet);
   let state = initState();
   for (const event of session.snapshotEvents()) state = applyEvent(state, event);

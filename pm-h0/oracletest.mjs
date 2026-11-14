@@ -36,11 +36,10 @@ for (let caseIndex = 0; caseIndex < CASES; caseIndex += 1) {
   const ctx = makeStore();
   const session = ctx.sessions.create('oracle-' + String(caseIndex), { seed: cookieSeed('subagent-95230f54.jsonl') });
   openStep(session, 2, 1);
-  plasticizeCall(session, { turn: 2, step: 1 }, 'oc' + String(caseIndex), { ops: [{ positions: 'unit 1' }], option: 'set' });
 
-  // 执行前表面（此时 set 的调用已经在工作面上，会和 execute 同批解析）
-  const pre = session.deriveMessages();
-  const unitCount = unitRangesOf(pre).length;
+  // 单元编号基准：调用之前的工作面（追加调用单元不会改变前面的编号）。
+  const preUnits = session.deriveMessages();
+  const unitCount = unitRangesOf(preUnits).length;
   // unit 0 是系统提示，只能查看；生成器从 unit 1 起。
   const targetable = Math.max(1, unitCount - 1);
 
@@ -62,7 +61,9 @@ for (let caseIndex = 0; caseIndex < CASES; caseIndex += 1) {
     return { positions: a === b ? 'unit ' + String(a) : 'unit ' + String(a) + ' to ' + String(b), new_text: text };
   });
 
-  plasticizeCall(session, { turn: 2, step: 1 }, 'oe' + String(caseIndex), { ops, option: 'execute' });
+  plasticizeCall(session, { turn: 2, step: 1 }, 'oe' + String(caseIndex), { ops });
+  // 期望值以「调用已在工作面上」为基线：提交后调用单元仍保留。
+  const pre = session.deriveMessages();
   const preNodes = [...session.surface.nodes];
   const result = flush(session, { openStep: { turn: 2, step: 1 } }, quiet);
 

@@ -55,10 +55,12 @@ console.log(NL + '④ 参数校验层（补回 defineTool 的行为）');
   const exec = { agent: { session: s }, callId: 'itest-call', name: 'plasticize', arguments: {}, signal: new AbortController().signal };
   const sync = (fn) => { try { const r = fn(); return r && typeof r.then === 'function' ? null : null; } catch (e) { return e.message; } };
   const d = defs.get('plasticize');
-  const e1 = sync(() => d.execute({ ops: 'not-array', option: 'set' }, exec));
+  const e1 = sync(() => d.execute({ ops: 'not-array' }, exec));
   ok(typeof e1 === 'string' && e1.includes('Invalid tool arguments'), '类型错误被 schema 层拦下', String(e1).slice(0, 70));
   const e2 = sync(() => d.execute({ ops: [] }, exec));
-  ok(typeof e2 === 'string' && e2.includes('option'), '缺 option 被拦下', String(e2).slice(0, 70));
+  ok(typeof e2 === 'string' && e2.includes('non-empty'), '空 ops 被拦下', String(e2).slice(0, 70));
+  const e3 = sync(() => d.execute({}, exec));
+  ok(typeof e3 === 'string' && e3.includes('ops'), '缺 ops 被拦下', String(e3).slice(0, 70));
 }
 
 console.log(NL + '⑤ 非 agent 调用被拒绝');
@@ -67,31 +69,6 @@ console.log(NL + '⑤ 非 agent 调用被拒绝');
   let msg = null;
   try { d.execute({ generation: 0 }, {}); } catch (e) { msg = e.message; }
   ok(typeof msg === 'string' && msg.includes('agent'), '非 agent 调用抛错', String(msg).slice(0, 60));
-}
-
-console.log(NL + '⑥ option 与重放元素的组合约束');
-{
-  const s = ctx.sessions.create('itest2', { seed: fixture('subagent-95230f54.jsonl').filter((r) => r.type !== 'session') });
-  s.append('turn/start', { turn: 2 });
-  s.append('step/start', { turn: 2, step: 1 });
-  const callId = 'c1';
-  const args = { ops: [{ positions: 'this', new_text: 'X' }], option: 'set' };
-  s.append('assistant/message', {
-    turn: 2, step: 1,
-    message: { id: 'am', role: 'assistant', source: { kind: 'model', provider: 'q', model: 'd' }, content: [{ type: 'tool-call', id: callId, name: 'plasticize', arguments: JSON.stringify(args) }] },
-    stream: [],
-  }, { surfaceOp: 'append' });
-  const exec = { agent: { session: s }, callId, name: 'plasticize', arguments: args, signal: new AbortController().signal };
-  const d = defs.get('plasticize');
-  let msg = null;
-  try { d.execute({ ops: [{ 'the last plasticize(set)': true }], option: 'set' }, exec); } catch (e) { msg = e.message; }
-  ok(typeof msg === 'string' && msg.includes('cannot replay'), 'set 不能重放上一条 set', String(msg).slice(0, 70));
-  let msgMissing = null;
-  try { d.execute({ option: 'set' }, exec); } catch (e) { msgMissing = e.message; }
-  ok(typeof msgMissing === 'string' && msgMissing.includes('ops'), '缺 ops 被拒绝', String(msgMissing).slice(0, 70));
-  let msg2 = null;
-  try { d.execute({ ops: args.ops, option: 'bogus' }, exec); } catch (e) { msg2 = e.message; }
-  ok(typeof msg2 === 'string' && msg2.includes('option'), '非法 option 被拒绝', String(msg2).slice(0, 60));
 }
 
 console.log(NL + '⑥b 用宿主的 assertSupportedJsonSchema 验一遍（权威判据）');

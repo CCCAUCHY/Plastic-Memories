@@ -28,15 +28,13 @@
 
 | 字段 | 类型 | 必需 | 语义 |
 |---|---|---|---|
-| `option` | `"set"` \| `"execute"` | 是 | set 只预览；execute 在提交边界落地 |
-| `ops` | array（非空） | 是 | 段落列表；兑现待决 set 用重放元素，见下 |
-| `preview_positions` | 单个选择器 | 否 | **仅 set 有用**：预览只列这个选择器命中的单元；execute 忽略 |
+| `ops` | array（非空） | 是 | 操作列表；一条 op 对应一条 surfaceOp |
 
 ### 一个 op
 
 | 字段 | 类型 | 默认 | 语义 |
 |---|---|---|---|
-| `positions` | 单个选择器 | — | 必需；**单值**（`"unit 5"` / `"unit 5 to 9"` / `"this"`（仅 execute） / 数字）。一个 op 只选一段、只产出一条替代文本；多段请写多条 op。set 不允许 this：重放时它会指向重放者 |
+| `positions` | 单个选择器 | — | 必需；**单值**（`"unit 5"` / `"unit 5 to 9"` / `"this"` / 数字）。一个 op 只选一段、只产出一条替代文本；多段请写多条 op |
 | `new_text` | string | `""` | 这条 op 的替代文本；空串 = 纯隐藏 |
 | `lock_this` | boolean | `false` | 把替代消息本身锁进安全区 |
 
@@ -50,9 +48,9 @@
 
 - 每个选中单元整体命中（assistant + 它的全部 tool result）；
 - 选择器命中的整段被 `new_text` 取代（空串即纯隐藏）；要拆成多段就写多条 op；
-- 一次 run_code 程序（或一条 assistant 消息）只允许一次 plasticize 调用（set/execute 同计）；
+- 一次 run_code 程序（或一条 assistant 消息）只允许一次 plasticize 调用；
 - 命中安全区报错；
-- 成功 execute 后，早于它、含失败 PM 调用 / set 预览 / 成功 letter / 成功 retrospect 的整个单元会被自动隐藏；execute 回执本身保留。
+- 成功写入后，早于它、含失败 PM 调用 / 成功 letter / 成功 retrospect 的整个单元会被自动隐藏；本次调用的回执本身保留。
 
 ### 写入协议（WAL）
 
@@ -91,19 +89,17 @@ developer/message: [plasticize] NOT applied: …  → 下一轮模型能看见
 原因：工具调用时只能回「已登记」，真正写入在提交边界；不在边界告知，模型会一直以为自己生效了。
 工具层自己挡下的错误（安全区、系统提示、越界）不会走到这一步，它们在调用时就报错了。
 
-### 读取规则：一个 fold，三个切点
+### 读取规则：一个 fold，两个切点
 
-retrospect 与 set 预览走同一条管线：折叠日志前缀 → DSH 推导消息，只换切点。
+retrospect 走「折叠日志前缀 → DSH 推导消息」，只有切点不同。
 
 | 读取 | 折叠范围 | 取值 |
 |---|---|---|
 | retrospect(self) | seq < 承载本次调用的 assistant 消息 | 全量行 |
 | retrospect(self - n) | seq < 冻结该世代的事件（execute 声明 / 压缩 checkpoint） | 全量行 |
-| set 预览 | 同上切点 + 假想 surfaceOp | 全量行 |
 
-- 三者共用 rowsAt(session, cut, ...)；
+- 两者共用 rowsAt(session, cut, ...)；
 - 本步其余工具结果不在 self 里：它们不是本次请求的输入；
-- 同一切点下，set 预览的正文与提交后该段内容逐行一致（调用单元除外）。
 
 ### 执行规格（execute → surfaceOp）
 
@@ -141,30 +137,7 @@ retrospect 与 set 预览走同一条管线：折叠日志前缀 → DSH 推导�
 
 - **物理世代**：每次 surface replacement 加一，包括自动隐藏写出的空替代；
 - **逻辑世代**：每次成功的 execute 加一（自动隐藏不另计）；
-- 因此「一次 set+execute」通常产生 2 个物理页、1 个逻辑世代。
-
-### 重放待决 set（ops 宏）
-
-`ops` 的每个元素要么是一条 op，要么是这个宏：
-
-```json
-{ "option": "execute", "ops": [
-  { "the last plasticize(set)": true },
-  { "positions": ["unit 5"], "new_text": "X" }
-] }
-```
-
-- 宏在**所在位置原地展开**成待决 set 的 ops 数组（顺序保持），等价于把那份 ops 抄过来；
-- 宏**只能出现一次**；
-- 宏不能带其它字段（`new_text` 等）；
-- `option:"set"` 不能用宏（set 必须自己带 ops 才有预览）；
-- 没有待决 set 时报 `there is no pending plasticize(set) to replay`。
-
-不写宏时，`execute` **不会**消费待决 set。
-
-### set 的合法性
-
-`ops` 在两种模式下都必填且非空：`option:"set"` 没有 op 就没有可预览的下一代。
+- 因此「一次 execute」通常产生 1..N 个物理页（每条 op 一条）、1 个逻辑世代。
 
 ### 返回（`{ text }`）
 
@@ -173,9 +146,7 @@ retrospect 与 set 预览走同一条管线：折叠日志前缀 → DSH 推导�
 
 ### 错误（消息要可断言）
 
-`option must be "set" or "execute"`、`ops is required (an array of ops)`、`ops must be a non-empty array`、
-`option:"set" requires at least one op`、`option:"set" cannot replay the last set`、
-`there is no pending plasticize(set) to replay`、`"the last plasticize(set)" must be the only position in its op`、
+`ops is required (an array of ops)`、`ops must be a non-empty array`、
 `op #N: ...`（来自 opshape / unitops）、`operation touches the safety zone ...`。
 
 ---
@@ -266,10 +237,7 @@ parsePlasticizeCommand("<selector>: <text>")
 |---|---|---|
 | A 选择器 | `unit 17` / `unit 17 to 28` / `17` / `unit 17:` | 解析出正确单元集合 |
 | A 选择器 | `[17,28]` / `(17,20)` / `unit 20 to 17` | 报错 |
-| B plasticize | set + `preview_positions` | 预览只含选中单元，带 of N |
-| B plasticize | execute + `ops: []` + 待决 set | 成功登记 |
-| B plasticize | execute + `ops: []` + 无待决 set | 明确报错 |
-| B plasticize | set + `also_execute_last_set` | 报错 |
+| B plasticize | `ops: []` | 报错（必填非空） |
 | B plasticize | op 带 spans、未知字段、空 positions | 报错 |
 | B plasticize | `types` 非法枚举 | 报错 |
 | B plasticize | 命中安全区 | 报错 |
@@ -282,6 +250,5 @@ parsePlasticizeCommand("<selector>: <text>")
 | E 命令 | 上表每种写法 | 返回正确的 kind/mode/positions/newText |
 | E 命令 | `this: x` / `lock this` | 报错并提示写具体单元号 |
 | E 命令 | `unit 17 文本`（缺冒号） | 报错并提示加冒号 |
-| F 状态机 | set → execute（同批） | 只写一条 replace |
 | F 状态机 | 重叠待办 / 重复 prelock | 报错 |
 | G 不变式 | 四个样本文本 vs 等价 op | 逐字节相同 |

@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-plastic-memories-h0",
-  "version": "0.50.74",
+  "version": "0.50.75",
   "description": "Plastic Memories — H0 route: plastic memory projection over DSH surfaceOp",
   "type": "module",
   "main": "index.js",
@@ -24,7 +24,6 @@
     "coords.js",
     "grouping.js",
     "cookie.js",
-    "plasticize.js",
     "preview.js",
     "retrospect.js",
     "overlap.js",
@@ -35,8 +34,7 @@
     "presets/*.yml",
     "locale/*.json",
     "messages.js",
-    "opshape.js",
-    "pending.js"
+    "opshape.js"
   ],
   "dsh": {
     "bundle": {
@@ -68,7 +66,7 @@
   },
   "license": "MIT",
   "scripts": {
-    "test": "node contract.mjs && node integration.mjs && node unitest.mjs && node globaltest.mjs && node ptctest.mjs && node multicall.mjs && node groupingtest.mjs && node contexttest.mjs && node verifytest.mjs && node versioncheck.mjs && node oracletest.mjs && node spectest.mjs && node gentest.mjs",
+    "test": "node contract.mjs && node integration.mjs && node unitest.mjs && node globaltest.mjs && node ptctest.mjs && node multicall.mjs && node groupingtest.mjs && node contexttest.mjs && node verifytest.mjs && node versioncheck.mjs && node oracletest.mjs && node spectest.mjs",
     "test:selftest": "node selftest.mjs",
     "test:integration": "node integration.mjs",
     "test:hooks": "node hooks.mjs",

@@ -19,40 +19,11 @@
 import { clip, derivedMessage, messageText } from './coords.js';
 
 const NL = String.fromCharCode(10);
-let shadowCounter = 0;
-
 /**
  * 在一个影子会话上折叠「真实事件 + 假想事件」，返回下一代工作面的消息。
  * @param {object} session - 真实会话（**只读**）。
  * @param {Array<object>} hypothetical - 假想的 surface 事件。
  * @returns {{messages: Array<object>, generation: number}} 影子结果。
- */
-export function projectNext(session, hypothetical, cutoff = undefined) {
-  // 和 retrospect 同一条规则：折叠**前缀**，再叠加假想事件。
-  // 切点 = 承载本次调用的 assistant 消息（预览不该把自己那条调用也画进去）。
-  const base = Number.isSafeInteger(cutoff)
-    ? session.snapshotEvents().filter((event) => Number.isSafeInteger(event.seq) && event.seq < cutoff)
-    : session.snapshotEvents();
-  const events = [...base, ...hypothetical];
-  const shadow = session.constructor.create(
-    'pm-preview-' + String(++shadowCounter),
-    JSON.parse(JSON.stringify(events)),
-  );
-  const messages = [];
-  for (const seq of shadow.surface.nodes) {
-    const message = derivedMessage(shadow, shadow.eventAt(seq));
-    if (message !== undefined) messages.push(message);
-  }
-  return { messages, generation: shadow.surface.replaceGeneration };
-}
-
-/**
- * 把下一代工作面渲染成**给模型看的**预览文本。
- *
- * 每条消息用「<开头文本>……<结尾文本>」呈现；**自适应**：短消息整条显示，不省略。
- * @param {Array<object>} messages - 影子工作面的消息。
- * @param {{head?: number, tail?: number}} [opt] - 截断参数。
- * @returns {string} 预览正文。
  */
 export function renderPreview(messages, opt = {}) {
   const head = opt.head ?? 100;
@@ -71,11 +42,3 @@ export function renderPreview(messages, opt = {}) {
  * @param {{head?: number, tail?: number}} [opt] - 截断参数。
  * @returns {string} 预览正文。
  */
-export function renderRowsPreview(rows, opt = {}) {
-  const head = opt.head ?? 100;
-  const tail = opt.tail ?? 60;
-  return rows.map((row) => {
-    const text = String(row.text ?? '').replace(/\s+/g, ' ').trim();
-    return '  #' + row.n + ' [u' + row.unit + ' ' + row.type + '] ' + clip(text, head, tail);
-  }).join(NL);
-}

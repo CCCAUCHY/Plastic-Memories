@@ -9,8 +9,7 @@
  */
 
 import { currentUnits, isThisSelector, parseUnitRange } from './units.js';
-import { normalizeOp, isLastSetMacro } from './opshape.js';
-import { findLastPendingSet } from './pending.js';
+import { normalizeOp } from './opshape.js';
 
 /** 找出 this 指向的单元：承载本次声明的那条 assistant 单元。 */
 function unitForHere(units, here) {
@@ -20,36 +19,17 @@ function unitForHere(units, here) {
 }
 
 /**
- * 把 ops 里的宏元素替换成待决 set 的 ops（原地展开，顺序保持）。
- * @param {object} session
- * @param {Array<object>} ops
- * @param {{replayed?: boolean}} options
- * @returns {Array<object>} 展开后的 ops。
- */
-function expandLastSetMacro(session, ops, options) {
-  const marks = [];
-  for (let index = 0; index < ops.length; index += 1) if (isLastSetMacro(ops[index])) marks.push(index);
-  if (marks.length === 0) return ops;
-  if (marks.length > 1) throw new Error('"the last plasticize(set)" may appear only once in ops');
-  if (options.replayed === true) throw new Error('the pending set itself references "the last plasticize(set)"; fix that set instead');
-  const pending = findLastPendingSet(session);
-  if (pending === undefined) throw new Error('there is no pending plasticize(set) to replay; pass the ops explicitly');
-  const index = marks[0];
-  return [...ops.slice(0, index), ...pending.ops, ...ops.slice(index + 1)];
-}
-
-/**
  * 解析 positions 形式的 ops。
  * @param {object} session - 目标会话。
  * @param {Array<object>} rawOps - 原始 ops。
  * @param {{thisSeq?: number, thisEndSeq?: number}} here - this 定位点。
  * @returns {Array<{op: object, shadowed: number[]}>} 与 resolveOps 同形。
  */
-export function resolveUnitOps(session, rawOps, here, options = {}) {
+export function resolveUnitOps(session, rawOps, here) {
   if (!Array.isArray(rawOps) || rawOps.length === 0) throw new Error('ops must be a non-empty array');
   // `{ "the last plasticize(set)" }` 是 ops 里的一个宏元素：把它替换成待决 set 的 ops 数组。
   // 它只能出现一次，且不能出现在 set 自己身上（由工具层拒绝）。
-  const expanded = expandLastSetMacro(session, rawOps, options);
+  const expanded = rawOps;
   const units = currentUnits(session);
   const thisUnit = unitForHere(units, here);
   const out = [];

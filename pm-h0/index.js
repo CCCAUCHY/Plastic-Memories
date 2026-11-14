@@ -18,9 +18,8 @@ import { fileURLToPath } from 'node:url';
 import { registerCommands } from './commands.js';
 import { GENERATIONS_KEY, generationProjection } from './generations.js';
 import { stepGroup, surfaceNodes } from './coords.js';
-import { previewOf, findLastPendingSet, normalizeOp } from './plasticize.js';
 import { resolveUnitOps } from './unitops.js';
-import { normalizeSelector, isLastSetMacro } from './opshape.js';
+import { normalizeSelector } from './opshape.js';
 import { isThisSelector } from './units.js';
 import { retrospect } from './retrospect.js';
 import { retrospectMessages } from './messages.js';
@@ -252,8 +251,8 @@ function tool(spec) {
 
 /** ops 选填：缺省即 []（execute with [] 只兑现上一条 set）。 */
 function normalizeOps(value) {
-  if (value === undefined || value === null) return [];
-  if (!Array.isArray(value)) throw new Error('ops must be an array');
+  if (!Array.isArray(value)) throw new Error('ops is required (an array of ops)');
+  if (value.length === 0) throw new Error('ops must be a non-empty array');
   return value;
 }
 
@@ -409,10 +408,11 @@ export function apply(ctx, config) {
       name: 'plasticize',
       description: [
         '重塑你自己过去的呈现。它会改写模型当前看到的上下文，并开启一个新的逻辑世代；会话日志不会被删除，被隐藏的消息之后仍可用 retrospect 读回。把它当成编辑上下文，不是草稿纸。',
-        '位置用 retrospect(self) 返回的单元号（0 起）；系统提示是 unit 0，它只能查看、不能被重塑。set 不支持 this（set 会被原样重放，this 会指向重放者）。一条 assistant 消息连同它的全部工具结果算一个单元，工具结果不能单独选中。ops 是操作数组：每个操作给出一个选择器与一条替代文本，选择器命中的整段会被替代文本取代，替代文本为空即隐藏；要改多段就写多个操作。数组里还可以放 { "the last plasticize(set)": true }，它会在原位展开成上一条尚未提交的 set 的操作，只能出现一次。',
-        'option:"set" 只返回预览，不写入；option:"execute" 在下一个提交边界生效。一次程序（或一条消息）只能调用一次 plasticize。',
+        '位置用 retrospect(self) 返回的单元号（0 起）；系统提示是 unit 0，它只能查看、不能被重塑。一条 assistant 消息连同它的全部工具结果算一个单元，工具结果不能单独选中。',
+        'ops 是操作数组：每个操作给出一个选择器与一条替代文本，选择器命中的整段会被替代文本取代，替代文本为空即隐藏；要改多段就写多个操作。',
+        '写入发生在下一个提交边界。一次程序（或一条消息）只能调用一次 plasticize。',
         '安全区里的单元不能被重塑；命中安全区会失败并报出锁定范围，需要用户解锁。',
-        '成功 execute 之后，早于它的单元如果包含失败的 Plastic Memories 调用、set 预览或成功的 letter，会被自动隐藏；execute 的回执保留。',
+        '成功写入之后，早于它的单元如果包含失败的 Plastic Memories 调用、成功的 letter 或 retrospect，会被自动隐藏；本次调用的回执保留。',
         '如果整个 ops 只有 [{ positions: "this" }] 且替代文本为空，就只隐藏这次调用本身，效果等于没有调用。',
       ].join(String.fromCharCode(10) + String.fromCharCode(10)),
       parameters: {
@@ -420,97 +420,42 @@ export function apply(ctx, config) {
         properties: {
           ops: {
             type: 'array',
-            description: '必填且非空。元素是一条操作，或占位元素 { "the last plasticize(set)": true }（展开上一条未提交的 set；只能出现一次；set 不能用）。',
+            description: '必填且非空。每个元素是一条操作：一个选择器 + 一条替代文本。',
             items: {
-              oneOf: [
-                { type: 'string', const: 'the last plasticize(set)' },
-                {
-                  type: 'object',
-                  additionalProperties: false,
-                  properties: { 'the last plasticize(set)': { type: 'boolean', const: true } },
-                  required: ['the last plasticize(set)'],
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                positions: {
+                  oneOf: [{ type: 'integer' }, { type: 'string' }],
+                  description: '这条操作的选择器，只能填一个：unit 3、unit 3 to 7、this，或数字。',
                 },
-                {
-                  type: 'object',
-                  additionalProperties: false,
-                  properties: {
-                    positions: {
-                      oneOf: [{ type: 'integer' }, { type: 'string' }],
-                      description: "这条操作的选择器，只能填一个：unit 3、unit 3 to 7、this，或数字。",
-                    },
-                    new_text: { type: 'string', description: '替代文本；空表示隐藏。默认空。' },
-                    lock_this: { type: 'boolean', description: 'true 时把替代文本本身放进安全区。默认 false。' },
-                  },
-                  required: ['positions'],
-                },
-              ],
+                new_text: { type: 'string', description: '替代文本；空表示隐藏。默认空。' },
+                lock_this: { type: 'boolean', description: 'true 时把替代文本本身放进安全区。默认 false。' },
+              },
+              required: ['positions'],
             },
           },
-          option: {
-            type: 'string',
-            enum: ['set', 'execute'],
-            description: 'set 只预览；execute 在下一个提交边界生效。',
-          },
-          preview_positions: {
-            oneOf: [{ type: 'integer' }, { type: 'string' }],
-            description: '仅 set 用：只预览这个选择器命中的单元。默认不过滤。',
-          },
         },
-        required: ['ops', 'option'],
+        required: ['ops'],
       },
       execute(args, exec) {
         const session = sessionOf(exec);
-        const option = args?.option;
-        if (option !== 'set' && option !== 'execute') throw new Error('option must be "set" or "execute"');
-        // 结果窗口：只返回这些单元的行，用来在非 PTC 模式里主动限制工具结果大小。
-        const previewSelectors = normalizeSelector(args?.preview_positions, 'preview_positions');
+        // 先校验参数形状，再找承载消息：参数错误应该报参数错误，而不是「找不到调用」。
+        const ops = normalizeOps(args?.ops);
         assertSinglePendingPlasticize(session, exec.callId);
 
         // 「本步整组」：容纳本次调用的 assistant 消息 … 它的全部工具结果。
         const group = stepGroupFor(session, exec);
         if (group === undefined) throw new Error('could not locate the assistant message carrying this call');
-        const here = group.here;
 
-        const parts = [];
-        const ops = normalizeOps(args?.ops);
-        const wantsReplay = ops.some((one) => isLastSetMacro(one));
-        if (option === 'set' && wantsReplay) {
-          throw new Error('option:"set" cannot replay the last set: a set must carry its own ops so it has something to preview');
-        }
-        // set 不支持 this：它只是预览，将来被宏原样重放时，
-        // 「this」会指向重放者（execute）那条消息，而不是当初的 set —— 语义会飘。
-        if (option === 'set') {
-          const anchored = ops.findIndex((one) => one !== null && typeof one === 'object' && isThisSelector(one.positions));
-          if (anchored >= 0) {
-            throw new Error('option:"set" does not support this: a set is replayed later, so "this" would point at the replayer. Name the unit explicitly, e.g. unit 17.');
-          }
-        }
-        const batch = { from: 'this call', callId: exec.callId, ops, here };
-
-        if (option === 'set') {
-          // set 的全部意义就是「给出一个可预览的下一代」；没有 op 就没有预览，属于非法调用。
-          if (ops.length === 0) {
-            throw new Error('option:"set" requires at least one op: a set with no ops has no preview to show.');
-          }
-          const flat = resolveUnitOps(session, batch.ops, batch.here);
-          assertResolvedUnlocked(session, flat);
-          const pv = previewOf(session, flat, exec.callId, { selectors: previewSelectors });
-          const scope = previewSelectors === undefined ? '' : ' (showing units ' + (pv.units ?? []).join(', ') + ' of ' + pv.total + ')';
-          parts.push('Preview only (not committed). The next generation would contain ' + pv.messageCount + ' messages' + scope + ':');
-          parts.push(pv.text);
-          parts.push('To commit this preview, call plasticize with option:"execute" while this is still the most recent unexecuted set; to commit it verbatim, call option:"execute" with ops:[{positions:["the last plasticize(set)"]}]; otherwise rewrite ops completely, not incrementally.');
-        } else {
-          // 只登记：真正写入由 flush 在提交边界做（见 engine.js 的说明）。
-          let total = 0;
-          const resolved = resolveUnitOps(session, batch.ops, batch.here);
-          assertResolvedUnlocked(session, resolved);
-          total += resolved.length;
-          parts.push('Registered ' + total + ' segment(s); they will be written at the next submission boundary. If the surface changes before then, nothing is written and a notice is left instead.');
-          const logicalGeneration = logicalGenerationForCall(session, exec.callId);
-          parts.push('Logical generation ' + logicalGeneration + ' (pm-logical-generation=' + logicalGeneration + ').');
-          parts.push('  · ' + batch.from + ': ' + batch.ops.length + ' op(s)');
-        }
-        return Promise.resolve({ text: parts.join(String.fromCharCode(10)) });
+        const resolved = resolveUnitOps(session, ops, group.here);
+        assertResolvedUnlocked(session, resolved);
+        const logicalGeneration = logicalGenerationForCall(session, exec.callId);
+        return Promise.resolve({
+          text: 'Registered ' + String(resolved.length) + ' segment(s); they will be written at the next submission boundary. '
+            + 'If the surface changes before then, nothing is written and a notice is left instead.'
+            + String.fromCharCode(10) + 'Logical generation ' + String(logicalGeneration) + ' (pm-logical-generation=' + String(logicalGeneration) + ').',
+        });
       },
     }),
   );
@@ -609,5 +554,4 @@ export function apply(ctx, config) {
   }
 
   void pendingReport;
-  void normalizeOp;
 }

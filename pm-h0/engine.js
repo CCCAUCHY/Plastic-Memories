@@ -32,7 +32,6 @@ import { findOverlap, subtractSeqs } from './overlap.js';
 import { createHash } from 'node:crypto';
 import { pmSettledCallIds, pmSource } from './markers.js';
 import { resolveUnitOps } from './unitops.js';
-import { isLastSetMacro } from './opshape.js';
 import { currentUnits } from './units.js';
 import { logicalBoundaries } from './boundaries.js';
 import {
@@ -285,8 +284,7 @@ function autoHideTargets(session, state, claimed, settledBefore, locks) {
   }
   const canHide = (seqs) => !seqs.includes(latestAssistantSeq);
   for (const declaration of state.declarations) {
-    const option = declaration.args?.option;
-    if (option !== 'set' && option !== 'execute') continue;
+    // 现在只有一种声明：plasticize 的投影。
     const group = stepGroup(session, declaration.ownerCallId);
     if (group === undefined || group.complete !== true) continue;
     const seqs = nodes.slice(group.startIndex, group.endIndex + 1);
@@ -297,10 +295,10 @@ function autoHideTargets(session, state, claimed, settledBefore, locks) {
     if (locks !== undefined && locks.size > 0 && seqs.some((seq) => locks.has(seq))) continue;
     const errored = stepHasError(session, declaration, seqs);
     // 新的自动隐藏规则：所有 set 都清理，不再要求已经兑现。
-    if (!errored && option !== 'set') continue;
+    if (!errored) continue;
     if (!canHide(seqs)) continue;
     seen.add(key);
-    out.push({ shadowed: seqs, reason: errored ? 'error' : 'set', callId: declaration.callId });
+    out.push({ shadowed: seqs, reason: 'error', callId: declaration.callId });
     for (const seq of seqs) claimed.add(seq);
   }
   // 通用报错单元：所有 PM 工具（含 PTC 内层调用）的失败结果。
@@ -717,7 +715,7 @@ function applyDeclarations(session, declarations, open, state, options = {}) {
   // 排在它之后的 set 是待决预览，不隐藏（否则模型看不到自己刚拿到的预览）。
   const executedPlannedSeqs = planned
     .map((entry) => entry.declaration)
-    .filter((declaration) => declaration.args?.option === 'execute')
+    .filter(() => true)
     .map((declaration) => declaration.seq);
   const settledBefore = Math.max(
     options.appliedExecuteSeq ?? -1,
@@ -728,7 +726,6 @@ function applyDeclarations(session, declarations, open, state, options = {}) {
   let batchExecute = 0;
   const logicalOf = new Map();
   for (const entry of planned) {
-    if (entry.declaration.args?.option !== 'execute') continue;
     batchExecute += 1;
     logicalOf.set(entry.declaration.callId, appliedExecutes + batchExecute - 1);
   }
@@ -854,7 +851,6 @@ function applyDeclarations(session, declarations, open, state, options = {}) {
 
   // 统一把逻辑世代元数据写进私有事件：logical N、冻结物理页、触发调用。
   for (const entry of planned) {
-    if (entry.declaration.args?.option !== 'execute') continue;
     const logical = logicalOf.get(entry.declaration.callId);
     if (logical === undefined) continue;
     plan.push({
@@ -920,26 +916,6 @@ export function assertResolvedUnlocked(session, resolved) {
     const zones = safetyZoneIntervalsEn(session, new Set(hit));
     throw new Error('operation touches the safety zone (approximate range: ' + (zones.length > 0 ? zones : hit.slice(0, 8).join(',')) + '). Only the user can unlock it; do not retry this range until the user does.');
   }
-}
-
-/**
- * 在已扫到的声明里找**最近一条尚未被执行**的 set。
- *
- * 待决状态不另存 —— set 调用的 arguments 本来就在日志里（那份声明就是待决状态）。
- * @param {Array<object>} declarations - 已扫到的声明（日志顺序）。
- * @param {object} before - 只取排在它之前的声明。
- * @returns {object|undefined} 待决的 set 声明。
- */
-function findLastPendingSet(declarations, before, failedCallIds) {
-  const cut = declarations.indexOf(before);
-  let found;
-  for (let i = 0; i < cut; i++) {
-    const declaration = declarations[i];
-    if (declaration.args?.option !== 'set') continue;
-    if (failedCallIds !== undefined && failedCallIds.has(declaration.callId)) continue;
-    found = declaration;
-  }
-  return found;
 }
 
 /**
@@ -1044,25 +1020,16 @@ export function flush(session, options, logger) {
     state.shapeIssues.clear();
   }
 
-  // 显式重放：ops 里出现 “the last plasticize(set)” 时，连带消费**最近一条未执行的 set**。
-  // 这必须在 flush 里展开 —— 待决 set 的 ops 需要对**当前**工作面重新解析（工具执行时算不出）。
   const todo = [];
   for (const d of state.declarations) {
-    if (d.args?.option !== 'execute') continue;
     if (isDone(state, d)) continue;
-    // 只有显式要求重放（ops 里出现 “the last plasticize(set)”）才会消费待决 set。
-    const replay = Array.isArray(d.args?.ops) && d.args.ops.some((one) => isLastSetMacro(one));
-    if (replay) {
-      const pending = findLastPendingSet(state.declarations, d, state.failedCallIds);
-      if (pending !== undefined && !isDone(state, pending) && !todo.includes(pending)) todo.push(pending);
-    }
     todo.push(d);
   }
 
-  const hasExecute = todo.some((d) => d.args?.option === 'execute');
-  const appliedBefore = state.declarations.some((d) => d.args?.option === 'execute' && state.appliedCallIds.has(d.callId));
+  const hasExecute = todo.length > 0;
+  const appliedBefore = state.declarations.some((d) => state.appliedCallIds.has(d.callId));
   const appliedExecuteSeq = state.declarations
-    .filter((d) => d.args?.option === 'execute' && state.appliedCallIds.has(d.callId))
+    .filter((d) => state.appliedCallIds.has(d.callId))
     .reduce((max, d) => Math.max(max, d.seq), -1);
   // 没有 plasticize 声明的边界不能触发 auto-hide；否则 retrospect/set 的
   // tool result 会在模型消费之前被吞掉，模型只能看到调用看不到结果。
@@ -1345,7 +1312,7 @@ export function pendingReport(session) {
   const state = stateOf(session);
   scanNew(session, state);
   return state.declarations
-    .filter((d) => d.args?.option === 'execute' && !isDone(state, d))
+    .filter((d) => !isDone(state, d))
     .map((d) => ({ callId: d.callId, via: d.via, seq: d.seq }));
 }
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1374,7 +1341,6 @@ export function logicalGenerationForCall(session, callId) {
   const applied = countLogicalGenerations(session);
   const pending = [];
   for (const declaration of state.declarations) {
-    if (declaration.args?.option !== 'execute') continue;
     if (state.appliedCallIds.has(declaration.callId)) continue;
     if (state.failedCallIds.has(declaration.callId)) continue;
     pending.push(declaration);
@@ -1393,7 +1359,6 @@ export function logicalGenerations(session) {
   for (const boundary of info.boundaries) if (boundary.kind === 'execute' && typeof boundary.callId === 'string') byCall.set(boundary.callId, boundary.logical);
   const executes = [];
   for (const declaration of state.declarations) {
-    if (declaration.args?.option !== 'execute') continue;
     if (!applied.has(declaration.callId)) continue;
     executes.push({ callId: declaration.callId, logical: byCall.get(declaration.callId) ?? -1, seq: declaration.seq });
   }

@@ -17,7 +17,6 @@ import ToolRuntime from '/var/data/.npm/_npx/1e7f6d9597241db0/node_modules/@deep
 import { makeCounter, fixture, cookieSeed, textOf } from './testkit.mjs';
 import { flush, pendingReport } from './engine.js';
 import { pairingMaps } from './coords.js';
-import { findLastPendingSet } from './plasticize.js';
 
 const NL = String.fromCharCode(10);
 const { ok, done } = makeCounter('ptctest');
@@ -70,7 +69,7 @@ console.log(NL + '① 新实现必须认得 PTC 形态的 plasticize 声明');
   s.append('turn/start', { turn: 99 });
   s.append('step/start', { turn: 99, step: 1 });
   // ptc-minimal 的布局：cookie 5@10 与 cookie 6@13 之间是「assistant + tool/result」一组。
-  ptcDeclare(s, { turn: 99, step: 1 }, 'ptc-root-1', { ops: [{ positions: 'this', new_text: '⟨PTC 压缩结论⟩' }], option: 'execute' });
+  ptcDeclare(s, { turn: 99, step: 1 }, 'ptc-root-1', { ops: [{ positions: 'this', new_text: '⟨PTC 压缩结论⟩' }] });
 
   const before = pendingReport(s);
   ok(before.length === 1 && before[0].via === 'ptc', '**认出了 PTC 声明**（旧实现这里恒为 0）', JSON.stringify(before));
@@ -102,7 +101,7 @@ console.log(NL + '③ PTC 路径与 native 路径共用同一套解析（this �
   const s3 = ctx3.sessions.create('ptc-self', { seed: ptcSeed() });
   s3.append('turn/start', { turn: 99 });
   s3.append('step/start', { turn: 99, step: 1 });
-  ptcDeclare(s3, { turn: 99, step: 1 }, 'ptc-root-self', { ops: [{ positions: 'this', new_text: '' }], option: 'execute' });
+  ptcDeclare(s3, { turn: 99, step: 1 }, 'ptc-root-self', { ops: [{ positions: 'this', new_text: '' }] });
   const pm = pairingMaps(s3);   // 必须在投影**之前**取：投影会改变工作面
   const r3 = flush(s3, { openStep: { turn: 99, step: 1 } }, quiet);
   ok(r3.applied === 1, 'PTC 路径下的 this 也能落地', JSON.stringify(r3));
@@ -132,7 +131,7 @@ console.log(NL + '④ 工具执行期：this 组还没落地时，execute 不能
   ts.append('step/start', { turn: 2, step: 1 });
   const root = 'call_root_exec';
   const sub = root + ':ptc:1';
-  const args = { ops: [{ positions: 'this', new_text: '⟨吞掉本步⟩' }], option: 'execute' };
+  const args = { ops: [{ positions: 'this', new_text: '⟨吞掉本步⟩' }] };
   ts.append('assistant/message', {
     turn: 2, step: 1,
     message: { id: 'am-exec', role: 'assistant', source: { kind: 'model', provider: 'q', model: 'd' },
@@ -171,7 +170,7 @@ console.log(NL + '⑤ 工具执行失败时：声明永远不落地（不能悄�
   fs.append('step/start', { turn: 2, step: 1 });
   const root = 'call_root_fail';
   const sub = root + ':ptc:1';
-  const args = { ops: [{ positions: 'this', new_text: '⟨不该出现⟩' }], option: 'execute' };
+  const args = { ops: [{ positions: 'this', new_text: '⟨不该出现⟩' }] };
   fs.append('assistant/message', {
     turn: 2, step: 1,
     message: { id: 'am-fail', role: 'assistant', source: { kind: 'model', provider: 'q', model: 'd' },
@@ -192,93 +191,6 @@ console.log(NL + '⑤ 工具执行失败时：声明永远不落地（不能悄�
   ok(!textOf(fs).includes('⟨不该出现⟩'), '替代文本没有进入工作面');
   const r2 = flush(fs, { openStep: { turn: 2, step: 1 } }, quiet);
   ok(r2.applied === 0 && r2.skipped === 0 && r2.auto === 0, '第二次边界也不动作', JSON.stringify(r2));
-}
-
-console.log(NL + '⑥b set 预览：this 组不完整时也能算预览（且不写日志）');
-{
-  const tctx = new Context(); new SessionStore(tctx); new SystemPrompt(tctx, {}); new ToolRuntime(tctx);
-  tctx.plugin(await import('./index.js'), {});
-  await new Promise((r) => setTimeout(r, 30));
-  const tool = tctx.tools.get('plasticize');
-  const ts = tctx.sessions.create('ptc-set-preview', { seed: ptcSeed() });
-  ts.append('turn/start', { turn: 2 });
-  ts.append('step/start', { turn: 2, step: 1 });
-  const root = 'call_root_set';
-  const sub = root + ':ptc:1';
-  // set 不再支持 this（重放时会指向重放者），改用具体单元。
-  const args = { ops: [{ positions: 'unit 2', new_text: '⟨预览用⟩' }], option: 'set' };
-  ts.append('assistant/message', {
-    turn: 2, step: 1,
-    message: { id: 'am-set', role: 'assistant', source: { kind: 'model', provider: 'q', model: 'd' },
-      content: [{ type: 'tool-call', id: root, name: 'run_code', arguments: '{}' }] },
-    stream: [],
-  }, { surfaceOp: 'append' });
-  ts.append('tool/call', { turn: 2, step: 1, callId: root, name: 'run_code', arguments: '{}' });
-  ts.append('tool/ptc-dispatch-start', { rootCallId: root, parentCallId: root, subCallId: sub, name: 'plasticize', arguments: args });
-  const seqBefore = ts.seq;
-  let err;
-  let res;
-  try {
-    res = await tool.execute(args, { agent: { session: ts }, callId: sub, name: 'plasticize', arguments: args, signal: new AbortController().signal });
-  } catch (e) { err = e; }
-  ok(err === undefined, 'set 预览不报错', String(err?.message).slice(0, 90));
-  ok(typeof res?.text === 'string' && res.text.includes('Preview only'), '返回了预览', String(res?.text).slice(0, 50));
-  ok(res?.text.includes('⟨预览用⟩'), '预览里含替代文本');
-  ok(ts.seq === seqBefore, 'set 不写日志', String(ts.seq - seqBefore));
-  const reps = ts.snapshotEvents().filter((e) => e.surfaceOp?.op === 'replace');
-  ok(reps.length === 0, '没有 replace 事件', String(reps.length));
-}
-
-console.log(NL + '⑥ 待决 set 查找认得 PTC 形态');
-{
-  const pctx = new Context(); new SessionStore(pctx);
-  const ps = pctx.sessions.create('ptc-set', { seed: ptcSeed() });
-  ps.append('turn/start', { turn: 2 });
-  ps.append('step/start', { turn: 2, step: 1 });
-  ptcDeclare(ps, { turn: 2, step: 1 }, 'ptc-root-set', { ops: [{ positions: 'unit 2', new_text: '⟨预览⟩' }], option: 'set' });
-  const pending = findLastPendingSet(ps);
-  ok(pending !== undefined, '找得到 PTC 形态的 set');
-  ok(pending?.callId === 'ptc-root-set:ptc:1', 'callId 是 subCallId', String(pending?.callId));
-}
-
-console.log(NL + '⑦ PTC + 显式重放：零点属于 set，且只写一条投影');
-{
-  // 真实事故（两份测试日志）：PTC 下 execute 的锚点用了 subCallId，反查不到承载消息，
-  // 于是 set 与 execute 各按自己的零点解析 → 写了**两条**投影（同一段结论出现两次），
-  // 模型以为没生效又重发一轮。（native 下 callId == ownerCallId，所以测试一直没抓到。）
-  const actx = new Context(); new SessionStore(actx);
-  const as = actx.sessions.create('ptc-anchor', { seed: ptcSeed() });
-  const quiet2 = { warn: () => {}, info: () => {} };
-  const repsOf = (sess) => sess.snapshotEvents().filter((e) => e.surfaceOp?.op === 'replace');
-  const args = { ops: [{ positions: 'unit 2', new_text: '⟨PTC 预览③⟩' }], option: 'set' };
-
-  as.append('turn/start', { turn: 2 });
-  as.append('step/start', { turn: 2, step: 1 });
-  ptcDeclare(as, { turn: 2, step: 1 }, 'ptc-root-set3', { ...args });
-  const targetSeqs = currentUnits(as)[2].seqs;
-  flush(as, { openStep: { turn: 2, step: 1 } }, quiet2);
-  ok(repsOf(as).length === 0, 'set 不写投影', String(repsOf(as).length));
-
-  as.append('step/end', { turn: 2, step: 1 });
-  as.append('step/start', { turn: 2, step: 2 });
-  ptcDeclare(as, { turn: 2, step: 2 }, 'ptc-root-exec3', { ops: [{ 'the last plasticize(set)': true }], option: 'execute' });
-  const execCallSeq = as.snapshotEvents()
-    .find((e) => e.type === 'assistant/message' && e.data.message.content.some((b) => b.id === 'ptc-root-exec3')).seq;
-  const r = flush(as, { openStep: { turn: 2, step: 2 } }, quiet2);
-  const reps = repsOf(as);
-  const explicit = reps.filter((e) => e.data?.message?.source?.note === undefined);
-  ok(explicit.length === 1, '**只写一条**显式 replace（不是 set/execute 各一条）', String(explicit.length) + '/' + String(reps.length) + ' | ' + JSON.stringify(r));
-  ok(JSON.stringify(explicit[0].sourceEventSeqs) === JSON.stringify(targetSeqs),
-    '遮蔽的是选择器指定的单元', JSON.stringify(explicit[0].sourceEventSeqs) + ' vs ' + JSON.stringify(targetSeqs));
-  ok(as.surface.nodes.includes(execCallSeq), 'execute 自己那一步没有被替换');
-  const repSource0 = explicit[0].data?.message?.source ?? explicit[0].data?.source;
-  ok(Array.isArray(repSource0?.consumed) && repSource0.consumed.length >= 1,
-    '标记同时了结另一条声明（consumed）', JSON.stringify(repSource0?.consumed));
-  ok((textOf(as).match(/⟨PTC 预览③⟩/g) ?? []).length === 1, '替代文本只出现一次');
-
-  const seqBefore = as.seq;
-  flush(as, { openStep: { turn: 2, step: 2 } }, quiet2);
-  ok(as.seq === seqBefore, '下个边界不再重复执行 execute', String(as.seq - seqBefore));
 }
 
 done();

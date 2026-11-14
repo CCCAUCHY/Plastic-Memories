@@ -13,8 +13,6 @@ import { UNIT_SELECTOR_SOURCE, isThisSelector } from './units.js';
 const OP_FIELDS = new Set(['positions', 'new_text', 'lock_this']);
 
 /** 所有 op 可选字段的唯一默认值来源。 */
-export const LAST_SET_SELECTOR = 'the last plasticize(set)';
-
 export const OP_DEFAULTS = Object.freeze({ new_text: '', lock_this: false });
 
 /** 单个选择器：字符串或非负整数。 */
@@ -95,15 +93,6 @@ export function normalizeSelector(value, label = 'positions') {
   if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) return value;
   throw new Error(label + ' must be ONE selector ("unit 17", "unit 17 to 28") or a non-negative integer, got ' + JSON.stringify(value));
 }
-
-/** 是否是「重放上一条 set」的宏（ops 里的一个元素，不是 op 的字段）。 */
-export function isLastSetMacro(value) {
-  if (typeof value === 'string') return value.trim().toLowerCase() === LAST_SET_SELECTOR;
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
-  const keys = Object.keys(value);
-  return keys.length === 1 && keys[0].trim().toLowerCase() === LAST_SET_SELECTOR;
-}
-
 
 /** 纯语法解析，不判断 this 的可用性。 */
 function parseOpSource(text) {

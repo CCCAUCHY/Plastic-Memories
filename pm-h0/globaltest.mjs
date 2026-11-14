@@ -6,7 +6,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { makeCounter, makeStore, cookieSeed } from './testkit.mjs';
 import { apply } from './index.js';
-import { previewOf } from './plasticize.js';
 
 const { ok, done } = makeCounter('globaltest');
 const home = join(tmpdir(), 'pm-global-' + String(process.pid));
@@ -72,41 +71,4 @@ let thisInRetrospect;
 try { await retrospect.execute({ generation: 'self', result_positions: 'this' }, { agent: { session } }); } catch (error) { thisInRetrospect = String(error.message); }
 ok(typeof thisInRetrospect === 'string' && thisInRetrospect.includes('this'), 'retrospect 拒绝 result_positions 里的 this', thisInRetrospect?.slice(0, 40));
 
-const previewSession = store.sessions.create('global-preview-window', { seed: cookieSeed('subagent-95230f54.jsonl') });
-const fullPreview = previewOf(previewSession, [], 'window-probe');
-const windowPreview = previewOf(previewSession, [], 'window-probe', { selectors: 'unit 1' });
-ok(windowPreview.messageCount === 1 && windowPreview.total === fullPreview.messageCount && JSON.stringify(windowPreview.units) === JSON.stringify([1]), 'set 预览支持同一套 positions', JSON.stringify({ shown: windowPreview.messageCount, total: windowPreview.total }));
-ok(!String(fullPreview.text).includes('\u0000'), '预览文本不含控制字符');
-
-// execute 用重放元素兑现待决 set（旧的空 ops 写法已废除）。
-{
-  const emptyOps = store.sessions.create('global-empty-ops', { seed: cookieSeed('subagent-95230f54.jsonl') });
-  emptyOps.append('turn/start', { turn: 9 });
-  emptyOps.append('step/start', { turn: 9, step: 1 });
-  const say = (id, args) => {
-    emptyOps.append('assistant/message', {
-      turn: 9, step: 1,
-      message: { id: 'am-' + id, role: 'assistant', source: { kind: 'model', provider: 'q', model: 'd' }, content: [{ type: 'tool-call', id, name: 'plasticize', arguments: JSON.stringify(args) }] },
-      stream: [],
-    }, { surfaceOp: 'append' });
-    emptyOps.append('tool/call', { turn: 9, step: 1, callId: id, name: 'plasticize', arguments: JSON.stringify(args) });
-    emptyOps.append('tool/result', {
-      turn: 9, step: 1,
-      message: { id: 'tr-' + id, role: 'tool', toolCallId: id, content: [{ type: 'text', text: 'ok' }], isError: false, source: { kind: 'tool', callId: id } },
-    }, { surfaceOp: 'append' });
-  };
-  const plasticize = definitions.find((definition) => definition.name === 'plasticize');
-  let setText;
-  let emptyExec;
-  try {
-    say('eo-set', { option: 'set', ops: [{ positions: 'unit 2', new_text: '⟨预览⟩' }] });
-    setText = (await plasticize.execute({ option: 'set', ops: [{ positions: 'unit 2', new_text: '⟨预览⟩' }] }, { agent: { session: emptyOps }, callId: 'eo-set' })).text;
-    say('eo-exec', { option: 'execute', ops: [{ 'the last plasticize(set)': true }] });
-    emptyExec = (await plasticize.execute({ option: 'execute', ops: [{ 'the last plasticize(set)': true }] }, { agent: { session: emptyOps }, callId: 'eo-exec' })).text;
-  } catch (error) {
-    emptyExec = 'ERR ' + String(error.message);
-  }
-  ok(typeof setText === 'string' && setText.startsWith('Preview only'), 'set 预览正常', String(setText).slice(0, 40));
-  ok(typeof emptyExec === 'string' && emptyExec.includes('Registered') && !emptyExec.startsWith('ERR'), 'execute 可以重放待决 set', String(emptyExec).slice(0, 80));
-}
 done();
