@@ -29,6 +29,7 @@
 
 import { initState, applyEvent } from './generations.js';
 import { findOverlap } from './overlap.js';
+import { createHash } from 'node:crypto';
 import { pmSettledCallIds, pmSource } from './markers.js';
 import { resolveUnitOps } from './unitops.js';
 import { isLastSetMacro } from './opshape.js';
@@ -586,6 +587,34 @@ function resolveDeclarationOps(session, ops, here) {
   return resolveUnitOps(session, ops, here);
 }
 
+
+/**
+ * 事件的可哈希形态：只取稳定字段（不含 time / 运行时附加物）。
+ * 预计算与真正落盘都用它，两边结果必须一致。
+ */
+function digestible(event) {
+  return {
+    seq: event.seq,
+    type: event.type,
+    data: event.data ?? null,
+    surfaceOp: event.surfaceOp ?? null,
+    sourceEventSeqs: event.sourceEventSeqs ?? null,
+  };
+}
+
+function stableJson(value) {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null';
+  if (Array.isArray(value)) return '[' + value.map(stableJson).join(',') + ']';
+  const keys = Object.keys(value).sort();
+  return '{' + keys.map((key) => JSON.stringify(key) + ':' + stableJson(value[key])).join(',') + '}';
+}
+
+/** 一批事件的 sha256。 */
+function hashEventRange(events) {
+  const canonical = events.map((event) => stableJson(digestible(event))).join('\n');
+  return createHash('sha256').update(canonical).digest('hex');
+}
+
 function applyDeclarations(session, declarations, open, state, options = {}) {
   const nodes = surfaceNodes(session);
   const locks = lockedSeqs(session);
@@ -713,6 +742,7 @@ function applyDeclarations(session, declarations, open, state, options = {}) {
 
   // 全部解析完再写：上面所有解析都针对同一个（尚未改变）的工作面。
   const batchFirstPhysical = session.surface.replaceGeneration + 1;
+  const plan = [];
   let explicit = 0;
   for (let i = 0; i < planned.length; i++) {
     const { declaration, resolved, duplicateOf } = planned[i];
@@ -748,11 +778,21 @@ function applyDeclarations(session, declarations, open, state, options = {}) {
         content: isHole ? [] : [{ type: 'text', text: rawText }],
         source,
       };
-      const writtenEvent = open !== undefined
-        ? session.append('developer/message', { turn: open.turn, step: open.step, message: devMessage }, mark)
-        : session.append('developer/message', { message: devMessage }, mark);
-      if (span.op.lock_this === true && writtenEvent !== undefined && Number.isSafeInteger(writtenEvent.seq)) {
-        try { session.append('plugin:plastic-memories/locks', { op: 'lock', seqs: [writtenEvent.seq], comment: 'tool:plasticize:lock_this' }); } catch { /* 忽略持久化失败 */ }
+      const index = plan.length;
+      plan.push({
+        type: 'developer/message',
+        data: open !== undefined ? { turn: open.turn, step: open.step, message: devMessage } : { message: devMessage },
+        opts: mark,
+        seqRefs: [],
+      });
+      if (span.op.lock_this === true) {
+        // 这条锁记录引用上一条事件自己的 seq —— 预计算时只知道它的计划下标。
+        plan.push({
+          type: 'plugin:plastic-memories/locks',
+          data: { op: 'lock', seqs: [null], comment: 'tool:plasticize:lock_this' },
+          opts: undefined,
+          seqRefs: [{ path: ['seqs', 0], index }],
+        });
       }
       explicit++;
     }
@@ -770,19 +810,24 @@ function applyDeclarations(session, declarations, open, state, options = {}) {
         refs: autoSeqs,
         note: 'auto-hide:' + target.reason,
       });
-      session.append('developer/message', {
-        turn: open.turn,
-        step: open.step,
-        message: {
-          // 确定性 id：同一个 callId + 同一段历史 → 同一个 node id，日志可对账、可重放。
-          id: 'pm-auto-hide-' + String(target.callId) + '-' + String(target.shadowed[0]),
-          role: 'developer',
-          content: [],
-          source,
+      plan.push({
+        type: 'developer/message',
+        data: {
+          turn: open.turn,
+          step: open.step,
+          message: {
+            // 确定性 id：同一个 callId + 同一段历史 → 同一个 node id，日志可对账、可重放。
+            id: 'pm-auto-hide-' + String(target.callId) + '-' + String(target.shadowed[0]),
+            role: 'developer',
+            content: [],
+            source,
+          },
         },
-      }, {
-        surfaceOp: { op: 'replace', startSeq: autoSeqs[0], endSeq: autoSeqs[autoSeqs.length - 1] },
-        sourceEventSeqs: autoSeqs,
+        opts: {
+          surfaceOp: { op: 'replace', startSeq: autoSeqs[0], endSeq: autoSeqs[autoSeqs.length - 1] },
+          sourceEventSeqs: autoSeqs,
+        },
+        seqRefs: [],
       });
       auto++;
     }
@@ -792,15 +837,47 @@ function applyDeclarations(session, declarations, open, state, options = {}) {
     if (entry.declaration.args?.option !== 'execute') continue;
     const logical = logicalOf.get(entry.declaration.callId);
     if (logical === undefined) continue;
-    const physical = batchFirstPhysical;
-    try {
-      appendPrivateRecord(session, 'plugin:plastic-memories/logical', {
-        logical,
-        physical,
-        kind: 'execute',
-        callId: entry.declaration.callId,
-      });
-    } catch { /* 忽略持久化失败 */ }
+    plan.push({
+      type: 'plugin:plastic-memories/logical',
+      data: { logical, physical: batchFirstPhysical, kind: 'execute', callId: entry.declaration.callId },
+      opts: undefined,
+      seqRefs: [],
+    });
+  }
+
+  // ── 预写提交记录（WAL） ───────────────────────────────────────────────
+  // commit 先落盘，再写数据；恢复时按 commit 的 [from,to] 重算哈希即可判定是否写完整。
+  if (plan.length > 0) {
+    const firstSeq = session.seq + 1;
+    const seqOf = (index) => firstSeq + index;
+    const resolveData = (entry) => {
+      if (entry.seqRefs.length === 0) return entry.data;
+      const copy = JSON.parse(JSON.stringify(entry.data));
+      for (const ref of entry.seqRefs) {
+        let cursor = copy;
+        for (let step = 0; step < ref.path.length - 1; step += 1) cursor = cursor[ref.path[step]];
+        cursor[ref.path[ref.path.length - 1]] = seqOf(ref.index);
+      }
+      return copy;
+    };
+    const committed = plan.map((entry, index) => ({
+      seq: seqOf(index),
+      type: entry.type,
+      data: resolveData(entry),
+      surfaceOp: entry.opts?.surfaceOp,
+      sourceEventSeqs: entry.opts?.sourceEventSeqs,
+    }));
+    session.append('plugin:plastic-memories/commit', {
+      callId: planned[0]?.declaration?.callId,
+      from: seqOf(0),
+      to: seqOf(plan.length - 1),
+      count: plan.length,
+      hash: hashEventRange(committed),
+    });
+    for (let index = 0; index < plan.length; index += 1) {
+      const entry = plan[index];
+      session.append(entry.type, resolveData(entry), entry.opts);
+    }
   }
   return { explicit, auto, applied: planned.length, failed };
 }
@@ -847,11 +924,83 @@ function findLastPendingSet(declarations, before, failedCallIds) {
  * @param {object} [logger] - 日志器。
  * @returns {{applied: number, skipped: number, auto: number, generation: number}} 结果。
  */
+
+const DAMAGED = new WeakMap();
+
+/**
+ * 校验日志最后一条 commit（或 checkpoint）。
+ *
+ * 无状态设计：每次 flush 都要看，因为崩溃后内存状态没了，无从知道「该不该校验」。
+ * checkpoint 之前的 commit 不再检查 —— 那是长会话的性能护栏。
+ *
+ * @param {object} session - 目标会话。
+ * @param {object} [logger] - 日志器。
+ * @returns {{ok: boolean, reason?: string, commit?: object}} 结果。
+ */
+export function verifyLastCommit(session, logger) {
+  const events = session.snapshotEvents();
+  let mark;
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const type = events[index].type;
+    if (type === 'plugin:plastic-memories/commit' || type === 'plugin:plastic-memories/checkpoint') {
+      mark = events[index];
+      break;
+    }
+  }
+  if (mark === undefined || mark.type === 'plugin:plastic-memories/checkpoint') return { ok: true };
+  const { from, to, count, hash } = mark.data ?? {};
+  if (!Number.isSafeInteger(from) || !Number.isSafeInteger(to) || !Number.isSafeInteger(count)) {
+    return { ok: false, reason: 'commit 记录本身不完整', commit: mark };
+  }
+  const slice = events.filter((event) => event.seq >= from && event.seq <= to);
+  if (slice.length !== count || to - from + 1 !== count) {
+    return { ok: false, reason: 'commit 覆盖的事件缺失（应为 ' + String(count) + ' 条，实到 ' + String(slice.length) + ' 条）', commit: mark };
+  }
+  const actual = hashEventRange(slice);
+  if (actual !== hash) return { ok: false, reason: 'commit 哈希不符', commit: mark };
+  return { ok: true, commit: mark };
+}
+
+/**
+ * 检测到损坏时的处理：报错 + 留一条可见提示（同一段损坏只报一次）。
+ */
+function reportDamage(session, logger, result) {
+  const key = 'pm-damage:' + String(result.commit?.seq ?? '?') + ':' + String(result.reason);
+  const seen = DAMAGED.get(session) ?? new Set();
+  if (seen.has(key)) return;
+  seen.add(key);
+  DAMAGED.set(session, seen);
+  logger?.error?.('[pm-h0] 日志损坏：' + String(result.reason) + '（commit seq ' + String(result.commit?.seq ?? '?') + '）');
+  try {
+    session.append('plugin:plastic-memories/damaged', {
+      commitSeq: result.commit?.seq,
+      reason: result.reason,
+    });
+    session.append('developer/message', {
+      turn: 0,
+      step: 0,
+      message: {
+        id: 'pm-damaged-' + String(result.commit?.seq ?? '0'),
+        role: 'developer',
+        content: [{ type: 'text', text: '[plasticize] the previous write looks incomplete (' + String(result.reason) + '). Use retrospect(self - 1) to check what actually landed before trusting it.' }],
+        source: { kind: 'pm-notice', v: 1 },
+      },
+    }, { surfaceOp: 'append' });
+  } catch { /* 记录失败不影响主流程 */ }
+}
+
 const WARNED_STALE = new WeakSet();
 
 export function flush(session, options, logger) {
   const open = options?.openStep;
   const autoHide = options?.autoHide !== false;
+  // 校验日志尾部：损坏的日志不该长出新的世代（无状态，所以每次都要看）。
+  try {
+    const health = verifyLastCommit(session, logger);
+    if (!health.ok) reportDamage(session, logger, health);
+  } catch (error) {
+    logger?.warn?.('[pm-h0] 日志校验失败（已降级）：' + String(error?.message ?? error));
+  }
   const state = stateOf(session);
   scanNew(session, state);
   const zone = safetyZoneState(session);

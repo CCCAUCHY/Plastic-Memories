@@ -125,6 +125,21 @@ console.log(NL + '⑤ 宏重放：规格展开 == 实际')
   ok((textOf(session).match(/⟨REPLAY⟩/g) ?? []).length === 1, '替代文本只出现一次');
 }
 
+console.log(NL + '③c 日志损坏检测');
+{
+  const session = fresh('spec-damage');
+  const from = session.seq + 1;
+  // 伪造一条 commit：声称覆盖 3 条事件，实际只写 1 条。
+  session.append('plugin:plastic-memories/commit', { callId: 'broken', from, to: from + 2, count: 3, hash: 'deadbeef' });
+  session.append('plugin:plastic-memories/locks', { op: 'lock', seqs: [], comment: 'test' });
+  const flushed = flush(session, { openStep: { turn: 2, step: 1 } }, { warn() {}, info() {}, error() {} });
+  const damaged = session.snapshotEvents().filter((event) => event.type === 'plugin:plastic-memories/damaged');
+  ok(damaged.length === 1, '损坏被发现并记录', String(damaged.length));
+  const notice = session.deriveMessages().slice(-1)[0];
+  ok(String(notice?.content?.[0]?.text ?? '').includes('incomplete'), '并给模型一条可见提示', String(notice?.content?.[0]?.text ?? '').slice(0, 60));
+  void flushed;
+}
+
 console.log(NL + '④ 随机差分（40 例：普通 / this / 宏重放 / 安全区）');
 function rng(seed) {
   let state = seed >>> 0;
