@@ -28,7 +28,7 @@
  */
 
 import { initState, applyEvent } from './generations.js';
-import { findOverlap } from './overlap.js';
+import { findOverlap, subtractSeqs } from './overlap.js';
 import { createHash } from 'node:crypto';
 import { pmSettledCallIds, pmSource } from './markers.js';
 import { resolveUnitOps } from './unitops.js';
@@ -295,7 +295,6 @@ function autoHideTargets(session, state, claimed, settledBefore, locks) {
     if (seen.has(key)) continue;
     if (!seqs.every((seq) => visible.has(seq))) continue;
     if (locks !== undefined && locks.size > 0 && seqs.some((seq) => locks.has(seq))) continue;
-    if (seqs.some((seq) => claimed.has(seq))) continue;
     const errored = stepHasError(session, declaration, seqs);
     // 新的自动隐藏规则：所有 set 都清理，不再要求已经兑现。
     if (!errored && option !== 'set') continue;
@@ -349,7 +348,6 @@ function autoHideTargets(session, state, claimed, settledBefore, locks) {
     if (seen.has(key)) continue;
     if (!seqs.every((seq) => visible.has(seq))) continue;
     if (locks !== undefined && locks.size > 0 && seqs.some((seq) => locks.has(seq))) continue;
-    if (seqs.some((seq) => claimed.has(seq))) continue;
     if (!canHide(seqs)) continue;
     seen.add(key);
     out.push({ shadowed: seqs, reason: 'error', callId: failure.callId });
@@ -366,7 +364,6 @@ function autoHideTargets(session, state, claimed, settledBefore, locks) {
     if (seen.has(key)) continue;
     if (!seqs.every((seq) => visible.has(seq))) continue;
     if (locks !== undefined && locks.size > 0 && seqs.some((seq) => locks.has(seq))) continue;
-    if (seqs.some((seq) => claimed.has(seq))) continue;
     if (!canHide(seqs)) continue;
     seen.add(key);
     out.push({ shadowed: seqs, reason: success.name === 'retrospect' ? 'retrospect' : 'letter', callId: success.callId });
@@ -736,8 +733,10 @@ function applyDeclarations(session, declarations, open, state, options = {}) {
     logicalOf.set(entry.declaration.callId, appliedExecutes + batchExecute - 1);
   }
   const batchLogical = appliedExecutes + batchExecute - 1;
+  // 显式 op 覆盖的 seq 快照：自动隐藏只能从这里**扣减**，不能整体丢弃。
+  const explicitClaimed = new Set(claimed);
   const autoTargets = options.autoHide === true && (planned.length > 0 || options.appliedBefore === true)
-    ? autoHideTargets(session, state, claimed, settledBefore, locks)
+    ? autoHideTargets(session, state, new Set(), settledBefore, locks)
     : [];
 
   // 全部解析完再写：上面所有解析都针对同一个（尚未改变）的工作面。
@@ -801,30 +800,44 @@ function applyDeclarations(session, declarations, open, state, options = {}) {
   // 自动隐藏一律是纯空洞 —— 没有打开的 step 就留到下一个边界（可见性检查天然幂等）。
   let auto = 0;
   if (open !== undefined && autoTargets.length > 0) {
-    // 自动隐藏也走**同一个解析器**：先把目标折成合成的 ops（positions + 空文本），
-    // 再和模型写的 ops 一样交给 resolveUnitOps。这样「单元边界 / 重叠 / 锁 / 系统提示」
-    // 只有一份判定，而不是两套。
+    // ① 合成候选区间（以单元为单位），② 扣掉显式 op 覆盖的 seq，③ 合并相邻，④ 解析后写。
+    // 注意：只丢弃**自动隐藏**这一侧的重叠部分，模型自己写的永远原样保留。
     const units = currentUnits(session, { locks });
     const unitOfSeq = (seq) => units.findIndex((unit) => unit.seqs.includes(seq));
-    const autoOps = [];
-    const kept = [];
+    const candidates = [];
     for (const target of autoTargets) {
-      const from = unitOfSeq(target.shadowed[0]);
-      const to = unitOfSeq(target.shadowed[target.shadowed.length - 1]);
-      if (from < 0 || to < 0) continue;
-      autoOps.push({ positions: from === to ? 'unit ' + String(from) : 'unit ' + String(from) + ' to ' + String(to), new_text: '' });
-      kept.push(target);
+      for (const segment of subtractSeqs(target.shadowed, explicitClaimed)) {
+        const from = unitOfSeq(segment[0]);
+        const to = unitOfSeq(segment[segment.length - 1]);
+        if (from < 0 || to < 0) continue;
+        candidates.push({ from, to, reason: target.reason, callId: target.callId, anchor: segment[0] });
+      }
     }
+    candidates.sort((left, right) => left.from - right.from);
+    const merged = [];
+    for (const candidate of candidates) {
+      const last = merged[merged.length - 1];
+      // 相邻（或重叠，理论上不会）的区间合成一条，避免写出一串连续的 developer 消息。
+      if (last !== undefined && candidate.from <= last.to + 1) {
+        last.to = Math.max(last.to, candidate.to);
+        continue;
+      }
+      merged.push({ ...candidate });
+    }
+    const autoOps = merged.map((range) => ({
+      positions: range.from === range.to ? 'unit ' + String(range.from) : 'unit ' + String(range.from) + ' to ' + String(range.to),
+      new_text: '',
+    }));
     const autoSpans = autoOps.length === 0 ? [] : resolveUnitOps(session, autoOps, undefined);
     for (let i = 0; i < autoSpans.length; i++) {
-      const target = kept[i];
+      const range = merged[i];
       const generation = session.surface.replaceGeneration + 1;
       const autoSeqs = autoSpans[i].shadowed;
       const source = pmSource({
         op: 'hide',
         generation,
         refs: autoSeqs,
-        note: 'auto-hide:' + target.reason,
+        note: 'auto-hide:' + range.reason,
       });
       plan.push({
         type: 'developer/message',
@@ -833,7 +846,7 @@ function applyDeclarations(session, declarations, open, state, options = {}) {
           step: open.step,
           message: {
             // 确定性 id：同一个 callId + 同一段历史 → 同一个 node id，日志可对账、可重放。
-            id: 'pm-auto-hide-' + String(target.callId) + '-' + String(target.shadowed[0]),
+            id: 'pm-auto-hide-' + String(range.callId) + '-' + String(range.anchor),
             role: 'developer',
             content: [],
             source,
@@ -848,6 +861,7 @@ function applyDeclarations(session, declarations, open, state, options = {}) {
       auto++;
     }
   }
+
   // 统一把逻辑世代元数据写进私有事件：logical N、冻结物理页、触发调用。
   for (const entry of planned) {
     if (entry.declaration.args?.option !== 'execute') continue;

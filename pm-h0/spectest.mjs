@@ -8,6 +8,7 @@ import { makeCounter, makeStore, cookieSeed, openStep, plasticizeCall } from './
 import { flush, lockedSeqs, appendSafetyRecord } from './engine.js';
 import { specExecute, diffEvents, unitsOf } from './pmspec.mjs';
 import { cutoffForCall } from './messages.js';
+import { findOverlap, subtractSeqs } from './overlap.js';
 import { textOf } from './testkit.mjs';
 import { verifyPmSemantics } from './verify.js';
 
@@ -162,6 +163,16 @@ console.log(NL + '③d checkpoint 封住校验成本');
   // 下一次 flush 只会看到 checkpoint，不会再报损坏。
   flush(session, { openStep: { turn: 2, step: 1 } }, quiet);
   ok(session.snapshotEvents().filter((event) => event.type === 'plugin:plastic-memories/damaged').length === 0, 'checkpoint 之后的 flush 不误报损坏');
+}
+
+console.log(NL + '③e 重叠与扣减');
+{
+  const overlap = findOverlap([{ seqs: [10, 11, 12, 13] }, { seqs: [12, 13, 14] }]);
+  ok(JSON.stringify(overlap.seqs) === JSON.stringify([12, 13]), '重叠返回全部交集', JSON.stringify(overlap.seqs));
+  ok(findOverlap([{ seqs: [1, 2] }, { seqs: [3, 4] }]) === undefined, '不相交时无重叠');
+  const segments = subtractSeqs([10, 11, 12, 13, 14], new Set([12]));
+  ok(JSON.stringify(segments) === JSON.stringify([[10, 11], [13, 14]]), '扣减后按连续段拆分', JSON.stringify(segments));
+  ok(JSON.stringify(subtractSeqs([1, 2, 3], new Set([1, 2, 3]))) === '[]', '全部被扣掉时返回空');
 }
 
 console.log(NL + '④ 随机差分（40 例：普通 / this / 宏重放 / 安全区）');

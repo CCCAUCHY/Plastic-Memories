@@ -19,11 +19,49 @@ export function findOverlap(ranges) {
   for (let index = 0; index < ranges.length; index += 1) {
     const seqs = Array.isArray(ranges[index]?.seqs) ? ranges[index].seqs : [];
     for (const seq of seqs) {
-      if (seen.has(seq)) return { first: seen.get(seq), second: index, seq };
+      if (seen.has(seq)) {
+        const first = seen.get(seq);
+        // 顺便回全部重叠 seq：裁剪自动隐藏时需要整段，而不是第一个冲突点。
+        return { first, second: index, seq, seqs: intersectionOf(ranges[first].seqs ?? [], seqs) };
+      }
       seen.set(seq, index);
     }
   }
   return undefined;
+}
+
+/**
+ * 两个 seq 集合的交集（保持第一个参数里的顺序）。
+ * @param {number[]} left
+ * @param {number[]} right
+ * @returns {number[]}
+ */
+export function intersectionOf(left, right) {
+  const bag = new Set(right);
+  const out = [];
+  for (const seq of left) if (bag.has(seq)) out.push(seq);
+  return out;
+}
+
+/**
+ * 从 seq 列表里扣除 blocked，返回连续的剩余段。
+ * @param {number[]} seqs
+ * @param {Set<number>} blocked
+ * @returns {number[][]}
+ */
+export function subtractSeqs(seqs, blocked) {
+  const out = [];
+  let run = [];
+  for (const seq of seqs) {
+    if (blocked.has(seq)) {
+      if (run.length > 0) out.push(run);
+      run = [];
+      continue;
+    }
+    run.push(seq);
+  }
+  if (run.length > 0) out.push(run);
+  return out;
 }
 
 /**
