@@ -65,22 +65,6 @@
     "dsh": ">=0.2.0-rc.2 <0.3.0-0"
   },
   "license": "MIT",
-  "scripts": {
-    "test": "node contract.mjs && node integration.mjs && node unitest.mjs && node globaltest.mjs && node ptctest.mjs && node multicall.mjs && node groupingtest.mjs && node contexttest.mjs && node verifytest.mjs && node versioncheck.mjs && node oracletest.mjs && node spectest.mjs",
-    "test:selftest": "node selftest.mjs",
-    "test:integration": "node integration.mjs",
-    "test:hooks": "node hooks.mjs",
-    "test:ptctest": "node ptctest.mjs",
-    "test:multicall": "node multicall.mjs",
-    "test:version": "node versioncheck.mjs",
-    "test:ui": "node uitest.mjs",
-    "build:client": "node build-client.mjs",
-    "rebuild:dsh": "node rebuild-from-dsh.mjs",
-    "check:dsh": "node rebuild-from-dsh.mjs --check",
-    "test:diff": "node diffcheck.mjs",
-    "test:verify": "node verifytest.mjs",
-    "test:unit": "node unitest.mjs",
-    "test:global": "node globaltest.mjs",
-    "test:contract": "node contract.mjs"
-  }
+  "scripts": {},
+  "devDependencies": null
 }

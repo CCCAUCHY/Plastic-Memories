@@ -25,7 +25,7 @@
 
 ```bash
 # 从构建好的 tarball
-dsh plugin --profile <profile> add file:/路径/dsh-plugin-plastic-memories-h0-0.50.85.tgz
+dsh plugin --profile <profile> add file:/路径/dist/dsh-plugin-plastic-memories-h0-0.50.85.tgz
 
 # 或从 stage 目录链接
 ./install-pm.sh stage
@@ -57,7 +57,7 @@ plasticize({
 ## 仓库结构
 
 ```text
-pm-h0/            插件源码（index、engine、units、unitops、retrospect …）
+pm-h0/            运行时源码（index、engine、units、unitops、retrospect …）
 dist/             构建产物
 docs/             辅助文档与图片
 THEORY.md         设计理论（英文）
@@ -75,6 +75,7 @@ THEORY.zh.md      设计理论（中文）
 
 - [插件说明](pm-h0/README.md)——安装、工具、写入协议、已知限制
 - [CONTRACT.md](pm-h0/CONTRACT.md)——选择器语法、工具/命令契约、不变式
+- [更新日志](pm-h0/CHANGELOG.md)
 
 ## 测试
 

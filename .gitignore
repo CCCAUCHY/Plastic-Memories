@@ -17,6 +17,5 @@ pm-h0/fixtures/
 *.jsonl
 # internal handover / process docs
 H0-*.md
-pm-h0/CHANGELOG.md
 # OS
 .DS_Store

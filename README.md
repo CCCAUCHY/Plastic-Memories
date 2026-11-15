@@ -25,7 +25,7 @@ Plastic Memories lets a model edit how its own past appears in the current conte
 
 ```bash
 # from a built tarball
-dsh plugin --profile <profile> add file:/path/to/dsh-plugin-plastic-memories-h0-0.50.85.tgz
+dsh plugin --profile <profile> add file:/path/to/dist/dsh-plugin-plastic-memories-h0-0.50.85.tgz
 
 # or from a staged checkout
 ./install-pm.sh stage
@@ -57,7 +57,7 @@ A write lands at the next submission boundary, not at call time; a rejected writ
 ## Repository layout
 
 ```text
-pm-h0/            plugin source (index, engine, units, unitops, retrospect, …)
+pm-h0/            runtime source (index, engine, units, unitops, retrospect, …)
 dist/             built tarballs
 docs/             supporting documents and figures
 THEORY.md         design theory (English)
@@ -75,6 +75,7 @@ THEORY.zh.md      design theory (Chinese)
 
 - [Plugin README](pm-h0/README.md) — install, tools, write protocol, limits
 - [CONTRACT.md](pm-h0/CONTRACT.md) — selector grammar, tool/command contracts, invariants
+- [Changelog](pm-h0/CHANGELOG.md)
 
 ## Tests
 
