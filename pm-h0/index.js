@@ -477,7 +477,7 @@ export function apply(ctx, config) {
         '读取某个逻辑世代的上下文。只读，不修改任何东西。',
         'generation 可以是绝对编号、self（当前世代）或 self - N。历史世代已经冻结；self 返回模型此刻看到的上下文。',
         '成功的 execute 会冻结当前世代并返回它的编号，之后的推理属于下一代，所以刚冻结的世代可以立刻用 self - 1 读到。',
-        '返回 { logical, units, messages?, letters? }。units 始终是当前世代的总单元数；messages 每行是 { unit, role, text }，role 取 system/user/assistant/developer。messages_position / letters_position 可以只取某段单元、或写 none 表示不要；clip=N 时每条 text 前后各留 N 个字符。',
+        '返回 { logical, units, messages?, letters? }。units 始终是当前世代的总单元数；messages 每行是 { unit, role, text }，role 取 system/user/assistant/developer。messages_position / letters_position 可以只取某段单元、或写 none 表示不要；head=N / tail=M 时每条 text 保留开头 N 与结尾 M 个字符。',
         '历史世代返回它冻结前模型最后一次收到的输入。某个世代隐藏掉的内容属于上一代，要看得读上一代。',
       ].join(String.fromCharCode(10) + String.fromCharCode(10)),
       parameters: {
@@ -487,9 +487,13 @@ export function apply(ctx, config) {
             oneOf: [{ type: 'integer' }, { type: 'string' }],
             description: '绝对编号、"self" 或 "self - N"。',
           },
-          clip: {
+          head: {
             type: 'integer',
-            description: '每条 text 前后各留 N 个字符（超长才裁）。默认不裁。',
+            description: '每条 text 保留开头 N 个字符（超长才裁）。默认不裁。',
+          },
+          tail: {
+            type: 'integer',
+            description: '每条 text 保留结尾 M 个字符（超长才裁）。默认不裁。',
           },
           messages_position: {
             oneOf: [{ type: 'integer' }, { type: 'string' }],
@@ -517,7 +521,8 @@ export function apply(ctx, config) {
         return Promise.resolve({
           text: retrospect(session, {
             generation,
-            clip: args?.clip,
+            head: args?.head,
+            tail: args?.tail,
             messagesPosition,
             lettersPosition,
             callId: exec.callId,

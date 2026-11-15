@@ -160,9 +160,9 @@ console.log('B 工具层');
   ok((await callTool('retrospect', { generation: 'self', messages_position: null }, session, 'c-null', false)).error !== undefined, 'null 被拒绝（schema 层，只认 none）');
   ok(Number.isSafeInteger(data.units) && data.units === new Set(data.messages.map((row) => row.unit)).size, 'units 是总单元数', String(data.units));
 
-  const clipped = JSON.parse((await callTool('retrospect', { generation: 'self', clip: 20 }, session, 'c-clip', false)).text);
+  const clipped = JSON.parse((await callTool('retrospect', { generation: 'self', head: 20, tail: 5 }, session, 'c-clip', false)).text);
   const longest = clipped.messages.reduce((max, row) => (row.text.length > max.length ? row.text : max), '');
-  ok(longest.length <= 42 && longest.includes('……'), 'clip:N 前后各留 N', String(longest.length));
+  ok(longest.length <= 27 && longest.includes('……') && longest.endsWith(String(longest).slice(-5)), 'head/tail 分别保留开头与结尾', String(longest.length));
 
   const fresh = JSON.parse((await callTool('retrospect', { generation: 'self' }, session, 'c-full2', false)).text);
   const window = JSON.parse((await callTool('retrospect', { generation: 'self', messages_position: 'unit 1' }, session, 'c-window', false)).text);

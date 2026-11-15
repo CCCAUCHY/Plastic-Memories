@@ -78,7 +78,8 @@ export function retrospect(session, args) {
   const value = args?.generation;
   if (value === undefined) throw new Error('retrospect requires generation (a logical generation number, "self", or "self - N")');
   return retrospectGeneration(session, value, {
-    clip: args?.clip,
+    head: args?.head,
+    tail: args?.tail,
     messagesPosition: args?.messagesPosition,
     lettersPosition: args?.lettersPosition,
     callId: args?.callId,
@@ -109,7 +110,8 @@ function executeResultSeq(events, callId) {
 }
 
 export function retrospectGeneration(session, generation, options = {}) {
-  const clip = Number.isSafeInteger(options.clip) && options.clip > 0 ? options.clip : 0;
+  const head = Number.isSafeInteger(options.head) && options.head > 0 ? options.head : 0;
+  const tail = Number.isSafeInteger(options.tail) && options.tail > 0 ? options.tail : 0;
   const messagesPosition = options.messagesPosition;
   const lettersPosition = options.lettersPosition;
   const callId = options.callId;
@@ -159,7 +161,7 @@ export function retrospectGeneration(session, generation, options = {}) {
         unit: row.unit,
         // tool 结果与它的 assistant 同属一个单元，按 assistant 标注即可。
         role: row.role === 'tool' ? 'assistant' : row.role,
-        text: clip > 0 ? clipText(row.text, clip) : row.text,
+        text: head + tail > 0 ? clipText(row.text, head, tail) : row.text,
       };
       if (row.calls !== undefined) shaped.calls = row.calls;
       if (row.locked === true) shaped.locked = true;
@@ -170,11 +172,11 @@ export function retrospectGeneration(session, generation, options = {}) {
   return JSON.stringify(out);
 }
 
-/** 文本裁剪：前后各留 n 个字符。 */
-function clipText(text, n) {
+/** 文本裁剪：保留头 head 与尾 tail，中间用 …… 省略。 */
+function clipText(text, head, tail) {
   const value = String(text ?? '');
-  if (value.length <= n * 2) return value;
-  return value.slice(0, n) + '……' + value.slice(-n);
+  if (value.length <= head + tail) return value;
+  return value.slice(0, head) + '……' + (tail > 0 ? value.slice(-tail) : '');
 }
 
 /** 取某个逻辑世代生命周期内输入的全部 letter（按调用顺序，附消息序号）。 */
