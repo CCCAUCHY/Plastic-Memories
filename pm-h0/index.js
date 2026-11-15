@@ -447,6 +447,9 @@ export function apply(ctx, config) {
           },
         },
         required: ['ops'],
+        // 未知顶层字段直接拒绝：模型若还按旧 API 传 option:"set"，会被明确告知，
+        // 而不是被静默忽略后**真的写入**（实测踩到过：模型以为在预览，其实已经改了上下文）。
+        additionalProperties: false,
       },
       execute(args, exec) {
         const session = sessionOf(exec);

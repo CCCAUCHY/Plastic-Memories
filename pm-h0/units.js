@@ -154,11 +154,11 @@ const UNIT_RANGE_SEP = '(?:to|through|til|-|–)';
  *
  * 允许尾随冒号（`unit 17:`），用于与后面的替代文本分隔；`this` 由上层解析。
  */
-export const UNIT_SELECTOR_SOURCE = 'this|unit\\s*\\d+(?:\\s*' + UNIT_RANGE_SEP + '\\s*(?:unit\\s*)?\\d+)?|\\d+';
+export const UNIT_SELECTOR_SOURCE = 'this|unit\\s*\\d+(?:\\s*' + UNIT_RANGE_SEP + '\\s*(?:unit\\s*)?\\d+)?|\\d+(?:\\s*' + UNIT_RANGE_SEP + '\\s*\\d+)?';
 
 const SELECTOR_ANY = new RegExp('^(?:' + UNIT_SELECTOR_SOURCE + ')$', 'iu');
 const SELECTOR_ONE = new RegExp('^(?:unit\\s*)?(\\d+)$', 'iu');
-const SELECTOR_SPAN = new RegExp('^unit\\s*(\\d+)\\s*' + UNIT_RANGE_SEP + '\\s*(?:unit\\s*)?(\\d+)$', 'iu');
+const SELECTOR_SPAN = new RegExp('^(?:unit\\s*)?(\\d+)\\s*' + UNIT_RANGE_SEP + '\\s*(?:unit\\s*)?(\\d+)$', 'iu');
 
 /** 是否是 `this` 选择器（具体单元号由 unitops 解析）。 */
 export function isThisSelector(raw) {

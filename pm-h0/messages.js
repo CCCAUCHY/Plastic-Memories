@@ -36,10 +36,13 @@ export function rowsAt(session, cut, options = {}) {
  */
 export function cutoffForCall(session, callId) {
   if (typeof callId !== 'string') return undefined;
+  // PTC 下 callId 是 subCallId（call_x:ptc:1），承载消息里的 tool-call 记的是 rootCallId。
+  const cut = callId.indexOf(':ptc:');
+  const owner = cut === -1 ? callId : callId.slice(0, cut);
   for (const event of session.snapshotEvents()) {
     if (event.type !== 'assistant/message') continue;
     const content = Array.isArray(event.data?.message?.content) ? event.data.message.content : [];
-    if (content.some((block) => block?.type === 'tool-call' && block.id === callId)) return event.seq;
+    if (content.some((block) => block?.type === 'tool-call' && (block.id === callId || block.id === owner))) return event.seq;
   }
   return undefined;
 }

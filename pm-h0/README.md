@@ -1,6 +1,6 @@
 # dsh-plugin-plastic-memories-h0
 
-> **v0.50.82 通用版（任何 preset）**
+> **v0.50.83 通用版（任何 preset）**
 >
 > 让模型主动编辑自己「过去」的呈现：改写当前上下文里的一段，但会话日志一条不删。
 
@@ -109,7 +109,7 @@ letter({ text: "给未来世代的一句话" })
 ## 安装
 
 ```bash
-dsh plugin --profile web2 add file:/绝对路径/可塑性记忆/dist/dsh-plugin-plastic-memories-h0-0.50.82.tgz
+dsh plugin --profile web2 add file:/绝对路径/可塑性记忆/dist/dsh-plugin-plastic-memories-h0-0.50.83.tgz
 ```
 
 开发用 stage：

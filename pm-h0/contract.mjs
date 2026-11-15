@@ -96,6 +96,7 @@ ok(JSON.stringify(parseUnitRange('unit 17 to 20')) === '[17,18,19,20]', 'unit 17
 ok(JSON.stringify(parseUnitRange('unit 17 through 20')) === '[17,18,19,20]', 'through 同义');
 ok(JSON.stringify(parseUnitRange(17)) === '[17]' && JSON.stringify(parseUnitRange('17')) === '[17]', '裸数字两种写法');
 ok(JSON.stringify(parseUnitRange('unit 17:')) === '[17]', '尾随冒号可选');
+ok(JSON.stringify(parseUnitRange('0 to 20')) === JSON.stringify(Array.from({ length: 21 }, (_, i) => i)), '裸数字区间也认（0 to 20）');
 for (const bad of ['[17,28]', '(17,20)', 'unit 20 to 17', '', 'unit', 'unit x']) {
   ok(errorOf(() => parseUnitRange(bad)) !== undefined, '拒绝非法选择器 ' + JSON.stringify(bad));
 }
@@ -187,6 +188,8 @@ console.log('B 工具层');
   ok(thisOp.error === undefined, '支持 this', String(thisOp.error ?? '').slice(0, 50));
   const noOps = await callTool('plasticize', {}, session, 'p-none');
   ok(noOps.error?.includes('ops') === true, '缺 ops 被拒绝', String(noOps.error).slice(0, 50));
+  const legacySet = await callTool('plasticize', { ops: [{ positions: 'unit 2' }], option: 'set' }, session, 'p-legacy-set');
+  ok(legacySet.error !== undefined && !legacySet.text, '旧 option 字段被拒绝（不会被当成写入）', String(legacySet.error).slice(0, 60));
 }
 
 {
