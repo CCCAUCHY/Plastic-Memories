@@ -14,6 +14,7 @@ staged/
 交接日志/
 *.zip
 *.jsonl
+!pm-h0/fixtures/*.jsonl
 # internal handover / process docs
 H0-*.md
 # OS
