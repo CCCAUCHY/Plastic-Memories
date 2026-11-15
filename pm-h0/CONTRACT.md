@@ -165,13 +165,13 @@ retrospect 走「折叠日志前缀 → DSH 推导消息」，只有切点不同
 ```json
 {
   "logical": 1,
-  "units": [0, 1, 2, 5, 6],             // 始终返回：当前世代的所有单元号
+  "units": 20,                           // 始终返回：这一代的总单元数
   "messages": [{ "unit": 5, "role": "user", "text": "..." }],
   "letters": [{ "index": 7, "text": "...", "time": 0 }]   // 仅当该世代有 letter
 }
 ```
 
-- 行内字段：`unit`（plasticize 的位置）、`role`（system / user / assistant / developer；tool 结果与其 assistant 同单元，按 assistant 标注）、`text`、`calls?`、`locked?`（**仅当前世代**）；
+- `units` 是**总数**（不是编号列表）；行内字段：`unit`（plasticize 的位置）、`role`（system / user / assistant / developer；tool 结果与其 assistant 同单元，按 assistant 标注）、`text`、`calls?`、`locked?`（**仅当前世代**）；
 - 没有 `n` / `seq` / `type`：行号可由数组下标得到，`seq` 是内部字段；
 - `self` 用的是「本次请求的输入」：截到最新 assistant 之前；
 - 历史世代用的是产生该世代 execute 的那次请求的输入；

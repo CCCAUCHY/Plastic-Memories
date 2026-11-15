@@ -152,7 +152,8 @@ export function retrospectGeneration(session, generation, options = {}) {
     letters = letters.filter((letter) => keep.has(letter.index));
   }
 
-  const out = { logical, units: [...new Set(window.rows.map((row) => row.unit))] };
+  // units = 这一代的总单元数（不是编号列表）。
+  const out = { logical, units: new Set(window.rows.map((row) => row.unit)).size };
   if (!messagesOff) {
     out.messages = scoped.map((row) => {
       const shaped = {

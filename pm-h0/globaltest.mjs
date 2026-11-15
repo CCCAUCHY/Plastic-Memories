@@ -66,7 +66,7 @@ ok(historyLocked === 0, '历史世代不返回安全区', JSON.stringify({ histo
 // 结果窗口：两个工具共用同一套 positions 语法，用来在非 PTC 里主动限制结果大小。
 const windowData = JSON.parse((await retrospect.execute({ generation: 'self', messages_position: 'unit 1' }, { agent: { session } })).text);
 ok(windowData.messages.length === 1 && windowData.messages[0].unit === 1, 'messages_position 只返回选中单元', JSON.stringify({ rows: windowData.messages.length }));
-ok(Array.isArray(windowData.units) && windowData.units.length > 1, 'units 始终返回全部单元号', JSON.stringify(windowData.units).slice(0, 60));
+ok(Number.isSafeInteger(windowData.units) && windowData.units > 1, 'units 是总单元数', String(windowData.units));
 let thisInRetrospect;
 try { await retrospect.execute({ generation: 'self', messages_position: 'this' }, { agent: { session } }); } catch (error) { thisInRetrospect = String(error.message); }
 ok(typeof thisInRetrospect === 'string' && thisInRetrospect.includes('this'), 'messages_position 拒绝 this', thisInRetrospect?.slice(0, 40));
