@@ -567,7 +567,7 @@ function appendRejectNotice(session, open, callId, reason, kind = 'safety-zone')
 }
 
 export function appendSafetyRecord(session, payload) {
-  return session.append('plugin:plastic-memories/locks', payload);
+  return appendPrivateRecord(session, 'plugin:plastic-memories/locks', payload);
 }
 
 function assertNotLocked(session, locks, shadowed) {
@@ -883,7 +883,7 @@ function applyDeclarations(session, declarations, open, state, options = {}) {
       surfaceOp: entry.opts?.surfaceOp,
       sourceEventSeqs: entry.opts?.sourceEventSeqs,
     }));
-    session.append('plugin:plastic-memories/commit', {
+    appendPrivateRecord(session, 'plugin:plastic-memories/commit', {
       callId: planned[0]?.declaration?.callId,
       from: seqOf(0),
       to: seqOf(plan.length - 1),
@@ -892,12 +892,18 @@ function applyDeclarations(session, declarations, open, state, options = {}) {
     });
     for (let index = 0; index < plan.length; index += 1) {
       const entry = plan[index];
+      // 插件私有事件必须走 appendPluginRecord（envelope 带 ignorable），
+      // 否则不认这个类型的宿主会拒绝加载整份日志。
+      if (String(entry.type).startsWith('plugin:')) {
+        appendPrivateRecord(session, entry.type, resolveData(entry));
+        continue;
+      }
       session.append(entry.type, resolveData(entry), entry.opts);
     }
     // 整批写完才写 commit checkpoint：它表示「这之前的 WAL commit 不必再校验」。
     // 若在写完数据前崩溃，最后一条标记仍是 commit，下次 flush 会校验它。
     try {
-      session.append('plugin:plastic-memories/commit-checkpoint', { upTo: session.seq });
+      appendPrivateRecord(session, 'plugin:plastic-memories/commit-checkpoint', { upTo: session.seq });
     } catch { /* 忽略持久化失败 */ }
   }
   return { explicit, auto, applied: planned.length, failed };
@@ -978,7 +984,7 @@ function reportDamage(session, logger, result) {
   DAMAGED.set(session, seen);
   logger?.error?.('[pm-h0] 日志损坏：' + String(result.reason) + '（commit seq ' + String(result.commit?.seq ?? '?') + '）');
   try {
-    session.append('plugin:plastic-memories/damaged', {
+    appendPrivateRecord(session, 'plugin:plastic-memories/damaged', {
       commitSeq: result.commit?.seq,
       reason: result.reason,
     });
@@ -1057,7 +1063,7 @@ export function flush(session, options, logger) {
       // 其它原因（越界 / 重叠 / 找不到承载消息）说明工具层与边界不一致，属于插件 bug。
       const kind = /safety zone/u.test(reason) ? 'safety-zone' : 'internal';
       try {
-        session.append('plugin:plastic-memories/reject', { callId: declaration.callId, message: reason, kind });
+        appendPrivateRecord(session, 'plugin:plastic-memories/reject', { callId: declaration.callId, message: reason, kind });
         appendRejectNotice(session, open, declaration.callId, reason, kind);
       } catch { /* 记录失败不影响主流程 */ }
       const key = 'd:' + declaration.callId;
@@ -1071,7 +1077,7 @@ export function flush(session, options, logger) {
     applied = 0;
     for (const declaration of todo) {
       try {
-        session.append('plugin:plastic-memories/reject', { callId: declaration.callId, message: String(error?.message ?? error) });
+        appendPrivateRecord(session, 'plugin:plastic-memories/reject', { callId: declaration.callId, message: String(error?.message ?? error) });
       } catch { /* 记录失败不影响主流程 */ }
       const key = 'd:' + declaration.callId;
       if (state.warned.has(key)) continue;

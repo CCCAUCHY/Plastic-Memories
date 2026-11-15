@@ -5,7 +5,7 @@
  * 两边都不经过 DSH 的消息推导：只比「写了哪几段、替换成什么」。
  */
 import { makeCounter, makeStore, cookieSeed, openStep, plasticizeCall } from './testkit.mjs';
-import { flush, lockedSeqs, appendSafetyRecord } from './engine.js';
+import { flush, lockedSeqs, appendSafetyRecord, installPrivateRecordAppender } from './engine.js';
 import { specExecute, diffEvents, unitsOf } from './pmspec.mjs';
 import { cutoffForCall } from './messages.js';
 import { findOverlap, subtractSeqs } from './overlap.js';
@@ -154,6 +154,18 @@ console.log(NL + '③e 重叠与扣减');
   const segments = subtractSeqs([10, 11, 12, 13, 14], new Set([12]));
   ok(JSON.stringify(segments) === JSON.stringify([[10, 11], [13, 14]]), '扣减后按连续段拆分', JSON.stringify(segments));
   ok(JSON.stringify(subtractSeqs([1, 2, 3], new Set([1, 2, 3]))) === '[]', '全部被扣掉时返回空');
+}
+
+console.log(NL + '③f 私有事件必须带 ignorable');
+{
+  const host = await import('/var/data/.npm/_npx/1e7f6d9597241db0/node_modules/@deepseek-ai/dsh-session/lib/index.js');
+  installPrivateRecordAppender(host.appendPluginRecord);
+  const session = fresh('spec-ignorable');
+  plasticizeCall(session, { turn: 2, step: 1 }, 'ig-x', { ops: [{ positions: 'unit 2', new_text: '⟨IG⟩' }] });
+  flush(session, { openStep: { turn: 2, step: 1 } }, quiet);
+  const records = session.snapshotEvents().filter((event) => String(event.type).startsWith('plugin:plastic-memories/'));
+  ok(records.length >= 3, '写出了 commit / logical / checkpoint', String(records.length));
+  ok(records.every((event) => event.ignorable === true), '全部带 ignorable 标记（否则宿主拒绝加载日志）', records.map((e) => e.type.split('/')[1] + ':' + String(e.ignorable)).join(' '));
 }
 
 console.log(NL + '④ 随机差分（40 例：普通 / this / 两条 op / 安全区）');
