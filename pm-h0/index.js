@@ -22,7 +22,6 @@ import { resolveUnitOps } from './unitops.js';
 import { normalizeSelector } from './opshape.js';
 import { isThisSelector } from './units.js';
 import { retrospect } from './retrospect.js';
-import { retrospectMessages } from './messages.js';
 import { replayCompactedSafety } from './safetyreplay.js';
 import { openSetProfile } from './grouping.js';
 import { compileArgsValidator, ToolArgsError } from './schema.js';

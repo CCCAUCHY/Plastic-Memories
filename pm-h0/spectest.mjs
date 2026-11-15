@@ -39,13 +39,10 @@ function runCase(name, ops, options = {}) {
       locks = lockedSeqs(session);
     }
   }
-  if (Array.isArray(options.setOps)) {
-    plasticizeCall(session, { turn: 2, step: 1 }, name + '-set', { ops: options.setOps, option: 'set' });
-  }
   const callId = name + '-call';
   plasticizeCall(session, { turn: 2, step: 1 }, callId, { ops, option: 'execute' });
   const thisSeq = cutoffForCall(session, callId);
-  const spec = specExecute(nodesOf(session), ops, { locks, thisSeq, pendingOps: options.setOps });
+  const spec = specExecute(nodesOf(session), ops, { locks, thisSeq });
   const flushed = flush(session, { openStep: { turn: 2, step: 1 } }, quiet);
   const actual = session.snapshotEvents().filter((event) => event.surfaceOp?.op === 'replace');
   const diffs = diffEvents(spec, actual);
@@ -110,22 +107,6 @@ console.log(NL + '③b 安全区');
   ok(session.snapshotEvents().some((event) => event.type === 'plugin:plastic-memories/reject'), '并留下 reject 记录');
 }
 
-console.log(NL + '⑤ 宏重放：规格展开 == 实际')
-{
-  const session = fresh('spec-replay');
-  const setOps = [{ positions: 'unit 2', new_text: '⟨REPLAY⟩' }];
-  plasticizeCall(session, { turn: 2, step: 1 }, 'rp-set', { ops: setOps, option: 'set' });
-  plasticizeCall(session, { turn: 2, step: 1 }, 'rp-exec', { ops: [{ 'the last plasticize(set)': true }], option: 'execute' });
-  const nodes = nodesOf(session);
-  const spec = specExecute(nodes, [{ 'the last plasticize(set)': true }], { pendingOps: setOps });
-  const flushed = flush(session, { openStep: { turn: 2, step: 1 } }, quiet);
-  const actual = session.snapshotEvents().filter((event) => event.surfaceOp?.op === 'replace');
-  const diffs = diffEvents(spec, actual);
-  ok(flushed.applied >= 1, '重放落地', JSON.stringify(flushed));
-  ok(diffs.length === 0, '重放事件与规格一致', JSON.stringify(diffs).slice(0, 240));
-  ok((textOf(session).match(/⟨REPLAY⟩/g) ?? []).length === 1, '替代文本只出现一次');
-}
-
 console.log(NL + '③c 日志损坏检测');
 {
   const session = fresh('spec-damage');
@@ -175,7 +156,7 @@ console.log(NL + '③e 重叠与扣减');
   ok(JSON.stringify(subtractSeqs([1, 2, 3], new Set([1, 2, 3]))) === '[]', '全部被扣掉时返回空');
 }
 
-console.log(NL + '④ 随机差分（40 例：普通 / this / 宏重放 / 安全区）');
+console.log(NL + '④ 随机差分（40 例：普通 / this / 两条 op / 安全区）');
 function rng(seed) {
   let state = seed >>> 0;
   return () => {
@@ -205,8 +186,11 @@ for (let index = 0; index < CASES; index += 1) {
     ops = [{ positions: 'this', new_text: random() < 0.5 ? '' : '⟨T' + String(index) + '⟩' }];
   } else if (scenario === 2) {
     const a = pickUnit();
-    options = { setOps: [{ positions: 'unit ' + String(a), new_text: '⟨M' + String(index) + '⟩' }] };
-    ops = [{ 'the last plasticize(set)': true }];
+    const b = Math.min(total - 2, a + 4);
+    ops = [
+      { positions: 'unit ' + String(a), new_text: '⟨M' + String(index) + '⟩' },
+      ...(b > a + 1 ? [{ positions: 'unit ' + String(b), new_text: '' }] : []),
+    ];
   } else {
     const a = pickUnit();
     options = { lockUnit: a };

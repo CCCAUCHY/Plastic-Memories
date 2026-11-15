@@ -131,7 +131,7 @@ export function verifyPmSemantics(events) {
       if (applied.has(declaration.callId)) fail('rejected declaration ' + declaration.callId + ' was applied');
       continue;
     }
-    if (declaration.option === 'execute' && !applied.has(declaration.callId)) fail('successful execute ' + declaration.callId + ' has no explicit replacement');
+    if (!applied.has(declaration.callId)) fail('execute ' + declaration.callId + ' has no explicit replacement');
   }
 
   // 逻辑私有事件：连续编号，物理页 = 该批第一条 PM replace 的 generation。

@@ -14,7 +14,6 @@ import { SURFACE_TYPES, derivedMessage, messageText } from './coords.js';
 import { logicalGenerations } from './engine.js';
 import { logicalBoundaries } from './boundaries.js';
 import { rowsAt, cutoffForCall, windowRows } from './messages.js';
-import { renderPreview } from './preview.js';
 
 /** 事件类型到角色名的兜底映射（正常消息直接读 message.role）。 */
 const ROLE_BY_TYPE = Object.freeze({
