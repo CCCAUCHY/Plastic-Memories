@@ -237,6 +237,7 @@ function tool(spec) {
         additionalProperties: false,
         properties: { text: { type: 'string' } },
         required: ['text'],
+        additionalProperties: false,
       },
       render: (_args, value) => [{ type: 'text', text: String(value.text) }],
     },
@@ -484,6 +485,7 @@ export function apply(ctx, config) {
         '返回 { logical, units, messages?, letters? }：logical 是这一代编号；units 是这一代一共多少个单元；messages 每行是 { unit, role, text }，role 取 system / user / assistant / developer（工具结果与它的 assistant 同角色），assistant 行可能带 calls（工具名列表），当前世代且被锁定的行会带 locked；letters 是该世代的便条，每张 { index, text, time }。',
         'messages_position / letters_position 只取命中单元的部分，写 none 表示不要这一部分。head / tail 用来裁 text：保留开头 head 与结尾 tail 个字符，中间省略。',
         '历史世代返回它冻结前模型最后一次收到的输入；某个世代隐藏掉的内容属于上一代，要看得读上一代。',
+        '结果过大时可能被宿主截断（约 6000 字符），届时 JSON 不完整；请用 messages_position / head / tail 把结果压到需要的范围。',
       ].join(String.fromCharCode(10) + String.fromCharCode(10)),
       parameters: {
         type: 'object',
@@ -510,6 +512,7 @@ export function apply(ctx, config) {
           },
         },
         required: ['generation'],
+        additionalProperties: false,
       },
       execute(args, exec) {
         const session = sessionOf(exec);
@@ -550,6 +553,7 @@ export function apply(ctx, config) {
           text: { type: 'string', description: '便条内容，每次一张。' },
         },
         required: ['text'],
+        additionalProperties: false,
       },
       execute(args, exec) {
         sessionOf(exec);
