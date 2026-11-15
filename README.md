@@ -75,8 +75,6 @@ THEORY.zh.md      design theory (Chinese)
 
 - [Plugin README](pm-h0/README.md) — install, tools, write protocol, limits
 - [CONTRACT.md](pm-h0/CONTRACT.md) — selector grammar, tool/command contracts, invariants
-- [Copy review request](文案打磨-求助.md) — tool descriptions awaiting polish
-- [Mechanical test script](docs/PM-机械测试脚本.zh.md)
 
 ## Tests
 
