@@ -59,7 +59,6 @@ A write lands at the next submission boundary, not at call time; a rejected writ
 ```text
 pm-h0/            runtime source (index, engine, units, unitops, retrospect, …)
 dist/             built tarballs
-docs/             supporting documents and figures
 THEORY.md         design theory (English)
 THEORY.zh.md      design theory (Chinese)
 ```

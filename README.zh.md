@@ -59,7 +59,6 @@ plasticize({
 ```text
 pm-h0/            运行时源码（index、engine、units、unitops、retrospect …）
 dist/             构建产物
-docs/             辅助文档与图片
 THEORY.md         设计理论（英文）
 THEORY.zh.md      设计理论（中文）
 ```
