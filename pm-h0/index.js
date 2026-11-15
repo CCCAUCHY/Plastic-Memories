@@ -416,27 +416,28 @@ export function apply(ctx, config) {
     tool({
       name: 'plasticize',
       description: [
-        '重塑你自己过去的呈现。它会改写模型当前看到的上下文，并开启一个新的逻辑世代；会话日志不会被删除，被隐藏的消息之后仍可用 retrospect 读回。把它当成编辑上下文，不是草稿纸。',
-        '位置用 retrospect(self) 返回的单元号（0 起）；系统提示是 unit 0，它只能查看、不能被重塑。一条 assistant 消息连同它的全部工具结果算一个单元，工具结果不能单独选中。',
-        'ops 是操作数组：每个操作给出一个选择器与一条替代文本，选择器命中的整段会被替代文本取代，替代文本为空即隐藏；要改多段就写多个操作。',
-        '写入发生在下一个提交边界。一次程序（或一条消息）只能调用一次 plasticize。',
-        '安全区里的单元不能被重塑；命中安全区会失败并报出锁定范围，需要用户解锁。',
-        '成功写入之后，早于它的单元如果包含失败的 Plastic Memories 调用、成功的 letter 或 retrospect，会被自动隐藏；本次调用的回执保留。',
-        '如果整个 ops 只有 [{ positions: "this" }] 且替代文本为空，就只隐藏这次调用本身，效果等于没有调用。',
+        '重塑你自己过去的呈现。它会改写模型当前看到的上下文，并开启一个新的逻辑世代；会话日志不会被删除，被隐藏的消息之后仍可用 retrospect 读回。',
+        '位置用 retrospect 返回的 unit 号（0 起，系统提示是 unit 0）。一条 assistant 消息连同它的全部工具结果算一个单元，工具结果不能单独选中。选择器写法：unit 5、unit 5 to 9（闭区间）、this（承载本次调用的那个单元），或直接写数字。已被隐藏的单元不在当前上下文里，不能再被选中。',
+        'ops 是操作数组，每个元素是一条操作：一个选择器加一条替代文本。选择器命中的整段会被替代文本取代，替代文本为空即隐藏。要改多段就写多个操作；操作之间不能重叠。',
+        '写入发生在下一个提交边界，而不是调用当下。一次程序（或一条消息）只能调用一次 plasticize。若边界上发现表面已经变化（区间失效、命中安全区等），本次不会写入，改为留下一条说明。',
+        'lock_this 为 true 时，替代文本本身进入安全区，之后不可再被重塑。',
+        '安全区里的单元不能被重塑；命中安全区会在调用时直接失败并报出锁定范围，需要用户解锁。',
+        '成功写入之后，早于它的单元如果包含失败的 Plastic Memories 调用、成功的 letter 或成功的 retrospect，会被自动隐藏；本次调用的回执保留。',
+        '如果整个 ops 只有一条 [{ positions: "this" }] 且替代文本为空，就只隐藏这次调用本身，等于没有改任何东西。',
       ].join(String.fromCharCode(10) + String.fromCharCode(10)),
       parameters: {
         type: 'object',
         properties: {
           ops: {
             type: 'array',
-            description: '必填且非空。每个元素是一条操作：一个选择器 + 一条替代文本。',
+            description: '必填且非空。每个元素是一条操作：一个选择器加一条替代文本。',
             items: {
               type: 'object',
               additionalProperties: false,
               properties: {
                 positions: {
                   oneOf: [{ type: 'integer' }, { type: 'string' }],
-                  description: '这条操作的选择器，只能填一个：unit 3、unit 3 to 7、this，或数字。',
+                  description: '这条操作的选择器，只能填一个：unit 5、unit 5 to 9（闭区间）、this（承载本次调用的单元），或数字。命中的整段由 new_text 取代。',
                 },
                 new_text: { type: 'string', description: '替代文本；空表示隐藏。默认空。' },
                 lock_this: { type: 'boolean', description: 'true 时把替代文本本身放进安全区。默认 false。' },
@@ -475,10 +476,11 @@ export function apply(ctx, config) {
       name: 'retrospect',
       description: [
         '读取某个逻辑世代的上下文。只读，不修改任何东西。',
-        'generation 可以是绝对编号、self（当前世代）或 self - N。历史世代已经冻结；self 返回模型此刻看到的上下文。',
-        '成功的 execute 会冻结当前世代并返回它的编号，之后的推理属于下一代，所以刚冻结的世代可以立刻用 self - 1 读到。',
-        '返回 { logical, units, messages?, letters? }。units 始终是当前世代的总单元数；messages 每行是 { unit, role, text }，role 取 system/user/assistant/developer。messages_position / letters_position 可以只取某段单元、或写 none 表示不要；head=N / tail=M 时每条 text 保留开头 N 与结尾 M 个字符。',
-        '历史世代返回它冻结前模型最后一次收到的输入。某个世代隐藏掉的内容属于上一代，要看得读上一代。',
+        'generation 可以是绝对编号、self（当前世代）、或 self - N（例如 self - 1）。历史世代已经冻结；self 读的是本次调用之前的上下文。',
+        '成功的 plasticize 写入会冻结当前世代并推进一代，所以刚写完的那一代可以立刻用 self - 1 读到。',
+        '返回 { logical, units, messages?, letters? }：logical 是这一代编号；units 是这一代一共多少个单元；messages 每行是 { unit, role, text }，role 取 system / user / assistant / developer（工具结果与它的 assistant 同角色），assistant 行可能带 calls（工具名列表），当前世代且被锁定的行会带 locked；letters 是该世代的便条，每张 { index, text, time }。',
+        'messages_position / letters_position 只取命中单元的部分，写 none 表示不要这一部分。head / tail 用来裁 text：保留开头 head 与结尾 tail 个字符，中间省略。',
+        '历史世代返回它冻结前模型最后一次收到的输入；某个世代隐藏掉的内容属于上一代，要看得读上一代。',
       ].join(String.fromCharCode(10) + String.fromCharCode(10)),
       parameters: {
         type: 'object',
@@ -536,8 +538,8 @@ export function apply(ctx, config) {
     tool({
       name: 'letter',
       description: [
-        '给未来世代留一张便条。便条不会留在上下文里：成功调用后，这个单元会在下一次成功 execute 时被自动隐藏，之后只能用 retrospect 读回。',
-        '每次调用一张纯文本。它不写上下文、不产生世代。需要影响未来世代的内容，应该写进塑形操作本身，而不是便条里。',
+        '给未来世代留一张便条。便条不会留在当前上下文里：成功调用后，它所在的单元会在下一次成功写入时被自动隐藏，之后只能用 retrospect 的 letters 读回。',
+        '每次调用一张纯文本；它不写上下文、不产生世代。需要影响未来世代的内容，应该写进塑形操作本身，而不是便条里。',
       ].join(String.fromCharCode(10) + String.fromCharCode(10)),
       parameters: {
         type: 'object',

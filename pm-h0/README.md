@@ -1,16 +1,15 @@
 # dsh-plugin-plastic-memories-h0
 
-> **v0.50.81 通用版（任何 preset）**
+> **v0.50.82 通用版（任何 preset）**
 >
-> Plastic Memories 把 DSH 的 surfaceOp 从“压缩插件专用”变成模型可主动使用的可塑投影。
-> 底层 trajectory 不删除；插件只改当前模型上下文里的 surface。
+> 让模型主动编辑自己「过去」的呈现：改写当前上下文里的一段，但会话日志一条不删。
 
-## 版本边界
+## 它做什么
 
-- v0.50.81 起是**通用工具**，不要求 PM preset；
-- 只支持 **PTC**：`retrospect(self)` 的单元定位依赖 `run_code` 代码过滤；
-- 生产 cookie 注入已移除；
-- 旧 PM preset / cookie 语义在 git 分支 `old`（fe676aa）中保留。
+- **只改呈现，不删记录。** 被隐藏的消息仍在会话日志里，之后可以用 `retrospect` 读回；
+- **每次成功写入推进一个逻辑世代**，历史世代可按编号读回；
+- **安全区**：用户可以锁定某些单元，模型改不动，命中即报错；
+- **自动隐藏**：成功写入后，早先的噪音单元（失败的调用、成功的 letter / retrospect）自动收起。
 
 ## 三层
 
@@ -22,119 +21,98 @@ Context     Surface 在模型输入里的具体形态（deriveMessages）
 
 ## 世代与单元
 
-- 逻辑世代 0 起；
-- 每个成功 execute / 用户投影 = 一个边界；
-- 每个成功的压缩 checkpoint = 一个边界（自动、手动都算）；
-- 0 是系统提示词；
-- 一个单元 = assistant 消息 + 它的一条工具结果（可含多个工具结果）；
-- 工具结果不单独编号；
-- 世代选项卡显示 `#n`，与 retrospect 单元序号一致。
-
-压缩后逻辑边界：
-
-```text
-N = L + 1 + M
-L = 上一个私有事件逻辑号（没有则 -1）
-M = L 与 N 之间成功压缩 checkpoint 数
-```
+- 逻辑世代从 0 起，每次成功写入加一；每次成功的压缩 checkpoint 也算一个边界；
+- unit 0 是系统提示词；
+- 一个单元 = 一条 assistant 消息 + 它的全部工具结果；工具结果不单独编号；
+- 世代页签上的 `#n` 与 `retrospect` 返回的 `unit` 一致。
 
 ## 工具
 
-### `retrospect`
+### plasticize
+
+```js
+plasticize({
+  ops: [
+    { positions: "unit 3", new_text: "..." },
+    { positions: "unit 5 to 7" }              // 空文本 = 隐藏
+  ]
+})
+```
+
+- `positions` 是**单值**：`unit 3` / `unit 3 to 7`（闭区间）/ `this`（承载本次调用的单元）/ 数字；
+- 一条 op = 一个选择器 + 一条替代文本，对应一次替换；要改多段就写多条 op，且不得重叠；
+- 写入发生在**下一个提交边界**，不是调用当下；边界上失败会留下说明，不会静默失败；
+- 一次程序（或一条消息）只能调用一次 plasticize；
+- `lock_this: true` 把替代文本本身放进安全区；
+- `unit 0`（系统提示）只读。
+
+### retrospect
 
 ```js
 retrospect({ generation: "self" })
+retrospect({ generation: "self - 1", messages_position: "unit 5", head: 200, tail: 80 })
 ```
 
-返回当前世代单元数组：
+返回：
 
 ```json
 {
   "logical": 3,
-  "count": 42,
-  "preview": true,
-  "units": [
-    { "n": 0, "type": "system", "safety": false, "text": "..." },
-    { "n": 1, "type": "user", "safety": false, "text": "..." }
-  ]
+  "units": 42,                                  // 这一代的总单元数
+  "messages": [{ "unit": 5, "role": "user", "text": "..." }],
+  "letters": [{ "index": 7, "text": "...", "time": 0 }]    // 有便条时才有
 }
 ```
 
-- 默认 `preview:true`，只裁剪文本；
-- `type`：`system` / `user` / `assistant` / `agent` / `skill` / `other`；
-- `agent` = AGENTS.md 自动注入；
-- `skill` = 技能目录或技能工具；
-- `other` = 其他低频自动注入；
-- 单元带 `locked`（仅当前世代；历史世代不返回安全区）。
+- 行字段：`unit` / `role`（system、user、assistant、developer；工具结果与它的 assistant 同角色）/ `text`；assistant 行可能带 `calls`，当前世代被锁定的行带 `locked`；
+- `messages_position` / `letters_position`：只取命中单元的部分，写 `none` 表示不要这一部分；
+- `head` / `tail`：每条 `text` 保留开头 N 与结尾 M 个字符（超长才裁）；
+- `self` 读的是**本次调用之前**的上下文；历史世代读的是它冻结前模型最后一次收到的输入。
 
-### `plasticize`
+### letter
 
 ```js
-plasticize({
-  ops: [{ positions: ["unit 3", "unit 4"], new_text: "..." }],
-  option: "execute"
-})
+letter({ text: "给未来世代的一句话" })
 ```
 
-- `positions`：当前世代单元序号，写 `"unit 3"` 或区间 `"unit 3 to 7"`，`"this"` 指本次调用所在单元；
-  每个元素只选一个单元（`["unit 3", "unit 4"]` 是两个单元，不是区间）；
-- 每个选中单元整体命中（assistant + tool result）；
-- 前面的段隐藏，`new_text` 落在最后一段；
-- `this` 自噬：替换生成这次 execute 的单元，可用于隐藏自身；
-- `option:"set"` 只预览，`execute` 在提交边界落地；
-- 自动隐藏：所有 set、报错 PM 工具、letter、retrospect；execute 不自动隐藏。
-- 结果窗口：`option:"set"` 时可以再传 `preview_positions`（同一套单元语法，但与 `ops[].positions` 是两个东西），预览只列这些单元；结果显示 “showing units ... of N”。execute 忽略该参数。
-- `retrospect` 对应的是 `result_positions`；
-- 目的：非 PTC 模式拿不到 run_code 过滤，只能靠参数主动把工具结果压小；工具本身是全局注册的，任何 preset 都能用。
+- 便条不留在当前上下文：成功调用后，该单元会在下一次成功写入时被自动隐藏，之后只能用 `retrospect` 的 `letters` 读回；
+- 不写上下文、不产生世代。
 
-### `letter`
-
-给未来世代的便签；自动隐藏该调用单元。
-
-## 安全区
-
-- 单位是单元序号；命令里选择器与替代文本用冒号分隔（`unit 17: 文本`），否则替代文本以 `to` 开头会被当成区间；
-- 最多 64 单元；
-- 用户命令：
+## 用户命令
 
 ```text
 /plasticize unit 17: 新的替代文本
 /plasticize unit 17 to 28: 折叠成一段摘要
+/plasticize hide unit 3
 /plasticize lock unit 3 to 7
 /plasticize unlock all
+/plasticize prelock
+/plasticize clear
 ```
 
-- `lock all` 已取消；`unlock all` 可解除当前世代全部安全锁；
-- autoRefresh 类型（runtime-context、agent-instructions、skill-catalog）不可锁；
-- plasticize 命中安全区报错；自动隐藏遇到锁定单元跳过；
-- 压缩后只重放被压缩的锁定消息，按原顺序；
-- DSH surfaceOp 没有 insert，重放追加在 surface 末尾；
-- 引言使用位置无关措辞：
+- 选择器与替代文本用冒号分隔；命令里不能用 `this`（它指模型本次调用所在的单元）；
+- 最多锁定 64 个单元；自动注入的消息（runtime-context / agent-instructions / skill-catalog）不可锁定；
+- 命令产生的操作与工具走同一套解析，同样在提交边界落盘。
+
+## 写入协议（WAL）
 
 ```text
-A condensed summary appears earlier in this context. Below is verbatim content from a subset of the messages it covers:
+1. plugin:plastic-memories/commit { callId, from, to, count, hash }   ← 先落盘
+2. 数据事件（替换、安全区锁、自动隐藏、世代边界）
+3. plugin:plastic-memories/commit-checkpoint { upTo }                 ← 整批写完才落盘
 ```
 
-```text
-End of verbatim content from the summarized messages.
-```
-
-## 压缩兼容
-
-- 自动、手动压缩都产生逻辑世代；
-- 旧页末尾的压缩事件是 UI 展示，不是模型消息；
-- 新页第一条非 system 消息是 checkpoint 摘要；
-- AGENTS / skill catalog / runtime-context 依赖 DSH 自身刷新，不设隐式安全区。
+- 每次 flush 回溯最后一条标记：遇到 commit 就重算哈希比对，遇到 commit-checkpoint 就跳过；
+- 哈希不符或事件缺失 → 记录 `damaged` 并给模型一条提示（不阻止后续写入）；
+- 回溯上限 2000 条事件，扫不到标记按「太旧、不查」处理。
 
 ## 安装
 
-标准 bundle 安装：
-
 ```bash
-dsh plugin --profile web2 add file:/绝对路径/可塑性记忆/dist/dsh-plugin-plastic-memories-h0-0.50.81.tgz
+dsh plugin --profile web2 add file:/绝对路径/可塑性记忆/dist/dsh-plugin-plastic-memories-h0-0.50.82.tgz
 ```
 
-开发 stage：
+开发用 stage：
 
 ```bash
 ./install-pm.sh stage
@@ -146,29 +124,13 @@ dsh plugin --profile web2 add link:/var/data/dsh-workspace-Flatpak/可塑性记�
 ## 测试
 
 ```bash
-npm test
+npm test        # 12 套 / 252 条
+node uitest.mjs # UI 103 条
 ```
-
-当前 **14 套 / 269 条**：
-
-- selftest 61
-- integration 25
-- unitest 17
-- globaltest 5
-- ptctest 43
-- multicall 20
-- balanced 19
-- persist 16
-- zeroanchor 21
-- groupingtest 13
-- diffcheck 4
-- contexttest 4
-- verifytest 5
-- versioncheck 15
 
 ## 已知限制
 
-1. 安全区重放无法严格插在摘要和 retained tail 之间（DSH 无 insert）；
-2. 旧世代页末尾“已压缩”事件行仍未单独渲染；
-3. 旧 cookie / hooks / atomicity 测试属于 old 分支语义，不在新测试链；
-4. 实际 web2 冷启动后的运行时工具挂载尚未验证（bundle config 已确认）。
+1. DSH 的 surfaceOp 没有 delete：隐藏只能表示为一个「推导为空」的 developer 节点，节点本身仍占 seq；
+2. 安全区重放无法插在摘要与保留段之间（DSH 无 insert），只能追加在末尾；
+3. 批量写入不是原子的：崩溃可能留下半批，靠 WAL commit 校验发现，无法自动修复（DSH 无截断 API）；
+4. 旧 PM preset / cookie 语义仅保留在 git 分支 old（fe676aa）。

@@ -237,14 +237,16 @@ parsePlasticizeCommand("<selector>: <text>")
 |---|---|---|
 | A 选择器 | `unit 17` / `unit 17 to 28` / `17` / `unit 17:` | 解析出正确单元集合 |
 | A 选择器 | `[17,28]` / `(17,20)` / `unit 20 to 17` | 报错 |
-| B plasticize | `ops: []` | 报错（必填非空） |
-| B plasticize | op 带 spans、未知字段、空 positions | 报错 |
-| B plasticize | `types` 非法枚举 | 报错 |
-| B plasticize | 命中安全区 | 报错 |
-| C retrospect | `self` / `"self - 1"` / `0` | 结构与计数正确 |
+| B plasticize | `ops: []` / 缺 ops / ops 非数组 | 报错 |
+| B plasticize | 未知字段、空 positions、数组 positions | 报错 |
+| B plasticize | 命中安全区 / 系统提示 / 越界 | 报错 |
+| B plasticize | 正常 ops | 登记成功并回执逻辑世代 |
+| C retrospect | `self` / `"self - 1"` / `0` | 返回 { logical, units, messages? } |
 | C retrospect | 未来世代 / 越界 | 报错 |
-| C retrospect | `result_positions: ["this"]` | 报错 |
-| C retrospect | `result_positions` 越界 | 报错 |
+| C retrospect | `messages_position: "this"` | 报错 |
+| C retrospect | `messages_position: "none"` | 不返回 messages |
+| C retrospect | `letters_position: "none"` | 不返回 letters |
+| C retrospect | `head` / `tail` | 文本按字符数裁剪 |
 | C retrospect | 历史世代 | 不含 `locked` |
 | D letter | `{text}` | `Registered.` |
 | E 命令 | 上表每种写法 | 返回正确的 kind/mode/positions/newText |
