@@ -4,7 +4,7 @@
 import { makeStore, makeCounter, cookieSeed, openStep, plasticizeCall } from './testkit.mjs';
 import { flush, lockedSeqs, appendSafetyRecord } from './engine.js';
 import { currentUnits, renderUnitPreview } from './units.js';
-import { retrospectMessages } from './messages.js';
+import { retrospect } from './retrospect.js';
 import { replayCompactedSafety } from './safetyreplay.js';
 import { initState, applyEvent, viewOf } from './generations.js';
 
@@ -21,9 +21,9 @@ ok(toolUnit !== undefined, '存在 assistant+tool result 单元');
 ok(toolUnit !== undefined && toolUnit.seqs.length >= 2 && toolUnit.results.length >= 1, '工具结果并入同一单元');
 ok(toolUnit !== undefined && !units.some((unit) => unit.seqs.includes(toolUnit.results[0].seq) && unit.n !== toolUnit.n), '工具结果没有独立单元');
 
-const data = retrospectMessages(s, true);
-ok(data.preview === true && Array.isArray(data.messages) && data.messages.length === units.reduce((n, unit) => n + unit.seqs.filter((seq) => !(unit.type === 'developer' && unit.text === '')).length, 0) || true, 'retrospect preview 返回行数组');
-ok(data.messages[1].n === 1 && data.messages[1].unit === 1 && data.messages[1].locked === undefined, '行带 n/unit，未锁定');
+const data = JSON.parse(retrospect(s, { generation: 'self' }));
+ok(Array.isArray(data.messages) && data.messages.length > 0 && data.messages.every((row) => typeof row.unit === 'number' && typeof row.role === 'string'), 'retrospect 返回单元行');
+ok(data.messages[1].unit === 1 && data.messages[1].locked === undefined, '行带 unit，未锁定');
 
 const before = currentUnits(s);
 openStep(s, 99, 1);
@@ -60,7 +60,7 @@ const locks = lockedSeqs(ps);
 const target = currentUnits(ps, { locks })[1];
 const targetUnit = target.n;
 appendSafetyRecord(ps, { op: 'lock', seqs: [target.seq], comment: 'test' });
-const safetyData = retrospectMessages(ps, true);
+const safetyData = JSON.parse(retrospect(ps, { generation: 'self' }));
 ok(safetyData.messages.some((message) => message.unit === targetUnit && message.locked === true), 'retrospect 标出安全区单元');
 
 // 自动隐藏：retrospect 单元被下一次 execute 清掉
@@ -80,7 +80,7 @@ const lbs = lbctx.sessions.create('unitest-boundary', { seed: cookieSeed('subage
 openStep(lbs, 96, 1);
 plasticizeCall(lbs, { turn: 96, step: 1 }, 'exec-b', { ops: [{ positions: 1, new_text: 'B' }], option: 'execute' });
 flush(lbs, { openStep: { turn: 96, step: 1 } }, quiet);
-const bdata = retrospectMessages(lbs, true);
+const bdata = JSON.parse(retrospect(lbs, { generation: 'self' }));
 ok(bdata.logical === 1, 'execute 后 self=1', String(bdata.logical));
 
 // 压缩后安全区重放（追加到尾部；surfaceOp 无 insert）

@@ -25,48 +25,10 @@ export function rowsAt(session, cut, options = {}) {
 }
 
 /**
- * 当前上下文的 Message[] 视图。
- * @param {object} session
- * @param {boolean} [preview] - true 时裁剪 text。
- * @param {string|number} [selectors] - 单值选择器；只返回这个选择器命中的单元行。
- */
-export function retrospectMessages(session, preview = false, selectors = undefined, callId = undefined) {
-  // self = 「本次调用的 assistant 消息之前」的日志前缀折叠，与历史世代同一条规则。
-  const { window } = rowsAt(session, cutoffForCall(session, callId), { selectors });
-  const logical = logicalGenerations(session).total;
-  const messages = window.rows.map((row) => {
-    const { id, ...rest } = row;
-    return rest;
-  });
-  const body = preview
-    ? messages.map((message) => ({
-      ...message,
-      text: message.text.length <= 240 ? message.text : message.text.slice(0, 180) + '……' + message.text.slice(-40),
-    }))
-    : messages;
-  const head = {
-    logical,
-    count: body.length,
-    ...(selectors === undefined ? {} : { total: window.total, units: window.selected }),
-    ...(preview ? { preview: true } : {}),
-  };
-  return { ...head, messages: body };
-}
-
-/**
- * 当前这次请求真正提交给模型的输入：排除最新 assistant 输出。
- * 工具执行时当前 assistant（含本次 tool call）已经在 surface 上，但它不是输入。
- * @param {object} session
- * @returns {Array<object>} DSH Message[]
- */
-
-/** 本次请求输入的截止 seq：最新 assistant 之前。 */
-/**
  * 承载某次工具调用的 assistant 消息 seq（不含）。
  *
- * 锚定**这一次调用**，而不是「最后一条 assistant 消息」。
- * 提交边界刚写过替代节点时，替代节点的 seq 会比最后一条 assistant 消息大；
- * 用 seq 截止会连带裁掉这些节点。
+ * 与「最后一条 assistant」不同：这里锚定**这一次调用**，
+ * 提交边界写下的替代节点 seq 会更大，用「最后一条 assistant」会连带裁掉它们。
  *
  * @param {object} session - 目标会话。
  * @param {string} [callId] - 本次调用的 id。
@@ -82,14 +44,6 @@ export function cutoffForCall(session, callId) {
   return undefined;
 }
 
-
-/**
- * 消息 + 它来自的日志 seq（顺序就是 DSH surface 顺序）。
- * 有 seq 才能做安全区标记；deriveMessages() 只给内容不给 seq。
- * @param {object} session
- * @param {number} [before] - 只取 seq < before 的事件。
- * @returns {Array<{seq: number, message: object}>}
- */
 export function messagesWithSeqs(session, before) {
   let view = session;
   if (Number.isSafeInteger(before)) {

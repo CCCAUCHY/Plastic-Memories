@@ -156,7 +156,7 @@ retrospect 走「折叠日志前缀 → DSH 推导消息」，只有切点不同
 | 字段 | 类型 | 默认 | 语义 |
 |---|---|---|---|
 | `generation` | integer \| string | 必需 | 绝对世代号、`"self"`、`"self - N"` |
-| `preview` | boolean | false | true 时裁剪每条 text（不体现在返回里） |
+| `clip` | integer | — | 每条 text 前后各留 N 个字符（超长才裁） |
 | `messages_position` | 单个选择器 \| `none` | — | 只返回命中的单元行；`none` 表示不要 messages；`this` 被拒绝 |
 | `letters_position` | 单个选择器 \| `none` | — | 只返回落在这些单元里的 letters；`none` 表示不要 letters |
 

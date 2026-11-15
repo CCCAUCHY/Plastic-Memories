@@ -78,7 +78,7 @@ export function retrospect(session, args) {
   const value = args?.generation;
   if (value === undefined) throw new Error('retrospect requires generation (a logical generation number, "self", or "self - N")');
   return retrospectGeneration(session, value, {
-    preview: args?.preview === true,
+    clip: args?.clip,
     messagesPosition: args?.messagesPosition,
     lettersPosition: args?.lettersPosition,
     callId: args?.callId,
@@ -109,7 +109,7 @@ function executeResultSeq(events, callId) {
 }
 
 export function retrospectGeneration(session, generation, options = {}) {
-  const preview = options.preview === true;
+  const clip = Number.isSafeInteger(options.clip) && options.clip > 0 ? options.clip : 0;
   const messagesPosition = options.messagesPosition;
   const lettersPosition = options.lettersPosition;
   const callId = options.callId;
@@ -159,7 +159,7 @@ export function retrospectGeneration(session, generation, options = {}) {
         unit: row.unit,
         // tool 结果与它的 assistant 同属一个单元，按 assistant 标注即可。
         role: row.role === 'tool' ? 'assistant' : row.role,
-        text: preview ? clipText(row.text) : row.text,
+        text: clip > 0 ? clipText(row.text, clip) : row.text,
       };
       if (row.calls !== undefined) shaped.calls = row.calls;
       if (row.locked === true) shaped.locked = true;
@@ -170,10 +170,11 @@ export function retrospectGeneration(session, generation, options = {}) {
   return JSON.stringify(out);
 }
 
-/** preview 模式的文本裁剪：前 180 + 后 40。 */
-function clipText(text) {
+/** 文本裁剪：前后各留 n 个字符。 */
+function clipText(text, n) {
   const value = String(text ?? '');
-  return value.length <= 240 ? value : value.slice(0, 180) + '……' + value.slice(-40);
+  if (value.length <= n * 2) return value;
+  return value.slice(0, n) + '……' + value.slice(-n);
 }
 
 /** 取某个逻辑世代生命周期内输入的全部 letter（按调用顺序，附消息序号）。 */
