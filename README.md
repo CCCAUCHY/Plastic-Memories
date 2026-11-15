@@ -77,14 +77,6 @@ THEORY.zh.md      design theory (Chinese)
 - [CONTRACT.md](pm-h0/CONTRACT.md) — selector grammar, tool/command contracts, invariants
 - [Changelog](pm-h0/CHANGELOG.md)
 
-## Tests
-
-```bash
-cd pm-h0
-npm test          # 12 suites, 256 assertions
-node uitest.mjs   # 103 UI assertions
-```
-
 ## License
 
 MIT — see [LICENSE](LICENSE).
