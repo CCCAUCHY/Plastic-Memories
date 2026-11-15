@@ -76,6 +76,20 @@ THEORY.zh.md      design theory (Chinese)
 - [CONTRACT.md](pm-h0/CONTRACT.md) — selector grammar, tool/command contracts, invariants
 - [Changelog](pm-h0/CHANGELOG.md)
 
+## Tests
+
+```bash
+cd pm-h0
+npm test          # 12 suites, 256 assertions
+node uitest.mjs   # 103 UI assertions
+```
+
+The suites need a DSH checkout for the host runtime packages (cordis, dsh-session, dsh-tools). If the default path does not apply, point `DSH_CHECKOUT` at one:
+
+```bash
+DSH_CHECKOUT=/path/to/dsh npm test
+```
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

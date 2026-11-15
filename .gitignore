@@ -10,7 +10,6 @@ node_modules/
 staged/
 .work/
 # real session logs & exports (privacy)
-pm-h0/fixtures/
 会话日志原件/
 交接日志/
 *.zip

@@ -76,6 +76,20 @@ THEORY.zh.md      设计理论（中文）
 - [CONTRACT.md](pm-h0/CONTRACT.md)——选择器语法、工具/命令契约、不变式
 - [更新日志](pm-h0/CHANGELOG.md)
 
+## 测试
+
+```bash
+cd pm-h0
+npm test          # 12 套 / 256 条
+node uitest.mjs   # 103 条 UI 断言
+```
+
+测试需要一份 DSH 检出（用到 cordis / dsh-session / dsh-tools 等宿主包）。默认路径不适用时用 `DSH_CHECKOUT` 指定：
+
+```bash
+DSH_CHECKOUT=/path/to/dsh npm test
+```
+
 ## 许可
 
 MIT，见 [LICENSE](LICENSE)。
