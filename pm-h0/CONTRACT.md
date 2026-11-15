@@ -157,21 +157,21 @@ retrospect 走「折叠日志前缀 → DSH 推导消息」，只有切点不同
 |---|---|---|---|
 | `generation` | integer \| string | 必需 | 绝对世代号、`"self"`、`"self - N"` |
 | `preview` | boolean | false | true 时裁剪每条 text（不体现在返回里） |
-| `messages_position` | 单个选择器 \| `none` \| `null` | — | 只返回命中的单元行；`none` 表示不要 messages；`this` 被拒绝 |
-| `letters_position` | 单个选择器 \| `none` \| `null` | — | 只返回落在这些单元里的 letters；`none` 表示不要 letters |
+| `messages_position` | 单个选择器 \| `none` | — | 只返回命中的单元行；`none` 表示不要 messages；`this` 被拒绝 |
+| `letters_position` | 单个选择器 \| `none` | — | 只返回落在这些单元里的 letters；`none` 表示不要 letters |
 
 ### 返回（JSON 字符串）
 
 ```json
 {
   "logical": 1,
-  "units": [5, 6],                    // 仅当给了 messages_position
+  "units": [0, 1, 2, 5, 6],             // 始终返回：当前世代的所有单元号
   "messages": [{ "unit": 5, "role": "user", "text": "..." }],
   "letters": [{ "index": 7, "text": "...", "time": 0 }]   // 仅当该世代有 letter
 }
 ```
 
-- 行内字段：`unit`（plasticize 的位置）、`role`（system / user / assistant / tool / developer）、`text`、`calls?`、`locked?`（**仅当前世代**）；
+- 行内字段：`unit`（plasticize 的位置）、`role`（system / user / assistant / developer；tool 结果与其 assistant 同单元，按 assistant 标注）、`text`、`calls?`、`locked?`（**仅当前世代**）；
 - 没有 `n` / `seq` / `type`：行号可由数组下标得到，`seq` 是内部字段；
 - `self` 用的是「本次请求的输入」：截到最新 assistant 之前；
 - 历史世代用的是产生该世代 execute 的那次请求的输入；

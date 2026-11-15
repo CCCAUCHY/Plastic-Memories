@@ -152,13 +152,13 @@ export function retrospectGeneration(session, generation, options = {}) {
     letters = letters.filter((letter) => keep.has(letter.index));
   }
 
-  const out = { logical };
+  const out = { logical, units: [...new Set(window.rows.map((row) => row.unit))] };
   if (!messagesOff) {
-    if (messagesPosition !== undefined) out.units = [...new Set(scoped.map((row) => row.unit))];
     out.messages = scoped.map((row) => {
       const shaped = {
         unit: row.unit,
-        role: row.role,
+        // tool 结果与它的 assistant 同属一个单元，按 assistant 标注即可。
+        role: row.role === 'tool' ? 'assistant' : row.role,
         text: preview ? clipText(row.text) : row.text,
       };
       if (row.calls !== undefined) shaped.calls = row.calls;

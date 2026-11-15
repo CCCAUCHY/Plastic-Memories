@@ -157,10 +157,11 @@ console.log('B 工具层');
   ok(Array.isArray(withLetters.letters) && withLetters.letters.length === 1, 'letters 随结果返回', JSON.stringify(withLetters.letters ?? []).slice(0, 80));
   const noLetters = JSON.parse((await callTool('retrospect', { generation: 'self', letters_position: 'none' }, session, 'c-noletters', false)).text);
   ok(noLetters.letters === undefined, 'letters_position:none 不返回 letters');
-  ok(Object.hasOwn(data, 'units') === false, '不再有 units 字段');
+  ok(Array.isArray(data.units) && data.units.length > 0 && data.units[0] === 0, 'units 始终返回全部单元号', JSON.stringify(data.units).slice(0, 60));
 
+  const fresh = JSON.parse((await callTool('retrospect', { generation: 'self' }, session, 'c-full2', false)).text);
   const window = JSON.parse((await callTool('retrospect', { generation: 'self', messages_position: 'unit 1' }, session, 'c-window', false)).text);
-  ok(window.messages.length === 1 && window.messages[0].unit === 1 && JSON.stringify(window.units) === '[1]', 'messages_position 窗口');
+  ok(window.messages.length === 1 && window.messages[0].unit === 1 && JSON.stringify(window.units) === JSON.stringify(fresh.units), 'messages_position 只裁 messages，units 仍是全量');
   ok((await callTool('retrospect', { generation: 'self', messages_position: 'this' }, session, 'c-this', false)).error?.includes('this') === true, 'messages_position 拒绝 this');
   ok((await callTool('retrospect', { generation: 'self', messages_position: 'unit 999' }, session, 'c-oor', false)).error?.includes('out of range') === true, 'messages_position 越界报错');
   ok((await callTool('retrospect', { generation: 99 }, session, 'c-future', false)).error?.includes('future') === true, '未来世代报错');
