@@ -13,7 +13,7 @@
 import { SURFACE_TYPES, derivedMessage, messageText } from './coords.js';
 import { logicalGenerations } from './engine.js';
 import { logicalBoundaries } from './boundaries.js';
-import { rowsAt, cutoffForCall } from './messages.js';
+import { rowsAt, cutoffForCall, windowRows } from './messages.js';
 import { renderPreview } from './preview.js';
 
 /** 事件类型到角色名的兜底映射（正常消息直接读 message.role）。 */
@@ -78,7 +78,12 @@ function normalizeGeneration(value, self) {
 export function retrospect(session, args) {
   const value = args?.generation;
   if (value === undefined) throw new Error('retrospect requires generation (a logical generation number, "self", or "self - N")');
-  return retrospectGeneration(session, value, args?.preview === true, args?.positions, args?.callId);
+  return retrospectGeneration(session, value, {
+    preview: args?.preview === true,
+    messagesPosition: args?.messagesPosition,
+    lettersPosition: args?.lettersPosition,
+    callId: args?.callId,
+  });
 }
 
 /**
@@ -104,7 +109,11 @@ function executeResultSeq(events, callId) {
   return found;
 }
 
-export function retrospectGeneration(session, generation, preview = false, selectors = undefined, callId = undefined) {
+export function retrospectGeneration(session, generation, options = {}) {
+  const preview = options.preview === true;
+  const messagesPosition = options.messagesPosition;
+  const lettersPosition = options.lettersPosition;
+  const callId = options.callId;
   const events = session.snapshotEvents();
   const info = logicalGenerations(session);
   const self = info.total;
@@ -127,40 +136,55 @@ export function retrospectGeneration(session, generation, preview = false, selec
       throw new Error('no context found for logical generation ' + String(target) + ' (no write recorded for that generation)');
     }
   }
-  const { window } = rowsAt(session, cut, { locks: isCurrent, selectors });
+  const { window } = rowsAt(session, cut, { locks: isCurrent });
 
-  const letter = lettersOfGeneration(events, isCurrent ? Number.POSITIVE_INFINITY : target, info, []);
-  // 行里的 id 只用于查锁，不发给模型。
-  const rows = window.rows.map((row) => {
-    const { id, ...rest } = row;
-    return rest;
-  });
-  const scope = selectors === undefined ? {} : { total: window.total, units: window.selected };
-  if (preview) {
-    return JSON.stringify({
-      logical,
-      count: rows.length,
-      ...scope,
-      preview: true,
-      messages: rows.map((message) => ({
-        ...message,
-        text: message.text.length <= 240 ? message.text : message.text.slice(0, 180) + '……' + message.text.slice(-40),
-      })),
-      ...(letter.length === 0 ? {} : { letter }),
+  // messages_position：
+  //   undefined → 全量；'none' → 不要 messages；选择器 → 只留命中的单元。
+  const messagesOff = messagesPosition === 'none';
+  const scoped = messagesOff || messagesPosition === undefined
+    ? window.rows
+    : windowRows(window.rows, messagesPosition).rows;
+
+  let letters = lettersOfGeneration(events, isCurrent ? logical : target, info, [], logical);
+  if (lettersPosition === 'none') letters = [];
+  else if (lettersPosition !== undefined) {
+    const keep = new Set(scoped.map((row) => row.n));
+    letters = letters.filter((letter) => keep.has(letter.index));
+  }
+
+  const out = { logical };
+  if (!messagesOff) {
+    if (messagesPosition !== undefined) out.units = [...new Set(scoped.map((row) => row.unit))];
+    out.messages = scoped.map((row) => {
+      const shaped = {
+        unit: row.unit,
+        role: row.role,
+        text: preview ? clipText(row.text) : row.text,
+      };
+      if (row.calls !== undefined) shaped.calls = row.calls;
+      if (row.locked === true) shaped.locked = true;
+      return shaped;
     });
   }
-  return JSON.stringify({ logical, count: rows.length, ...scope, messages: rows, ...(letter.length === 0 ? {} : { letter }) });
+  if (letters.length > 0) out.letters = letters;
+  return JSON.stringify(out);
+}
+
+/** preview 模式的文本裁剪：前 180 + 后 40。 */
+function clipText(text) {
+  const value = String(text ?? '');
+  return value.length <= 240 ? value : value.slice(0, 180) + '……' + value.slice(-40);
 }
 
 /** 取某个逻辑世代生命周期内输入的全部 letter（按调用顺序，附消息序号）。 */
-function lettersOfGeneration(events, target, info, cutoffs) {
+function lettersOfGeneration(events, target, info, cutoffs, currentLogical = Number.POSITIVE_INFINITY) {
   const executes = Array.isArray(info.executes) ? info.executes.slice().sort((left, right) => left.seq - right.seq) : [];
   const generationAt = (seq) => {
     // 新语义：逻辑世代 N 的上下文截止于 N 的 execute 声明；
     // 两个 execute 声明之间写入的 letter 属于后一个 generation（N 的推理生命周期）。
     if (executes.length > 0) {
       const next = executes.find((entry) => entry.seq > seq);
-      return next === undefined ? Number.POSITIVE_INFINITY : next.logical;
+      return next === undefined ? currentLogical : next.logical;
     }
     let logical = 0;
     for (const cutoff of cutoffs) {

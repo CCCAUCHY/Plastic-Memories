@@ -156,24 +156,23 @@ retrospect 走「折叠日志前缀 → DSH 推导消息」，只有切点不同
 | 字段 | 类型 | 默认 | 语义 |
 |---|---|---|---|
 | `generation` | integer \| string | 必需 | 绝对世代号、`"self"`、`"self - N"` |
-| `preview` | boolean | false | true 时裁剪每条 text |
-| `result_positions` | 单个选择器 | — | 结果窗口；`this` 被拒绝。要多段就多调一次 retrospect |
-| `units` | boolean | false | 内部迁移用：返回旧单元视图 |
+| `preview` | boolean | false | true 时裁剪每条 text（不体现在返回里） |
+| `messages_position` | 单个选择器 \| `none` \| `null` | — | 只返回命中的单元行；`none` 表示不要 messages；`this` 被拒绝 |
+| `letters_position` | 单个选择器 \| `none` \| `null` | — | 只返回落在这些单元里的 letters；`none` 表示不要 letters |
 
 ### 返回（JSON 字符串）
 
 ```json
 {
   "logical": 1,
-  "count": 9,
-  "total": 22,          // 仅当给了 result_positions
-  "units": [5, 6],      // 仅当给了 result_positions
-  "messages": [{ "n": 5, "unit": 5, "type": "user", "text": "..." }],
-  "letter": [{ "index": 7, "text": "...", "time": 0 }]   // 仅当该世代有 letter
+  "units": [5, 6],                    // 仅当给了 messages_position
+  "messages": [{ "unit": 5, "role": "user", "text": "..." }],
+  "letters": [{ "index": 7, "text": "...", "time": 0 }]   // 仅当该世代有 letter
 }
 ```
 
-- 行内字段：`n`（顺序，从 0）、`unit`（plasticize 的位置）、`type`（system/user/developer/assistant/tool/agent/skill/other）、`text`、`calls?`、`locked?`（**仅当前世代**）；
+- 行内字段：`unit`（plasticize 的位置）、`role`（system / user / assistant / tool / developer）、`text`、`calls?`、`locked?`（**仅当前世代**）；
+- 没有 `n` / `seq` / `type`：行号可由数组下标得到，`seq` 是内部字段；
 - `self` 用的是「本次请求的输入」：截到最新 assistant 之前；
 - 历史世代用的是产生该世代 execute 的那次请求的输入；
 - `preview: true` 只裁 text，结构不变。
@@ -181,7 +180,7 @@ retrospect 走「折叠日志前缀 → DSH 推导消息」，只有切点不同
 ### 错误
 
 `generation is in the future...`、`generation is out of range...`、
-`result_positions 不能用 this...`、`result_positions entries must be ...`、`unit 999 is out of range ...`。
+`messages_position 不能用 this...`、`unit 999 is out of range ...`。
 
 ---
 

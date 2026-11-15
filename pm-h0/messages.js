@@ -165,6 +165,7 @@ export function groupRows(messages) {
     const entry = {
       n: out.length,
       unit,
+      role: String(message?.role ?? 'unknown'),
       type: classifyMessage(message).type,
       text: textOf(message),
     };

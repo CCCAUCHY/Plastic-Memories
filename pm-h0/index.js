@@ -250,6 +250,15 @@ function tool(spec) {
 }
 
 /** ops 选填：缺省即 []（execute with [] 只兑现上一条 set）。 */
+
+/** 结果窗口参数：'none' / null 表示不要；其余按单值选择器解析。 */
+function normalizePosition(value, label) {
+  if (value === undefined) return undefined;
+  if (value === null) return 'none';
+  if (typeof value === 'string' && value.trim().toLowerCase() === 'none') return 'none';
+  return normalizeSelector(value, label);
+}
+
 function normalizeOps(value) {
   if (!Array.isArray(value)) throw new Error('ops is required (an array of ops)');
   if (value.length === 0) throw new Error('ops must be a non-empty array');
@@ -468,7 +477,7 @@ export function apply(ctx, config) {
         '读取某个逻辑世代的上下文。只读，不修改任何东西。',
         'generation 可以是绝对编号、self（当前世代）或 self - N。历史世代已经冻结；self 返回模型此刻看到的上下文。',
         '成功的 execute 会冻结当前世代并返回它的编号，之后的推理属于下一代，所以刚冻结的世代可以立刻用 self - 1 读到。',
-        '返回 { logical, count, messages, letter? }。messages 每行对应一个单元的一部分：n 是行号，unit 是单元号，type 是来源类型，text 是内容；assistant 行可能带 calls，当前世代的行可能带 locked。preview=true 时裁剪 text。',
+        '返回 { logical, units?, messages?, letters? }。messages 每行是 { unit, role, text }；assistant 行可能带 calls，当前世代的行可能带 locked。messages_position / letters_position 可以只取某段单元、或写 none 表示不要；preview=true 时裁剪 text。',
         '历史世代返回它冻结前模型最后一次收到的输入。某个世代隐藏掉的内容属于上一代，要看得读上一代。',
       ].join(String.fromCharCode(10) + String.fromCharCode(10)),
       parameters: {
@@ -482,9 +491,13 @@ export function apply(ctx, config) {
             type: 'boolean',
             description: 'true 时裁剪每条 text。默认 false。',
           },
-          result_positions: {
-            oneOf: [{ type: 'integer' }, { type: 'string' }],
-            description: '只返回这个选择器命中的单元，并附 total 与 units；要看多段就多调一次。不接受 this。',
+          messages_position: {
+            oneOf: [{ type: 'integer' }, { type: 'string' }, { type: 'null' }],
+            description: '只返回这个选择器命中的单元行；也可写 none 或 null 表示不要 messages。不接受 this。',
+          },
+          letters_position: {
+            oneOf: [{ type: 'integer' }, { type: 'string' }, { type: 'null' }],
+            description: '只返回落在这些单元里的 letters；也可写 none 表示不要 letters。',
           },
         },
         required: ['generation'],
@@ -492,14 +505,24 @@ export function apply(ctx, config) {
       execute(args, exec) {
         const session = sessionOf(exec);
         const generation = args?.generation;
-        const isSelf = typeof generation === 'string' && /^self(?:\s*-\s*0)?$/iu.test(generation.trim());
-        // 结果窗口：命令里的 this 没有锚点，这里直接拒绝。
-        const selectors = normalizeSelector(args?.result_positions, 'result_positions');
-        if (selectors !== undefined && isThisSelector(selectors)) {
-          throw new Error('result_positions 不能用 this：它指模型本次调用所在的单元，而 retrospect 读的是历史快照；请写具体单元号');
+        // 结果窗口：'none' / null 表示不要那一部分；其余按选择器解析。
+        const messagesPosition = normalizePosition(args?.messages_position, 'messages_position');
+        const lettersPosition = normalizePosition(args?.letters_position, 'letters_position');
+        for (const [name, value] of [['messages_position', messagesPosition], ['letters_position', lettersPosition]]) {
+          if (value === undefined || value === 'none') continue;
+          if (isThisSelector(value)) {
+            throw new Error(name + ' 不能用 this：它指模型本次调用所在的单元，而 retrospect 读的是快照；请写具体单元号');
+          }
         }
-        if (isSelf) return Promise.resolve({ text: JSON.stringify(retrospectMessages(session, args?.preview === true, selectors, exec.callId)) });
-        return Promise.resolve({ text: retrospect(session, { ...args, positions: selectors, callId: exec.callId }) });
+        return Promise.resolve({
+          text: retrospect(session, {
+            generation,
+            preview: args?.preview === true,
+            messagesPosition,
+            lettersPosition,
+            callId: exec.callId,
+          }),
+        });
       },
     }),
   );

@@ -43,7 +43,7 @@ try {
   messageData = { error: String(error.message) };
 }
 ok(messageData.error === undefined && Array.isArray(messageData.messages) && messageData.messages.length > 0, 'retrospect(self) 返回 Message[]', JSON.stringify(messageData).slice(0, 160));
-ok(messageData.messages[0].type === 'system', 'Message[] 第一条是 system');
+ok(messageData.messages[0].role === 'system', '第一条行的 role 是 system');
 
 // 全局注册：工具不再按 preset 门控（结果窗口让非 PTC 也能限制结果大小）。
 ok(toolOptions.every((options) => options.when === undefined), '三个工具都是无条件全局注册', JSON.stringify(toolOptions.map((options) => typeof options.when)));
@@ -64,11 +64,11 @@ const historyLocked = Array.isArray(historyData.messages) ? historyData.messages
 ok(historyLocked === 0, '历史世代不返回安全区', JSON.stringify({ historyLocked, error: historyData.error }));
 
 // 结果窗口：两个工具共用同一套 positions 语法，用来在非 PTC 里主动限制结果大小。
-const windowData = JSON.parse((await retrospect.execute({ generation: 'self', result_positions: 'unit 1' }, { agent: { session } })).text);
-ok(windowData.count === 1 && windowData.messages[0].n === 1 && windowData.total > 1, 'retrospect result_positions 只返回选中单元', JSON.stringify({ count: windowData.count, total: windowData.total }));
-ok(JSON.stringify(windowData.units) === JSON.stringify([1]), 'retrospect result_positions 回显命中的单元', JSON.stringify(windowData.units));
+const windowData = JSON.parse((await retrospect.execute({ generation: 'self', messages_position: 'unit 1' }, { agent: { session } })).text);
+ok(windowData.messages.length === 1 && windowData.messages[0].unit === 1, 'messages_position 只返回选中单元', JSON.stringify({ rows: windowData.messages.length }));
+ok(JSON.stringify(windowData.units) === JSON.stringify([1]), 'messages_position 回显命中的单元', JSON.stringify(windowData.units));
 let thisInRetrospect;
-try { await retrospect.execute({ generation: 'self', result_positions: 'this' }, { agent: { session } }); } catch (error) { thisInRetrospect = String(error.message); }
-ok(typeof thisInRetrospect === 'string' && thisInRetrospect.includes('this'), 'retrospect 拒绝 result_positions 里的 this', thisInRetrospect?.slice(0, 40));
+try { await retrospect.execute({ generation: 'self', messages_position: 'this' }, { agent: { session } }); } catch (error) { thisInRetrospect = String(error.message); }
+ok(typeof thisInRetrospect === 'string' && thisInRetrospect.includes('this'), 'messages_position 拒绝 this', thisInRetrospect?.slice(0, 40));
 
 done();
