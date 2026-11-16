@@ -6,7 +6,1165 @@
 - presets/pm.patch.yml 里 preset 的 name（UI 会话模式列表显示：PM · 可塑记忆 vX.Y.Z）
 - presets/pm.patch.yml 里 persona.suffix 正文开头（模型上下文里能看到）
 
+## 0.50.85
+
+
+**修复：私有事件缺 ignorable 标记导致宿主拒绝加载整份日志。**
+
+- 起因：commit / commit-checkpoint / logical / locks / reject / damaged 之前用 session.append 写入，envelope 没有 ignorable:true；
+- 宿主遇到不认识的 plugin: 类型且未标记 ignorable 时，会拒绝解释整份日志（历史加载失败）；
+- 现在所有私有事件都走 appendPluginRecord（index 注入宿主实现），envelope 带 ignorable:true；
+- 新增 repair-ignorable.mjs：给历史日志补标记（自动留 .bak）；
+- spectest 新增回归：flush 写出的私有事件必须全部带 ignorable。
+
+全套 **12 套 / 256 条**（uitest 103 另计）。
+
+
+## 0.50.84
+
+
+**三个工具都拒绝未知字段；retrospect 补截断提醒。**
+
+- retrospect / letter 的 schema 也加 additionalProperties:false；
+- retrospect 描述补一句：结果过大可能被宿主截断（约 6000 字符），请用 messages_position / head / tail 控制大小。
+
+全套 **12 套 / 254 条**（uitest 103 另计）。
+
+
+## 0.50.83
+
+
+**四个测试会话审计后修的两处问题。**
+
+- PTC 下 retrospect(self) 多算了当前 assistant 消息：callId 形如 root:ptc:N，而承载消息里记的是 rootCallId；cutoffForCall 现在两种都认（实测 units 31 vs 30 的偏差消失）；
+- plasticize 增加 additionalProperties:false：模型按旧 API 传 option:"set" 时会被拒绝，而不是被静默忽略后真的写入；
+- 选择器允许裸数字区间（0 to 20），对齐模型自然写法；
+- 审计结论：native 下 retrospect 与捕获逐行一致；每次 replace 后的下一个捕获都能看到新文本、旧节点消失。
+
+全套 **12 套 / 254 条**（uitest 103 另计）。
+
+
+## 0.50.82
+
+
+**文案按现状重写（三篇工具描述 + 参数 + README + 求助文档）。**
+
+- plasticize：删掉 set 相关表述，补 this 的语义、提交边界失败会留说明、隐藏单元不可再选；
+- retrospect：返回结构改成 { logical, units, messages?, letters? }，补 role/calls/locked/letters/head/tail 说明；
+- letter：改成「成功调用后会被自动隐藏」；
+- README 重写：单模式 API、WAL 写入协议、测试数字、已知限制；
+- 文案打磨-求助.md 重写：理念/术语/三篇现文案/不能改的事实/待决问题。
+
+全套 **12 套 / 252 条**（uitest 103 另计）。
+
+
+## 0.50.81
+
+
+**retrospect 裁剪参数拆成 head / tail。**
+
+- clip 的语义与词义不符（clip 是剪掉，不是两头保留），改为 head: N / tail: M；
+- 超长才裁：长度 ≤ head+tail 时原样返回；head 或 tail 为 0 时该侧不保留；
+- 文档与工具描述同步。
+
+全套 **12 套 / 252 条**（uitest 103 另计）。
+
+
+## 0.50.80
+
+
+**retrospect 用 clip:N 取代 preview 布尔；删除内部旧行视图。**
+
+- clip: N = 每条 text 前后各留 N 个字符（超长才裁，中间用 …… 省略）；
+- 删除 preview 参数与 messages.retrospectMessages（unitest 改用 retrospect 的 JSON 输出）；
+- CONTRACT.md 与工具描述同步。
+
+全套 **12 套 / 252 条**（uitest 103 另计）。
+
+
+## 0.50.79
+
+
+**清理 set 遗留：规格、审计、测试、死文件。**
+
+- pmspec 删除宏规则（isMacro / 展开 / no-pending / macro-twice）；
+- verify.js 不再看 option：所有声明都按 execute 校验「有显式替换」；
+- spectest 删除宏重放分节，随机场景改为「两条不相交 op」；
+- 删除 preview.js（渲染已随 set 预览一起消失）；index 去掉未用的 retrospectMessages 导入。
+
+全套 **12 套 / 251 条**（uitest 103 另计）。
+
+
+## 0.50.78
+
+
+**units 改为总单元数；null 明确拒绝。**
+
+- 之前误解为「单元号列表」，现改为 Number：当前世代一共有多少个单元；
+- messages_position / letters_position 只接受选择器或 none；null 在 schema 层就被拒绝（normalizePosition 里也保留了防御）；
+- 文档与工具描述同步。
+
+全套 **12 套 / 254 条**（uitest 103 另计）。
+
+
+## 0.50.77
+
+
+**retrospect 收敛：none 唯一、units 常回、tool 并入 assistant。**
+
+- messages_position / letters_position 只接受 none（不再接受 null）；
+- units 任何情况下都返回（当前世代全部单元号），不再只在过滤时给；
+- tool 结果行标注为 assistant（与它的 assistant 同单元，按 tool 过滤和按 assistant 过滤等价）；role 只剩 system/user/assistant/developer；
+- 工具描述与 CONTRACT.md 同步。
+
+全套 **12 套 / 253 条**（uitest 103 另计）。
+
+
+## 0.50.76
+
+
+**retrospect 输出瘦身：role 取代 type，去掉 n/seq，窗口参数拆分。**
+
+- messages 行 = { unit, role, text, calls?, locked? }：role 用模型熟悉的 system/user/assistant/tool/developer；
+- 删除 n 与 seq（行号=数组下标，seq 是内部字段）；preview 标志不再出现在返回里；
+- 删除 count / total；只有给了 messages_position 时才回 units；
+- result_positions 拆成 messages_position / letters_position，都支持 none / null；
+- 修复 letters 的世代归属：无 execute 的会话里当前世代的 letter 会被判成第 0 代而丢掉；
+- 文档与工具描述同步。
+
+全套 **12 套 / 253 条**（uitest 103 另计）。
+
+
+## 0.50.75
+
+
+**删除 set：plasticize 只剩一种模式。**
+
+- 工具参数只剩 { ops }：每元素 = 一个选择器 + 一条替代文本，直译成一条 surfaceOp；
+- 删除选项 option / preview_positions / 宏 { the last plasticize(set) } / 待决 set 判定（pending.js 整个文件）；
+- 删除 set 预览（plasticize.js、preview.js 的 projectNext / renderRowsPreview）；preview.js 只剩 renderPreview 给 retrospect 用；
+- 自动隐藏不再有 set 分支；扫描、去重、consumed 相关逻辑一并简化；
+- 工具先校验 ops 形状，再找承载消息（参数错误优先报参数错误）；
+- 测试：契约/集成/global/ptc/oracle 里的 set 用例删除或改写；gentest 删除（预览≡结果的命题随 set 消失）。
+
+全套 **12 套 / 250 条**（uitest 103 另计）。
+
+
+## 0.50.74
+
+
+**一条 op 直译成一条 surfaceOp；删掉归并与旧的多段规则。**
+
+- resolveUnitOps 不再走「多段里只有最后一段拿到 new_text」的旧逻辑（positions 早已是单值）；
+- 自动隐藏不再做相邻归并：空文本本身就是空洞，多写一条事件没有语义代价；
+- 删除未再使用的 unitRanges。
+
+全套 **13 套 / 284 条**（uitest 103 另计）。
+
+
+## 0.50.73
+
+
+**重叠检测返回全部交集；自动隐藏改为「扣减 + 合并」而非整条丢弃。**
+
+- findOverlap 增加 seqs 字段（两区间的全部重叠 seq）；新增 intersectionOf / subtractSeqs；
+- 自动隐藏：合成候选区间 → 扣掉显式 op 覆盖的 seq（只丢自动隐藏这一侧）→ 连续段拆分 → 相邻合并 → 解析写入；
+- 相邻区间合并成一条 op，避免写出一串连续 developer 消息；
+- spectest 新增 ③e：交集、无交集、扣减拆分、全扣减。
+
+全套 **13 套 / 284 条**（uitest 103 另计）。
+
+
+## 0.50.72
+
+
+**set 查找去掉两处全量扫描。**
+
+- failedCallIds 只在「最老可见节点」之后扫描（更早的 set 不可能是待决）；
+- ownerEventOf 从调用位置往回找承载消息，不再从头遍历；
+- 宏展开仍然只是把 set 的 ops 原样拼进 op 列表，没有第二条管线。
+
+全套 **13 套 / 280 条**（uitest 103 另计）。
+
+
+## 0.50.71
+
+
+**自动隐藏改成合成 ops，走和模型 ops 同一条解析路径。**
+
+- autoHideTargets 的结果先折成 { positions: "unit a to b", new_text: "" }，再交给 resolveUnitOps；
+- 单元边界 / 重叠 / 锁 / 系统提示的判定从此只有一份（此前 auto-hide 自己算 seq 区间）；
+- 写入仍在同一个 WAL commit 批次内，哈希覆盖不变；
+- 实测：set 单元仍被隐藏，commit 覆盖 3 条（投影 + 自动隐藏 + 世代边界）。
+
+全套 **13 套 / 280 条**（uitest 103 另计）。
+
+
+## 0.50.70
+
+
+**删除 pending.js 里对「含宏 set」的兜底过滤。**
+
+- 该形态已被工具层直接拒绝（结果 isError），failed 过滤已覆盖；
+- 项目未发正式版，不做前向兼容，不为历史日志保留多余分支。
+
+全套 **13 套 / 280 条**（uitest 103 另计）。
+
+
+## 0.50.69
+
+
+**记录改名：checkpoint → commit-checkpoint。**
+
+- 避免与理论文档里的「压缩 checkpoint」混淆：它只表示「这批 WAL 已完整写入」；
+- 文档统一用「WAL commit」指 plugin:plastic-memories/commit，与 git commit 无关；
+- CONTRACT.md 增加「写入协议（WAL）」一节，写明三步顺序与哈希范围。
+
+全套 **13 套 / 280 条**（uitest 103 另计）。
+
+
+## 0.50.68
+
+
+**checkpoint 封住校验成本；set 改为工作面上的反向扫描。**
+
+- 每批写完后追加 plugin:plastic-memories/checkpoint { upTo }；它之后的 commit 不再校验；
+- 回溯最后一条标记有上限（2000 条事件），扫不到按「太旧、不查」处理；
+- findLastPendingSet 重写：从日志尾部往前扫，跨过最老可见节点即停；只认仍在工作面上的 set；
+- 兑现过的 set 会随单元被自动隐藏，「可见性 = 未兑现」，不再需要扫全部日志；
+- spectest 新增 ③d：checkpoint 落点、覆盖范围、后续 flush 不误报。
+
+全套 **13 套 / 280 条**（uitest 103 另计）。
+
+
+## 0.50.67
+
+
+**commit 覆盖的哈希范围确认：整批真实落盘事件（替换 + 私有事件）。**
+
+- 一批 = developer/message(replace) + plugin locks(lock_this) + 自动隐藏 + plugin logical(世代边界)；
+- 字段集 { seq, type, data, surfaceOp, sourceEventSeqs }；唯一排除 time（DSH 在 append 时赋值）；
+- 校验读取的是 snapshotEvents 的真实事件，与预计算共用 hashEventRange；
+- spectest ③c 增加「条数一致但哈希不符」用例。
+
+全套 **13 套 / 277 条**（uitest 103 另计）。
+
+
+## 0.50.66
+
+
+**预写提交记录（WAL）：commit 先落盘，数据后落盘；每次 flush 校验最后一条 commit。**
+
+- 写入路径改为「先算整批计划事件，再写 commit，再写数据」；commit 带 { from, to, count, hash }；
+- hash = sha256(规范化事件序列)，只取稳定字段（seq/type/data/surfaceOp/sourceEventSeqs，排除 time）；
+- flush 每次回溯最后一条 commit 或 checkpoint；checkpoint 之前不再校验（长会话护栏，尚未写入）；
+- 发现损坏：logger.error + plugin:plastic-memories/damaged + 一条可见提示（建议 retrospect(self - 1) 核对）；同一段只报一次；
+- spectest 新增 ③c：伪造 commit 只写一半，验证损坏被发现。
+
+全套 **13 套 / 276 条**（uitest 103 另计）。
+
+
+## 0.50.65
+
+
+**边界拒绝分成两类：safety-zone（预期）与 internal（bug）。**
+
+- reject 记录增加 kind 字段；internal 用 logger.error 而不是 warn；
+- 可见提示也分措辞：INTERNAL ERROR 与 NOT applied；
+- 说明：工具层检查针对调用时刻的表面；安全区可能在调用之后、边界之前被用户改动，这是唯一预期内的拒绝路径。
+
+全套 **13 套 / 274 条**（uitest 103 另计）。
+
+
+## 0.50.64
+
+
+**被拒绝的 execute 现在会告诉模型。**
+
+- 工具调用时只能回「已登记」，真正写入在提交边界；此前边界失败只留一行日志，模型以为自己生效了；
+- 现在边界失败会追加一条可见 developer 提示：[plasticize] NOT applied: <原因>；
+- Registered 回执补一句：若表面在边界前变化，则什么都不写、改为留下提示；
+- spectest 安全区用例新增两条断言（可见提示 + reject 记录）。
+
+全套 **13 套 / 274 条**（uitest 103 另计）。
+
+
+## 0.50.63
+
+
+**被拒绝的 execute 现在会写一条私有事件。**
+
+- 之前失败只在 logger 里留一行 warn，日志里「被拒绝」和「漏写」完全同形，审计器无法区分；
+- 现在写 plugin:plastic-memories/reject { callId, message }；
+- verify.js 识别该事件：被拒绝的声明不再要求显式 replace，同时禁止它被应用；
+- spectest 恢复对全部 40 个用例跑审计（此前对拒绝场景只能跳过）。
+
+全套 **13 套 / 272 条**（uitest 103 另计）。
+
+
+## 0.50.62
+
+
+**随机差分扩到四类场景：普通 / this / 宏重放 / 安全区。**
+
+- 用例数 30 → 40，按 index %% 4 轮转场景，覆盖此前只有固定用例的路径；
+- runCase 支持 setOps（宏重放）与 lockUnit（先加锁再执行）；spec 侧对应传入 pendingOps / locks；
+- 新增断言：规格报错 ⇒ 实际 applied 0 且不写事件；被拒绝的用例跳过 verify 审计（audit 会误报 successful execute has no explicit replacement）。
+
+全套 **13 套 / 272 条**（uitest 103 另计）。
+
+
+## 0.50.61
+
+
+**执行规格覆盖宏重放；清掉一批死代码。**
+
+- pmspec 增加规则 8：宏 { "the last plasticize(set)": true } 在原位置展开成待决 set 的 ops（只能一次；无待决 → no-pending）；
+- spectest 增加 ⑤：重放场景下规格展开与真实事件逐条一致；
+- 删除 messages 里已无调用方的 messagesAt / currentCutoff / currentInputMessages；
+- 顺手修掉残留的停止点注释。
+
+全套 **13 套 / 272 条**（uitest 103 另计）。
+
+
+## 0.50.60
+
+
+**清掉失效的重放锚点；世代视图回归接入测试链。**
+
+- set 不能再写 this 之后，重放不需要另找零点：删除 engine 里的 opsAnchorCallId 分支（约 15 行）；
+- gentest 重写为跨实现比对：P1 预览行 == 提交后 self 的开头若干行；P2 self-1 == 提交前前缀；
+- 删除 genview.mjs（被 rowsAt 取代的 WIP 期望模型）；
+- gentest 接入 npm test。
+
+全套 **13 套 / 269 条**（uitest 103 另计）。
+
+
+## 0.50.59
+
+
+**set 不再支持 this。**
+
+- set 会被宏原样重放；重放时的 this 指向重放者（execute）而不是当初的 set，语义会飘；
+- 工具层直接拒绝：option:"set" does not support this ... name the unit explicitly；
+- execute 仍然支持 this；工具描述与 CONTRACT.md 同步；
+- ptctest 里三处 set+this 用例改为具体单元，并重写 ⑦ 的断言（显式 replace 数、遮蔽区间、consumed）。
+
+全套 **12 套 / 263 条**（uitest 103 另计）。
+
+
+## 0.50.58
+
+
+**retrospect 与 set 预览统一成「一个 fold，三个切点」。**
+
+- 新增 messages.rowsAt(session, cut)：self / 历史 / 预览共用同一条取行管线；
+- self 切点 = 承载本次调用的 assistant 消息；历史切点 = 冻结事件；预览切点同上再叠加假想 surfaceOp；
+- 预览不再把本次调用自己画进去（旧实现多一条空 assistant 行：25 条 vs 实际 24 条）；
+- 实测：预览正文 == 提交后 self 去掉调用单元后的内容，逐行一致；
+- index 去掉 self 特判，retrospect 只剩一个入口。
+
+全套 **12 套 / 261 条**（uitest 103 另计）。
+
+
+## 0.50.57
+
+
+**retrospect 统一成「前缀折叠 + 切点」：self 的切点 = 本次调用的 assistant 消息。**
+
+- 旧做法按 toolCallId 剔除「本次调用的结果」，同一步多条调用时会留下**没有对应调用的孤儿 tool 行**（实测：self 末尾出现孤立 `Preview only`）；
+- 新做法与历史世代同一条规则，只换切点：self 切在承载本次调用的 assistant 消息之前，历史切在冻结事件之前；
+- 三条读取路径现在都是 fold(前缀)：self / 历史 / 预览（真事件+假想）；
+- 副作用：self 不再包含本步其余工具结果（它们不属于「本次请求的输入」）。
+
+全套 **12 套 / 261 条**（uitest 103 另计）。
+
+
+## 0.50.56
+
+
+**retrospect(self) 改为「全量折叠 − 本次调用自身」，不再用 seq 截止。**
+
+- 旧做法：取最后一条 assistant 的 seq 做前缀截止；等价但隐含「最后一条 assistant 一定晚于所有已写节点」这个前提；
+- 新做法：折叠当前工作面，只剔除承载本次调用的 assistant 消息与它的工具结果（按 callId，不按 seq）；实测两种写法在真实流程里等价，属于简化而非修 bug；
+- 历史世代仍走日志前缀折叠（探针会话），边界改为承载 execute 的那条事件；
+- 三条路径现在只差「折叠哪段日志」：预览=真事件+假想、self=全量、历史=前缀。
+
+全套 **12 套 / 261 条**（uitest 103 另计）；gentest 仍为 WIP。
+
+
+## 0.50.55
+
+
+**世代视图性质测试（WIP）抓到的两个真 bug，已修。**
+
+- set 预览把替代文本渲染成 user，真正提交后是 developer —— 预览骗了模型；现在两边同形（developer/message + 信封 turn/step/message）；
+- 历史世代边界取「再往前一条 assistant」，会漏掉上一条 assistant 的 tool result（实测少 2 条）；现在直接用边界事件 seq 做前缀截止；
+- retrospect(self) 增加 callId 锚点（cutoffForCall），不再用「最后一条 assistant」误裁提交后写入的替代节点；
+- 新增 genview.mjs（世代视图规格）与 gentest.mjs（P1 预览 / P2 self / P3 self-1 三条性质），**尚未接入 npm test**：P2、P3 仍在红；
+- 现有 12 套 / 261 条全绿。
+
+
+## 0.50.54
+
+
+**新增 PM 执行规格 pmspec.mjs（execute → surfaceOp，不依赖 DSH 消息推导）。**
+
+- 规格是纯函数：工作面节点 + ops + 安全区锁 → 应写出的 replace 事件（区间 / sourceEventSeqs / 文本）；
+- spectest.mjs 逐条比真实 flush 写出的事件，并带 30 例随机差分与 verify.js 审计；
+- 系统提示拒绝独立成错误码 system-prompt，与 safety-zone 互不调用；
+- CONTRACT.md 增加「执行规格」与「两种拒绝」两节。
+
+全套 **12 套 / 261 条**（uitest 103 另计）。
+
+
+## 0.50.53
+
+
+**新增独立规格 oracle 与差分测试（oracle.mjs / oracletest.mjs）。**
+
+- oracle.mjs 不 import engine/units：只从消息列表按规格推算 execute 之后应得的消息；
+- oracletest.mjs 随机生成 40 个互不重叠的操作，比对「真实管线结果 = oracle 预测」，并校验事件不变量（每段 replace 必须是执行前工作面上的连续片段、互不重叠、显式事件数 = 操作数）；
+- 差分测试立刻抓到真问题：unit 0（系统提示）无法被替换，但插件之前只在提交边界静默跳过；现在单元解析阶段直接报错；
+- contract.mjs 补回错误矩阵（缺 option、越界、系统提示、旧区间写法、未知字段、窗口单值）。
+
+全套 **11 套 / 239 条**（uitest 103 另计）。
+
+
+## 0.50.52
+
+
+**删除系统提示总纲，工具描述改中文并去重。**
+
+- 移除 plastic-memories:guide 段落：定义只留在工具描述里；
+- 三篇描述重写：统一「单元 / 选择器 / 操作 / 替代文本 / 会话日志 / 逻辑世代」等术语，删掉重复与开发者缩写；
+- 修正过期说法（ops 不再支持多段、宏不再要求「单独成段」）；
+- letter 描述改为「成功后会被自动隐藏、只能用 retrospect 读回」；
+- 参数描述改中文并压缩到一行，不再复述工具描述里的语义；
+- 新增 文案打磨-求助.md（理念 / 术语 / 待打磨文案 / 约束 / 待决问题）。
+
+全套 **10 套 / 232 条**（uitest 103 另计）。
+
+
+## 0.50.51
+
+
+**positions / preview_positions / result_positions 全部改为单值。**
+
+- op.positions：一个 op 只选一段、只产出一条替代文本；多段写多条 op；
+- preview_positions / result_positions：单值选择器，要多段就多次调用；
+- 删除 selectUnits 的多选择器路径与 normalizeSelectors，改为 normalizeSelector；
+- 命令与工具继续共用同一套语法（命令 = 单值选择器 + 冒号 + 文本）。
+
+全套 **10 套 / 232 条**（uitest 103 另计）。
+
+
+## 0.50.50
+
+
+**删除死字段 `types`。**
+
+- spans 通道移除后 types 没有任何实现（只被归一化、从不被读取）；
+- opshape 去掉字段与默认值，工具 schema 去掉枚举分支，契约文档同步；
+- 现在只剩一个多值字段：`ops`（按设计如此）。
+
+全套 **10 套 / 231 条**（uitest 103 另计）。
+
+
+## 0.50.49
+
+
+**重放改成 ops 数组里的宏元素，可在任意位置拼接。**
+
+- 宏写作 `{ "the last plasticize(set)": true }`（也接受同名字符串），在所在位置原地展开成待决 set 的 ops；
+- 宏只能出现一次，不能带其它字段，set 不能用；
+- ops 的 JSON Schema 改成 oneOf：普通 op / 宏对象 / 宏字符串；
+- unitops 先展开宏再做 op 校验，程序侧不必再拼两条 plasticize。
+
+全套 **10 套 / 231 条**（uitest 103 另计）。
+
+
+## 0.50.48
+
+
+**统一成「ops 必填」，新增重放元素 `"the last plasticize(set)"`。**
+
+- ops 在 set / execute 下都必填且非空；不再有「execute 可以空 ops」的特例；
+- 兑现待决 set 改为显式重放：`ops:[{positions:["the last plasticize(set)"]}]`；
+- 重放元素必须单独成段、且不能带 new_text / lock_this / types；
+- 删除 `also_execute_last_set`（execute 不再隐式消费待决 set）；
+- 新增 pending.js（unitops 与 index 共用），避免 unitops → plasticize 的循环依赖；
+- 待决扫描跳过「ops 为空」与「ops 含重放元素」的非法 set。
+
+全套 **10 套 / 230 条**（uitest 103 另计）。
+
+
+## 0.50.47
+
+
+**空 set 显式非法。**
+
+- `option:"set"` 没有任何 op 时报 `option:"set" requires at least one op`；
+- set 的全部意义是「给出可预览的下一代」，没有预览就没有 set；兑现待决 set 请用 execute（可省略 ops）；
+- findLastPendingSet 的跳过规则改为防御性注释（旧日志残留的空 set 仍不会被当成待决）；
+- contract.mjs 增加空 set / 空 ops set 两条断言。
+
+全套 **10 套 / 233 条**（uitest 103 另计）。
+
+
+## 0.50.46
+
+
+**新增 contract.mjs：契约测试三层（语法 / 工具 / 行为）。**
+
+- A 纯语法：选择器、命令文本、op 归一化、命令≡单元素 positions；
+- B 工具层：JSON 参数直调 execute，覆盖 retrospect / plasticize / letter 的正常与错误路径；
+- C 行为层：set→execute（省略 ops）、空 ops、无待决 set、安全区、重放一致性、世代计数；
+- 修复 findLastPendingSet：ops 为空的 set 不再被当成待决（否则会挡住后面的 execute）；
+- CONTRACT.md 补充世代计数与待决 set 的语义。
+
+全套 **10 套 / 232 条**（uitest 103 另计）。
+
+
+## 0.50.45
+
+
+**ops 改为选填（默认 []）；删除 spans 旧语法；删除 retrospect 的 units 视图。**
+
+- ops 不再是必填参数：execute 省略/传 [] 只兑现上一条 set，是否合法由「execute + 待决 set」合并后的塑形规则决定；
+- 彻底移除 spans（cookie 区间）通道：opshape / index / engine / plasticize 全部只认 positions；spans.js 不再随包发布；
+- 删除 unitretro.js 与 retrospect({units:true})；unit 号本来就在每行的 unit 字段里；
+- compactMessages 改用 seq 对齐（deriveMessages 不带 seq，之前用 id 反查，测试夹具没有 id 就漏标 locked）；
+- 移除只测 spans 的测试套（selftest / balanced / cookietest / autohide / persist / diffcheck / atomicity / livetest / zeroanchor），行为覆盖将由 contract.mjs 重建。
+
+全套 **9 套 / 157 条**（uitest 103 另计）。
+
+
+## 0.50.44
+
+
+**execute 接受空 ops：只兑现上一条 set。**
+
+- 实测（d013）：模型先 set 再发 `{option:"execute", ops:[]}`，被 “ops must be a non-empty array” 打回；
+- 工具层现在按 engine 的语义过滤空批次：空 ops 不再送进解析器；
+- 完全没有可执行批次（既无 ops 也无待决 set）时给出明确报错；
+- globaltest 增加回归断言。
+
+全套 **14 套 / 280 条**（uitest 103、livetest 97 另计）。
+
+
+## 0.50.43
+
+
+**去掉 PTC 门控，三个工具全局无条件注册。**
+
+- 删除 tools.register 的 when 选项（standard/任意 preset 都能看到工具）；
+- 删除 sessionOf 里的 preset 判定与 /plasticize 的预设检查；
+- 结果窗口（preview_positions / result_positions）已经把“结果太大”这件事交给调用方控制；
+- globaltest 改为断言三个工具都没有 when。
+
+全套 **14 套 / 278 条**（uitest 103、livetest 97 另计）。
+
+
+## 0.50.42
+
+
+**结果窗口参数改名，避免和 ops[].positions 混淆。**
+
+- plasticize 顶层 `positions` → `preview_positions`（只作用于 set 预览）；
+- retrospect `positions` → `result_positions`；
+- 内部 previewOf 选项同步改成 selectors，语义与 messages.windowRows 一致；
+- 两者仍是同一套单元语法（unit 17 / unit 17 to 28）。
+
+全套 **14 套 / 280 条**（uitest 103、livetest 97 另计）。
+
+
+## 0.50.41
+
+
+**retrospect 与 set 预览支持同一套 positions 结果窗口，非 PTC 也能限制结果大小。**
+
+- 两个工具都新增顶层 positions（与 ops[].positions 同一套单元语法）；
+- retrospect 只返回选中单元的行，附 total 与命中 units；行保持真实 n/unit；
+- plasticize(set) 预览只列选中单元，并显示 “showing units ... of N”；
+- 两者都拒绝 this（读取/命令路径没有调用锚点）；
+- messages.js 拆出 groupRows / windowRows，预览与 retrospect 复用同一套单元裁剪；
+- 修复 coords.clip 的空白正则写成 /s+/ 导致预览文本吃掉所有字母 s 的老 bug。
+
+全套 **14 套 / 280 条**（uitest 103、livetest 97 另计）。
+
+
+## 0.50.40
+
+
+**命令里的 this 提前拒绝，并给出可执行的替代写法。**
+
+- parseOpText 增加 allowThis（默认 true）；命令传 false；
+- lock/hide/unlock 分支同样拒绝 this；
+- 报错不再落到运行期的 "op #0: this is not resolvable"，而是一句话说明 this 的含义并提示写 unit 17；
+- uitest 增加命令拒绝 this、工具仍允许 this 的断言。
+
+全套 **14 套 / 275 条**（uitest 103、livetest 97 另计）。
+
+
+## 0.50.39
+
+
+**命令文本严格等价于「单元素 positions 的 op」。**
+
+- UNIT_SELECTOR_SOURCE 收录 `this`，命令与工具的选择器词法完全一致；
+- parseOpText 明确按 normalizeOp({positions:[冒号前那段], new_text:冒号后那段}) 实现；
+- parseUnitRange 对 `this` 给出“需由调用方解析”的明确错误；
+- uitest 增加不变式断言：四种写法下 parseOpText 与 normalizeOp 结果逐字节相同。
+
+全套 **14 套 / 275 条**（uitest 101、livetest 97 另计）。
+
+
+## 0.50.38
+
+
+**命令与工具真正共用一套 op 语法，不再只是同一个文件。**
+
+- normalizeOp 从 plasticize.js 移到新模块 opshape.js（plasticize 继续再导出）；
+- opshape.js 新增 parseOpText：文本形式 `<selector>: <new_text>`，命令专用；
+- commands.js 不再自带选择器正则，只做 kind 前缀 + parseOpText；
+- unitops.js 的 op 校验改为调用同一个 normalizeOp，删掉重复规则；
+- uitest 增加“命令 op 与工具 op 同源”断言。
+
+全套 **14 套 / 275 条**（uitest 97、livetest 97 另计）。
+
+
+## 0.50.37
+
+
+**选择器语法收敛到唯一一处定义。**
+
+- units.js 导出 `UNIT_SELECTOR_SOURCE`（非捕获），parseUnitRange 与 commands.js 都从它派生；
+- commands.js 不再自带一份选择器正则；
+- `this` 判定抽成 isThisSelector，unitops 不再写死字符串比较；
+- 语法错误统一由 parseUnitRange 抛出。
+
+全套 **14 套 / 275 条**（uitest 95、livetest 97 另计）。
+
+
+## 0.50.36
+
+
+**命令里的选择器用冒号终结，替代文本可以以 to 开头。**
+
+- `/plasticize unit 17: 文本`：冒号是必须的终结符，`unit 17 to ...` 不再被误读成区间；
+- `positions` 里的选择器可带尾随冒号（`"unit 17:"`）；
+- 缺冒号时直接报错并给出正确写法；
+- static 命令路径不再写 `interval: undefined`。
+
+全套 **14 套 / 275 条**（uitest 95 条另计）。
+
+
+## 0.50.35
+
+
+**安全区只属于当前世代；positions 改成自然语言；preset 门控用官方读面。**
+
+- retrospect 历史世代不再返回 locked（那时的锁还不存在）；self 才带 locked；
+- unitView 去掉与 locked 重复的 safety；
+- positions 改写为 `unit 17` / `unit 17 to 28`；`[17,28]` 这种数学写法直接拒绝并给出正确写法；
+- /plasticize 命令同步支持带空格的选择器；
+- preset 判定改用 agentPresets.presetForSession()，standard 会话不再出现 PM 工具。
+
+全套 **14 套 / 275 条**。
+
+
+## 0.50.34
+
+
+**PTC 工具门控 + 会话投影安全。**
+
+- 工具注册加 when：标准/非 PTC 会话不再列出 plasticize/retrospect/letter；
+- 旧会话无 preset 记录时保持兼容；
+- pmGenerations wire.summary:false；stateVersion 9；view 对任意 state 安全；
+- 55e 捕获 22/22 一致；历史 g0 的 locked 单元可见。
+
+全套 **14 套 / 275 条**。
+
+
+## 0.50.33
+
+
+**修复 pmGenerations 投影导致重启后会话不可用。**
+
+- wire.summary:false，不再把整份世代 wire 塞进会话列表/打开基线；
+- stateVersion 8→9；
+- stateSchema 归一化缺字段；viewSchema 兜底；
+- view() 对任何 state 都不抛，且同 state 返回同一引用；
+- positions 文档明确：[3,7] 是两个单元，闭区间必须写字符串 '[3,7]'。
+
+全套 **14 套 / 271 条**。
+
+
+## 0.50.32
+
+
+**compact messages 把 reasoning 计入 text。**
+
+- assistant 只有 reasoning + tool-call 时，text 不再为空；
+- textOf 接受任意 content block 的 text 字段；
+- 50ca 的 7 号单元现在能看到思考正文。
+
+全套 **14 套 / 271 条**。
+
+
+## 0.50.31
+
+
+**retrospect 收敛为模型可过滤的紧凑消息。**
+
+- 去掉 role / boundary / safety / id / source；
+- 每条 {n,unit,type,text,calls?,locked?}；
+- type 按旧规则：system/user/developer/assistant/tool/agent/skill/other；
+- locked 与 safety 合并；
+- self 与历史都走 capture/DSH 消息前缀 + compact；
+- preview=true 返回裁剪 text 的 messages。
+
+全套 **14 套 / 271 条**。
+
+
+## 0.50.30
+
+
+**self retrospect 不再包含当前 assistant 输出。**
+
+- 工具执行时当前 assistant/tool-call 已在 surface，但它不是本次请求输入；
+- self cutoff = 最新 assistant/message 的 seq；
+- 修复 self 12→14→16→18 的自增长；
+- 878a 的 6 次 self 边界与 capture 逐字节一致（11/13/15/17/19/21）。
+
+全套 **14 套 / 271 条**。
+
+
+## 0.50.29
+
+
+**retrospect 基线：DSH 消息管线 + Message[]。**
+
+- 新增 messagesAt(session, cutoff)：日志前缀交给 DSH Session，deriveMessages()；
+- self 返回当前 Message[]；
+- 历史世代 cutoff = 产生该 execute 的请求，取边界前最后一条 assistant 的 seq；
+- 返回 {logical,count,messages,letter}，不再返回手搓 {role,text,time}；
+- 6d 会话 g0 与 capture 17/17 逐字节一致；
+- units:true 保留旧单元迁移视图。
+
+全套 **14 套 / 271 条**。
+
+
+## 0.50.29
+
+
+**retrospect 切到 DSH 消息管线，并以 capture 为基线。**
+
+- messagesAt：日志前缀 → DSH Session → deriveMessages()；
+- self 返回当前 Message[]；
+- 历史世代取边界前最后一条 assistant 的 seq 作为输入 cutoff；
+- 返回 {logical,count,messages,letter}，不再手搓 text 视图；
+- units:true 保留旧单元视图；
+- 基线：6d/5c/10bf 各 g0 与 capture 逐字节一致；76e5 的 11 个世代 11/11 一致。
+
+全套 **14 套 / 271 条**。
+
+
+## 0.50.28
+
+
+**单元号对 tool/subtool 行做最近单元兜底。**
+
+- 直接 unitOfSeq 查不到 sourceSeq 时，找 seq 距离最近的单元；
+- 避免 tool 行没有编号、与 retrospect 编号错位；
+- UI 排序仍保持旧实现。
+
+全套 **14 套 / 269 条**。
+
+
+## 0.50.27
+
+
+**UI 回退到旧实现，仅加单元号。**
+
+- client-glue.js / client-patches.js 恢复 old 分支的排序、分组、徽标逻辑；
+- 去掉后来加的 firstCellIndex / toTurnModel / virtual row / page filter 等补丁；
+- 只在正文前缀加 #n；
+- 保留旧版物理/逻辑页签。
+
+全套 **14 套 / 269 条**。
+
+
+## 0.50.26
+
+
+**虚拟行优先按 callId 归属单元。**
+
+- tool/subtool cell 的 sourceSeq 可能缺失或不在 page.seqs；
+- 现在用 meta.calls 建 callId→unit 映射，再按根 callId（:ptc: 前缀前）定位；
+- 仍以 sourceSeq/最近 surface 作为兜底；
+- 修复 #8 完成语被排到 #7 工具行之前。
+
+全套 **14 套 / 269 条**。
+
+
+## 0.50.25
+
+
+**虚拟行按单元号重排，工具行跟随所属 assistant。**
+
+- applyReshapeVirtualRows 不再原样返回；
+- row 内 cell.sourceSeq 映射到当前页 unitOfSeq，取最小单元号；
+- tool/subtool 行按最近 surface 单元归属；
+- 修复完成语 #8 插在 #7 工具行之前。
+
+全套 **14 套 / 269 条**。
+
+
+## 0.50.24
+
+
+**tool/subtool 行映射到所属 assistant 单元的 surface 位置。**
+
+- tool/call、ptc-dispatch 的 sourceSeq 不在 page.seqs 时，按不大于 sourceSeq 的最近 surface seq 定位；
+- 不再回退旧 cell.index；
+- 修复完成语 #8 被插到 #7 与其工具调用之间。
+
+全套 **14 套 / 269 条**。
+
+
+## 0.50.23
+
+
+**unlock all 恢复；只删除开区间语法。**
+
+- 回退 0.50.22 的整段区间删除；
+- unlock all 走 mode:all，不再把 all 当 selector；
+- lock all 仍取消；
+- 保留闭区间 [start,end]；
+- 删除 (start,end)、[start,end)、(start,end] 等开/半开区间。
+
+全套 **14 套 / 269 条**。
+
+
+## 0.50.21
+
+
+**turn 内 cell 按 surface pos 重排，并拆分交错的 step group。**
+
+- 同一 turn 里 replacement developer 和后续 assistant 同属 step3 时，旧 group 会把 assistant 提前；
+- 现在先把所有 cells 按 page.seqs 排序，再按原 group title 合并连续段；
+- firstCellIndex 同步用 surface pos；
+- L1 与 seq74 捕获 17/17 完全一致。
+
+全套 **14 套 / 269 条**。
+
+
+## 0.50.20
+
+
+**回退展示层过度排序与重复徽标，恢复旧版 UI。**
+
+- 移除 firstCellIndex / toTurnModel / cell.index 的额外重排，只保留旧版 records + layoutEntryOrder；
+- 移除类型列重复的 diffTypeTag；差异徽标回到正文前缀，只显示一次；
+- 移除历史页按 page.seqs 过滤节点，避免把 #7 等节点过滤掉；
+- 只过滤 compaction 日志节点；
+- 保留单元 #n 与逻辑世代。
+
+全套 **14 套 / 269 条**。
+
+
+## 0.50.19
+
+
+**类型列重新显示被塑形/已塑形徽标。**
+
+- 官方类型文字保留；
+- 差异徽标同时注入类型列；
+- 替换消息在后续世代页仍显示已塑形；
+- 页面最终 turns/groups/cells 都由 __PM_SEQ_ORDER__ 排序。
+
+全套 **14 套 / 269 条**。
+
+
+## 0.50.18
+
+
+**turn 内 step/cell 也按 surface 排序；已塑形跨页保留徽标。**
+
+- toTurnModel 在渲染前按 __PM_SEQ_ORDER__ 重排 groups/cells；
+- firstCellIndex 与 cell.index 都已 surface 化；
+- 替换消息在后续世代页仍显示已塑形；
+- 被塑形目标由 next replacement 的 shadowed 标记。
+
+全套 **14 套 / 269 条**。
+
+
+## 0.50.17
+
+
+**修复展示层最后一次 cell.index 排序。**
+
+- applyReshapeRecords 重排 records 后，把新的 surface 顺序写回 cell.index；
+- 官方表格 firstCellIndex 不再按旧索引把 #8 排到 #6/#7 前面；
+- 页面行顺序、单元号、retrospect 顺序一致。
+
+全套 **14 套 / 269 条**。
+
+
+## 0.50.16
+
+
+**auto-hide 只在本次边界包含 execute 时运行。**
+
+- 删除 autoOnly 路径；没有 plasticize 声明的请求边界不再 auto-hide；
+- set/error/letter/retrospect 的 tool result 不会在模型消费前被吞；
+- 这修复了“没调用 plasticize 却 auto-hide，导致 retrospect 无限循环”。
+
+全套 **14 套 / 269 条**。
+
+
+## 0.50.15
+
+
+**auto-hide 不再吞掉最新 assistant 单元的结果。**
+
+- auto-hide 跳过包含最新 assistant/message 的单元；
+- retrospect / set / error 的 tool result 至少保留到模型消费一次；
+- 修复模型看不到 retrospect 结果、无限重试的问题；
+- 旧单元仍会在后续边界隐藏。
+
+全套 **14 套 / 269 条**。
+
+
+## 0.50.14
+
+
+**世代页只渲染该页 surface 节点，单元号严格按页面顺序。**
+
+- 历史世代页过滤掉不在 page.seqs 的 eventNodes；
+- 单元号只从当前所选页的 unitOfSeq 取，不再回退到 live 页；
+- 修复 #5/#8/#6/#7 这类非单调编号；
+- 页面顺序 = API messages 顺序 = retrospect 单元顺序。
+
+全套 **14 套 / 269 条**。
+
+
+## 0.50.13
+
+
+**空 developer 黑洞不再计入单元。**
+
+- 自动隐藏/纯 hide 写出的空 developer 是 surface 空洞，不是模型消息；
+- units 与 generations 的单元编号跳过这些空洞；
+- retrospect(self).count 不再被 auto-hide 空洞逐步撑大；
+- e2a3f045 当前单元数 12，与捕获的 API messages 数一致。
+
+全套 **14 套 / 269 条**。
+
+
+## 0.50.12
+
+
+**修复 positions 在 tool set 预览阶段的解析。**
+
+- tool handler 的 set/execute 预览分支原先直接调用 resolveOps，positions 会触发 op.spans is not iterable；
+- 现在与 engine 一致，positions 走 resolveUnitOps，spans 走旧 resolveOps。
+
+全套 **14 套 / 269 条**。
+
+
+## 0.50.11
+
+
+**世代页只显示模型消息。**
+
+- 历史世代页过滤掉 compaction 等非消息节点；
+- 不再合成/替换官方 compaction 行；
+- 压缩只以 checkpoint 摘要消息的形式出现；
+- 官方轨迹页保持自己的事件视图。
+
+全套 **14 套 / 269 条**。
+
+
+## 0.50.10
+
+
+**物理页随 append 增长到下一个 replacement。**
+
+- 当前物理页快照在 append 时更新，不再冻结在 replacement 那一刻；
+- 因此 L2 页包含 C2 之后直到 C3 之前的全部消息；
+- 官方 compaction 节点替换为下一条完整压缩，显示 C3 的 77 轮摘要；
+- stateVersion 仍为 8（此前的 8 已包含 compactions 元数据）。
+
+全套 **14 套 / 269 条**。
+
+
+## 0.50.9
+
+
+**官方压缩节点跟随正确的下一边界。**
+
+- 保存 compaction start/summary/end/checkpoint 元数据；
+- 每个世代页把官方 running compaction 节点替换为“下一条完整压缩”；
+- L2 页显示 77 轮压缩摘要，而不是 40 轮 running 文案；
+- stateVersion 升到 8。
+
+全套 **14 套 / 269 条**。
+
+
+## 0.50.8
+
+
+**物理世代改为 replacement 之后的快照，压缩事件交给官方装配器。**
+
+- page 0 是第一次 replacement 之前的初始 surface；
+- page g 是完成 g 次 replacement 之后的 surface；
+- compaction/start、summary、end 不再被 hiddenSteps/替代区间过滤；
+- 页面 cutoff 包含 checkpoint；官方 trajectory-compaction 节点自行渲染“已压缩”；
+- 移除自定义压缩边界 badge。
+
+全套 **14 套 / 269 条**。
+
+
+## 0.50.7
+
+
+**恢复官方样式的压缩边界标记。**
+
+- 旧页末尾在下一个 compaction 边界前显示“已压缩”；
+- 使用官方 compacted 配色与 type tag 尺寸；
+- 保留单行物理/逻辑 pager；
+- 物理轴仍是唯一 surface 轴。
+
+全套 **14 套 / 269 条**。
+
+
+## 0.50.6
+
+
+**pager 恢复旧版单行布局。**
+
+- 物理页和逻辑页在同一行；
+- 逻辑组用左侧分隔线隔开，不再上下两排；
+- 顶栏高度回到旧实现；
+- 保留物理轴 + 逻辑标签映射。
+
+全套 **14 套 / 269 条**。
+
+
+## 0.50.5
+
+
+**恢复物理/逻辑两排页签。**
+
+- 物理页仍为唯一 surface 轴；
+- 物理页按钮只显示物理号；
+- 逻辑页单独一排，L0..Ln 直接跳对应物理页；
+- 移除物理按钮内联的 L 标签；
+- 保留 #n 单元序号。
+
+全套 **14 套 / 269 条**。
+
+
+## 0.50.4
+
+
+**回退到物理世代唯一轴；逻辑世代只是物理页标签。**
+
+- G0 固定对应 physical 0；
+- 每次边界只把逻辑标签挂到某个物理页；不再生成合成逻辑页；
+- 最新物理页承载最新逻辑世代；
+- pager 只显示物理页，逻辑号作为按钮内小标签；
+- 移除双 pager、自定义“已压缩”徽标；压缩事件交回官方轨迹行。
+
+全套 **14 套 / 269 条**。
+
+
+## 0.50.3
+
+
+**修复传统会话初始世代、压缩事件样式与双 pager。**
+
+- 纯压缩会话显式加入 G0 初始页，压缩后依次为 G1..Gn；
+- acb02be6 不再出现逻辑 2/3 指向同一物理页；
+- 旧页末尾的“已压缩”改为官方 compacted 配色，并放回类型列；
+- 世代栏同时显示物理页组和逻辑页组；
+- 类型列显示 #n 单元序号。
+
+全套 **14 套 / 269 条**。
+
+
+## 0.50.2
+
+
+**修复逻辑页重复、恢复物理/逻辑双 pager、序列号显示。**
+
+- 压缩后无新物理页时，不再多造一个重复的“下一逻辑页”（acb 的 2/3 重复修复）；
+- 世代栏同时显示物理页和逻辑页；
+- 类型列显示 #n 单元序号；
+- 移除 pm 兼容 preset；profile 的 selectedDefault 需改为 ptc；
+- 保持 stateVersion 7 的 boundaries 持久化修复。
+
+全套 **14 套 / 269 条**。
+
+
+## 0.50.1
+
+
+**修复世代边界丢失与 pm preset 兼容。**
+
+- `generations.js` 的 surface append/replace 状态不再丢掉 `boundaries`；
+- compaction checkpoint 先记边界再执行 surface replace，物理页和逻辑页一致；
+- `GENERATIONS_STATE_VERSION` 升到 7，旧投影缓存失效；
+- 重新生成 `pm` 兼容 preset：等价 PTC（保留 compaction），不重复挂 PM 插件，修复 `Unknown agent preset: pm`；
+- 新增压缩边界跨后续 append 的回归测试。
+
+全套 **14 套 / 269 条**。
+
+
+## 0.50.0
+
+
+**通用 PTC-only 重构（WIP）：取消 PM preset/cookie，改为世代单元序号。**
+
+- `retrospect(self)` 返回当前世代单元数组，0 起；系统提示词 = 0；assistant + 工具结果 = 一个单元；
+- `plasticize` 使用 `positions` 单元序号；`this` 自噬替换生成 execute 的单元；
+- retrospect 默认 `preview:true`；单元含 type / autoInjected / safety / locked；
+- 自动隐藏：所有 set、报错 PM 工具、letter、retrospect；execute 不自动隐藏；
+- 安全区改为单元序号，最多 64 单元；自动补充类型不可锁；压缩后重放锁定原文；
+- 逻辑边界合并 PM private events 与成功 compaction checkpoint；
+- bundle 全局注册，不再依赖 PM preset；生产 cookie 注入移除；
+- 世代选项卡显示当前世代 `#n`，逻辑 pager 优先；
+
+当前全套 **14 套 268 条**。
+
+
+## 0.49.14
+
+
+**新增独立 PM 语义审计器 verify.js + verifytest。**
+
+- 不 import engine，直接回放事件检查：sourceEventSeqs/refs 是否精确等于 shadowed surface、替代内容与 op 形状、declaration/failed 对应、逻辑事件编号与物理页、锁记录是否在 surface/已锁/prelock 目标；
+- 在最新真实会话 76e53f1c 上审计 0 错误；
+- verifytest 覆盖正常通过 + sourceEventSeqs 缺节点/替代内容错误/锁定非 surface seq 三类变异均能抓出；
+- 这是“翻译结果事件级一致性”审计；ops→区间的独立参考解释器仍可作为下一层 differential 校验。
+
+全套 **18 套 670 条**。
+
+
+## 0.49.13
+
+
+## 0.20.x / 0.18.0 / 0.16.2 / 0.16.0 / 0.6.1
+
+
+（这几个标题在某次编辑里被折叠成一行，正文已丢失；需要考古请看 git 历史。）
+
+
 ## 0.15.4
+
 
 **A 形态头部行搬家的兜底：records 里拿不到 sourceSeq/index 时，按「紧随被覆盖区间」定位已塑形行。**
 
@@ -15,7 +1173,9 @@
 - 移除操作改为按**记录对象引用**过滤（不再依赖字段），避免误删/漏删。
 
 全套 **17 套 574 条**。
+
 ## 0.15.3
+
 
 **修复 A 形态：已塑形行没有搬到覆盖区间之前；覆盖区间里的子工具行消失。**
 
@@ -25,7 +1185,9 @@
   恢复显示。
 
 全套 **17 套 574 条**。
+
 ## 0.15.2
+
 
 **修复：快照校验过松，仍可能接受上一代快照（世代滞后一代、已塑形缺失/错位、展开为空）。**
 
@@ -35,7 +1197,9 @@
 - 校验失败不写缓存、下一拍重读；读缓存同样校验。
 
 全套 **17 套 574 条**。
+
 ## 0.15.1
+
 
 **修复：缓存的快照可能属于「装配未完成时的上一個状态」，导致世代显示错位、已塑形消失/展开为空。**
 
@@ -47,7 +1211,9 @@
   读缓存时也再校验一次，脏缓存直接丢弃重读。
 
 全套 **17 套 574 条**（快照缓存相关断言保持通过）。
+
 ## 0.15.0
+
 
 **已塑形改成 A 形态（行内真插入）；官方快照缓存改为 base/expanded 双变体。**
 
@@ -61,7 +1227,9 @@
 - 移除悬浮内嵌视图与自动跳转（B 形态下线）。
 
 测试：uitest 85→89，versioncheck 65→67；全套 17 套 574 条。
+
 ## 0.14.2
+
 
 **已塑形展开的上一世代官方视图：自动跳到被覆盖区间（先解决「没裁到对应区间」）。**
 
@@ -74,7 +1242,9 @@
 
 全套 **17 套 568 条**。
 
+
 ## 0.14.1
+
 
 **修复：展开已塑形时没有拿到官方视图 context，退回了摘要兜底（截图里的错乱面板）；并补上缓存缺失时的按需装配。**
 
@@ -89,7 +1259,9 @@
 
 全套 **17 套 568 条**。
 
+
 ## 0.14.0
+
 
 **已塑形展开 = 内嵌上一世代的官方轨迹视图（B 形态）；官方快照按世代缓存，live 世代不缓存。**
 
@@ -125,7 +1297,9 @@
   后续可在缓存时校验边界；
 - 内嵌视图的 `loadOlder` 关闭（只展示已缓存的上一世代窗口）。
 
+
 ## 0.13.0
+
 
 **相邻世代差异（已塑形）：官方轨迹行 + 一处粉色折叠类型标签；没有第二套语法解析器。**
 
@@ -163,7 +1337,9 @@
 
 全套 **17 套 551 条**。
 
+
 ## 0.12.1
+
 
 **步骤原子性：从「已知边界」升级为不变量；用真实会话日志验证（并区分旧版本遗留）。**
 
@@ -199,7 +1375,9 @@
 
 全套 **17 套 540 条**。
 
+
 ## 0.12.0
+
 
 **架构修正：世代轨迹不再「过滤官方快照」，改为「日志 → 官方投影 → 真实上下文 → 官方装配重建」。**
 
@@ -247,7 +1425,9 @@
 - 切世代会重装配整个已加载窗口，超长会话可能有一瞬卡顿；
 - 「最新世代」按语义也隐藏已被遮蔽的旧内容，因此与官方「原始轨迹」页可能不同。
 
+
 ## 0.11.0
+
 
 **事实源与一致性：用官方 fold 做裁判，逐世代差分校验 + 运行期自检；如实记录残余风险。**
 
@@ -274,7 +1454,9 @@
 新增 `diffcheck`（4 条）：夹具 3 个世代边界全部与官方 fold 一致；
 插件真实操作产生的世代同样逐代一致。全套 **15 套 514 条**。
 
+
 ## 0.10.1
+
 
 **世代选择条：靠右紧贴搜索框；页码改叫「世代」，按钮数字与世代号同步。**
 
@@ -297,7 +1479,9 @@
 
 全套 **14 套 510 条**。
 
+
 ## 0.10.0
+
 
 **第一层 PM 图层：官方轨迹页工具栏里的世代页码（论坛式：首页 … 5 6 7 8 … 末页）。**
 
@@ -336,7 +1520,9 @@
   个别 tool 行按 tool/call seq 锚定、在极端情况下可能残留 —— 逐页对照时再收；
 - 分页只是展示层过滤，不改 host 日志与请求组装。
 
+
 ## 0.9.0
+
 
 **世代选项卡改为「官方轨迹 1:1 复刻」：vendor 官方 bundle + 私有化改名 + 生成脚本。**
 
@@ -370,7 +1556,9 @@
 
 全套 **14 套 497 条**。
 
+
 ## 0.8.2
+
 
 **两列之间留出空隙列，并画差异连接带 —— 一眼看出「几行被稳定化成哪一行」「几行藏到哪两行之间」。**
 
@@ -393,7 +1581,9 @@
 
 全套 **14 套 492 条**。
 
+
 ## 0.8.1
+
 
 **页码条回到「世代」选项卡内部（sticky 贴在输入框上方，只有本选项卡可见）；行渲染照抄官方轨迹视觉。**
 
@@ -424,7 +1614,9 @@ toolbar / 列头同样 30–32px、sticky、`--dsw-specific-sidebar-fill` 背景
 
 全套 **14 套 489 条**。
 
+
 ## 0.8.0
+
 
 **世代视图改成「左右两列差异 + 绿线/蓝块」；页码条移进输入框 dock（修复随轨迹滚走）。**
 
@@ -460,7 +1652,9 @@ toolbar / 列头同样 30–32px、sticky、`--dsw-specific-sidebar-fill` 背景
 
 全套 **14 套 489 条**。
 
+
 ## 0.7.9
+
 
 **「世代」视图选项卡（选项二落地）：遮罩折叠 + 底部世代页码条；删除侧边栏入口。**
 
@@ -496,7 +1690,9 @@ toolbar / 列头同样 30–32px、sticky、`--dsw-specific-sidebar-fill` 背景
 
 全套 **14 套 483 条**。
 
+
 ## 0.7.8
+
 
 **用户消息前后各夹一条 cookie；时间快照不再与用户消息混在一起。**
 
@@ -539,7 +1735,9 @@ cookie 坐标系，模型不需要知道「第几条消息」。
 
 全套 **14 套 476 条**。
 
+
 ## 0.7.7
+
 
 **UI：侧边栏「可塑记忆」世代上下文视图；用户侧 slash 命令（与工具同语法）。**
 
@@ -585,7 +1783,9 @@ web 客户端按「Loader 里出现的包」发现 `dsh.client`；preset 行要�
 
 全套 **14 套 462 条**。
 
+
 ## 0.7.6
+
 
 **PTC 下 `also_execute_last_set` 会写两条投影；补上「自噬回执」说明；机械测试脚本去歧义。**
 
@@ -625,7 +1825,9 @@ web 客户端按「Loader 里出现的包」发现 `dsh.client`；preset 行要�
 
 全套 13 套 410 条。
 
+
 ## 0.7.5
+
 
 **修掉机械测试第三步的死循环：自动隐藏把「待决的 set 预览」吞了。**
 
@@ -671,7 +1873,9 @@ web 客户端按「Loader 里出现的包」发现 `dsh.client`；preset 行要�
 
 全套 13 套 399 条。
 
+
 ## 0.7.4
+
 
 **把插件限制在 PM 会话模式内；修掉 preset 里 `{{cwd}}` 导致的启动失败。**
 
@@ -725,7 +1929,9 @@ pack 模式仍然可用（冻结快照/搬移），但每次改完要重新 `./i
 
 全套 13 套 383 条。
 
+
 ## 0.7.3
+
 
 **修掉 PTC 路径下的两个连环 bug —— 一次真实测试里模型连续 4 次「报错但投影仍然生效」。**
 
@@ -779,7 +1985,9 @@ PM 工具自己的 execute 运行时，承载它的 assistant 消息已经落盘
 
 全套 13 套 380 条（原 363）；`versioncheck` 23 条不变。
 
+
 ## 0.7.2
+
 
 **改成标准 DSH bundle 安装：一条 `dsh plugin add` 完成依赖 + bundles 注册，配一份幂等安装脚本。**
 
@@ -831,7 +2039,9 @@ pnpm 也不再警告。`versioncheck` 新增 3 条守护：`engines.dsh` 存在�
 
 13 套 363 条（versioncheck 20 → 23）。
 
+
 ## 0.7.1
+
 
 **cookie 文本去掉 md5，改成人类可读样式；身份只认元数据。节点 id 去掉随机 UUID。**
 
@@ -873,7 +2083,9 @@ pnpm 也不再警告。`versioncheck` 新增 3 条守护：`engines.dsh` 存在�
 
 全套 360 条（cookietest 43 → 51；selftest +1 验证确定性替换节点 id，hooks +2 验证 cookie 正文样式与确定性 cookie id）。
 
+
 ## 0.7.0
+
 
 **把上一轮只做了一半的重构做完，并补上「自动隐藏」。** 全套 349 条断言回绿。
 
@@ -948,982 +2160,3 @@ cookie 一条都不会有，而所有定位语法都依赖它。
     ─────────────────────
     合计       236   349   13 套全绿
 
-## 0.20.x / 0.18.0 / 0.16.2 / 0.16.0 / 0.6.1
-
-（这几个标题在某次编辑里被折叠成一行，正文已丢失；需要考古请看 git 历史。）
-
-## 0.50.85
-
-**修复：私有事件缺 ignorable 标记导致宿主拒绝加载整份日志。**
-
-- 起因：commit / commit-checkpoint / logical / locks / reject / damaged 之前用 session.append 写入，envelope 没有 ignorable:true；
-- 宿主遇到不认识的 plugin: 类型且未标记 ignorable 时，会拒绝解释整份日志（历史加载失败）；
-- 现在所有私有事件都走 appendPluginRecord（index 注入宿主实现），envelope 带 ignorable:true；
-- 新增 repair-ignorable.mjs：给历史日志补标记（自动留 .bak）；
-- spectest 新增回归：flush 写出的私有事件必须全部带 ignorable。
-
-全套 **12 套 / 256 条**（uitest 103 另计）。
-
-## 0.50.84
-
-**三个工具都拒绝未知字段；retrospect 补截断提醒。**
-
-- retrospect / letter 的 schema 也加 additionalProperties:false；
-- retrospect 描述补一句：结果过大可能被宿主截断（约 6000 字符），请用 messages_position / head / tail 控制大小。
-
-全套 **12 套 / 254 条**（uitest 103 另计）。
-
-## 0.50.83
-
-**四个测试会话审计后修的两处问题。**
-
-- PTC 下 retrospect(self) 多算了当前 assistant 消息：callId 形如 root:ptc:N，而承载消息里记的是 rootCallId；cutoffForCall 现在两种都认（实测 units 31 vs 30 的偏差消失）；
-- plasticize 增加 additionalProperties:false：模型按旧 API 传 option:"set" 时会被拒绝，而不是被静默忽略后真的写入；
-- 选择器允许裸数字区间（0 to 20），对齐模型自然写法；
-- 审计结论：native 下 retrospect 与捕获逐行一致；每次 replace 后的下一个捕获都能看到新文本、旧节点消失。
-
-全套 **12 套 / 254 条**（uitest 103 另计）。
-
-## 0.50.82
-
-**文案按现状重写（三篇工具描述 + 参数 + README + 求助文档）。**
-
-- plasticize：删掉 set 相关表述，补 this 的语义、提交边界失败会留说明、隐藏单元不可再选；
-- retrospect：返回结构改成 { logical, units, messages?, letters? }，补 role/calls/locked/letters/head/tail 说明；
-- letter：改成「成功调用后会被自动隐藏」；
-- README 重写：单模式 API、WAL 写入协议、测试数字、已知限制；
-- 文案打磨-求助.md 重写：理念/术语/三篇现文案/不能改的事实/待决问题。
-
-全套 **12 套 / 252 条**（uitest 103 另计）。
-
-## 0.50.81
-
-**retrospect 裁剪参数拆成 head / tail。**
-
-- clip 的语义与词义不符（clip 是剪掉，不是两头保留），改为 head: N / tail: M；
-- 超长才裁：长度 ≤ head+tail 时原样返回；head 或 tail 为 0 时该侧不保留；
-- 文档与工具描述同步。
-
-全套 **12 套 / 252 条**（uitest 103 另计）。
-
-## 0.50.80
-
-**retrospect 用 clip:N 取代 preview 布尔；删除内部旧行视图。**
-
-- clip: N = 每条 text 前后各留 N 个字符（超长才裁，中间用 …… 省略）；
-- 删除 preview 参数与 messages.retrospectMessages（unitest 改用 retrospect 的 JSON 输出）；
-- CONTRACT.md 与工具描述同步。
-
-全套 **12 套 / 252 条**（uitest 103 另计）。
-
-## 0.50.79
-
-**清理 set 遗留：规格、审计、测试、死文件。**
-
-- pmspec 删除宏规则（isMacro / 展开 / no-pending / macro-twice）；
-- verify.js 不再看 option：所有声明都按 execute 校验「有显式替换」；
-- spectest 删除宏重放分节，随机场景改为「两条不相交 op」；
-- 删除 preview.js（渲染已随 set 预览一起消失）；index 去掉未用的 retrospectMessages 导入。
-
-全套 **12 套 / 251 条**（uitest 103 另计）。
-
-## 0.50.78
-
-**units 改为总单元数；null 明确拒绝。**
-
-- 之前误解为「单元号列表」，现改为 Number：当前世代一共有多少个单元；
-- messages_position / letters_position 只接受选择器或 none；null 在 schema 层就被拒绝（normalizePosition 里也保留了防御）；
-- 文档与工具描述同步。
-
-全套 **12 套 / 254 条**（uitest 103 另计）。
-
-## 0.50.77
-
-**retrospect 收敛：none 唯一、units 常回、tool 并入 assistant。**
-
-- messages_position / letters_position 只接受 none（不再接受 null）；
-- units 任何情况下都返回（当前世代全部单元号），不再只在过滤时给；
-- tool 结果行标注为 assistant（与它的 assistant 同单元，按 tool 过滤和按 assistant 过滤等价）；role 只剩 system/user/assistant/developer；
-- 工具描述与 CONTRACT.md 同步。
-
-全套 **12 套 / 253 条**（uitest 103 另计）。
-
-## 0.50.76
-
-**retrospect 输出瘦身：role 取代 type，去掉 n/seq，窗口参数拆分。**
-
-- messages 行 = { unit, role, text, calls?, locked? }：role 用模型熟悉的 system/user/assistant/tool/developer；
-- 删除 n 与 seq（行号=数组下标，seq 是内部字段）；preview 标志不再出现在返回里；
-- 删除 count / total；只有给了 messages_position 时才回 units；
-- result_positions 拆成 messages_position / letters_position，都支持 none / null；
-- 修复 letters 的世代归属：无 execute 的会话里当前世代的 letter 会被判成第 0 代而丢掉；
-- 文档与工具描述同步。
-
-全套 **12 套 / 253 条**（uitest 103 另计）。
-
-## 0.50.75
-
-**删除 set：plasticize 只剩一种模式。**
-
-- 工具参数只剩 { ops }：每元素 = 一个选择器 + 一条替代文本，直译成一条 surfaceOp；
-- 删除选项 option / preview_positions / 宏 { the last plasticize(set) } / 待决 set 判定（pending.js 整个文件）；
-- 删除 set 预览（plasticize.js、preview.js 的 projectNext / renderRowsPreview）；preview.js 只剩 renderPreview 给 retrospect 用；
-- 自动隐藏不再有 set 分支；扫描、去重、consumed 相关逻辑一并简化；
-- 工具先校验 ops 形状，再找承载消息（参数错误优先报参数错误）；
-- 测试：契约/集成/global/ptc/oracle 里的 set 用例删除或改写；gentest 删除（预览≡结果的命题随 set 消失）。
-
-全套 **12 套 / 250 条**（uitest 103 另计）。
-
-## 0.50.74
-
-**一条 op 直译成一条 surfaceOp；删掉归并与旧的多段规则。**
-
-- resolveUnitOps 不再走「多段里只有最后一段拿到 new_text」的旧逻辑（positions 早已是单值）；
-- 自动隐藏不再做相邻归并：空文本本身就是空洞，多写一条事件没有语义代价；
-- 删除未再使用的 unitRanges。
-
-全套 **13 套 / 284 条**（uitest 103 另计）。
-
-## 0.50.73
-
-**重叠检测返回全部交集；自动隐藏改为「扣减 + 合并」而非整条丢弃。**
-
-- findOverlap 增加 seqs 字段（两区间的全部重叠 seq）；新增 intersectionOf / subtractSeqs；
-- 自动隐藏：合成候选区间 → 扣掉显式 op 覆盖的 seq（只丢自动隐藏这一侧）→ 连续段拆分 → 相邻合并 → 解析写入；
-- 相邻区间合并成一条 op，避免写出一串连续 developer 消息；
-- spectest 新增 ③e：交集、无交集、扣减拆分、全扣减。
-
-全套 **13 套 / 284 条**（uitest 103 另计）。
-
-## 0.50.72
-
-**set 查找去掉两处全量扫描。**
-
-- failedCallIds 只在「最老可见节点」之后扫描（更早的 set 不可能是待决）；
-- ownerEventOf 从调用位置往回找承载消息，不再从头遍历；
-- 宏展开仍然只是把 set 的 ops 原样拼进 op 列表，没有第二条管线。
-
-全套 **13 套 / 280 条**（uitest 103 另计）。
-
-## 0.50.71
-
-**自动隐藏改成合成 ops，走和模型 ops 同一条解析路径。**
-
-- autoHideTargets 的结果先折成 { positions: "unit a to b", new_text: "" }，再交给 resolveUnitOps；
-- 单元边界 / 重叠 / 锁 / 系统提示的判定从此只有一份（此前 auto-hide 自己算 seq 区间）；
-- 写入仍在同一个 WAL commit 批次内，哈希覆盖不变；
-- 实测：set 单元仍被隐藏，commit 覆盖 3 条（投影 + 自动隐藏 + 世代边界）。
-
-全套 **13 套 / 280 条**（uitest 103 另计）。
-
-## 0.50.70
-
-**删除 pending.js 里对「含宏 set」的兜底过滤。**
-
-- 该形态已被工具层直接拒绝（结果 isError），failed 过滤已覆盖；
-- 项目未发正式版，不做前向兼容，不为历史日志保留多余分支。
-
-全套 **13 套 / 280 条**（uitest 103 另计）。
-
-## 0.50.69
-
-**记录改名：checkpoint → commit-checkpoint。**
-
-- 避免与理论文档里的「压缩 checkpoint」混淆：它只表示「这批 WAL 已完整写入」；
-- 文档统一用「WAL commit」指 plugin:plastic-memories/commit，与 git commit 无关；
-- CONTRACT.md 增加「写入协议（WAL）」一节，写明三步顺序与哈希范围。
-
-全套 **13 套 / 280 条**（uitest 103 另计）。
-
-## 0.50.68
-
-**checkpoint 封住校验成本；set 改为工作面上的反向扫描。**
-
-- 每批写完后追加 plugin:plastic-memories/checkpoint { upTo }；它之后的 commit 不再校验；
-- 回溯最后一条标记有上限（2000 条事件），扫不到按「太旧、不查」处理；
-- findLastPendingSet 重写：从日志尾部往前扫，跨过最老可见节点即停；只认仍在工作面上的 set；
-- 兑现过的 set 会随单元被自动隐藏，「可见性 = 未兑现」，不再需要扫全部日志；
-- spectest 新增 ③d：checkpoint 落点、覆盖范围、后续 flush 不误报。
-
-全套 **13 套 / 280 条**（uitest 103 另计）。
-
-## 0.50.67
-
-**commit 覆盖的哈希范围确认：整批真实落盘事件（替换 + 私有事件）。**
-
-- 一批 = developer/message(replace) + plugin locks(lock_this) + 自动隐藏 + plugin logical(世代边界)；
-- 字段集 { seq, type, data, surfaceOp, sourceEventSeqs }；唯一排除 time（DSH 在 append 时赋值）；
-- 校验读取的是 snapshotEvents 的真实事件，与预计算共用 hashEventRange；
-- spectest ③c 增加「条数一致但哈希不符」用例。
-
-全套 **13 套 / 277 条**（uitest 103 另计）。
-
-## 0.50.66
-
-**预写提交记录（WAL）：commit 先落盘，数据后落盘；每次 flush 校验最后一条 commit。**
-
-- 写入路径改为「先算整批计划事件，再写 commit，再写数据」；commit 带 { from, to, count, hash }；
-- hash = sha256(规范化事件序列)，只取稳定字段（seq/type/data/surfaceOp/sourceEventSeqs，排除 time）；
-- flush 每次回溯最后一条 commit 或 checkpoint；checkpoint 之前不再校验（长会话护栏，尚未写入）；
-- 发现损坏：logger.error + plugin:plastic-memories/damaged + 一条可见提示（建议 retrospect(self - 1) 核对）；同一段只报一次；
-- spectest 新增 ③c：伪造 commit 只写一半，验证损坏被发现。
-
-全套 **13 套 / 276 条**（uitest 103 另计）。
-
-## 0.50.65
-
-**边界拒绝分成两类：safety-zone（预期）与 internal（bug）。**
-
-- reject 记录增加 kind 字段；internal 用 logger.error 而不是 warn；
-- 可见提示也分措辞：INTERNAL ERROR 与 NOT applied；
-- 说明：工具层检查针对调用时刻的表面；安全区可能在调用之后、边界之前被用户改动，这是唯一预期内的拒绝路径。
-
-全套 **13 套 / 274 条**（uitest 103 另计）。
-
-## 0.50.64
-
-**被拒绝的 execute 现在会告诉模型。**
-
-- 工具调用时只能回「已登记」，真正写入在提交边界；此前边界失败只留一行日志，模型以为自己生效了；
-- 现在边界失败会追加一条可见 developer 提示：[plasticize] NOT applied: <原因>；
-- Registered 回执补一句：若表面在边界前变化，则什么都不写、改为留下提示；
-- spectest 安全区用例新增两条断言（可见提示 + reject 记录）。
-
-全套 **13 套 / 274 条**（uitest 103 另计）。
-
-## 0.50.63
-
-**被拒绝的 execute 现在会写一条私有事件。**
-
-- 之前失败只在 logger 里留一行 warn，日志里「被拒绝」和「漏写」完全同形，审计器无法区分；
-- 现在写 plugin:plastic-memories/reject { callId, message }；
-- verify.js 识别该事件：被拒绝的声明不再要求显式 replace，同时禁止它被应用；
-- spectest 恢复对全部 40 个用例跑审计（此前对拒绝场景只能跳过）。
-
-全套 **13 套 / 272 条**（uitest 103 另计）。
-
-## 0.50.62
-
-**随机差分扩到四类场景：普通 / this / 宏重放 / 安全区。**
-
-- 用例数 30 → 40，按 index %% 4 轮转场景，覆盖此前只有固定用例的路径；
-- runCase 支持 setOps（宏重放）与 lockUnit（先加锁再执行）；spec 侧对应传入 pendingOps / locks；
-- 新增断言：规格报错 ⇒ 实际 applied 0 且不写事件；被拒绝的用例跳过 verify 审计（audit 会误报 successful execute has no explicit replacement）。
-
-全套 **13 套 / 272 条**（uitest 103 另计）。
-
-## 0.50.61
-
-**执行规格覆盖宏重放；清掉一批死代码。**
-
-- pmspec 增加规则 8：宏 { "the last plasticize(set)": true } 在原位置展开成待决 set 的 ops（只能一次；无待决 → no-pending）；
-- spectest 增加 ⑤：重放场景下规格展开与真实事件逐条一致；
-- 删除 messages 里已无调用方的 messagesAt / currentCutoff / currentInputMessages；
-- 顺手修掉残留的停止点注释。
-
-全套 **13 套 / 272 条**（uitest 103 另计）。
-
-## 0.50.60
-
-**清掉失效的重放锚点；世代视图回归接入测试链。**
-
-- set 不能再写 this 之后，重放不需要另找零点：删除 engine 里的 opsAnchorCallId 分支（约 15 行）；
-- gentest 重写为跨实现比对：P1 预览行 == 提交后 self 的开头若干行；P2 self-1 == 提交前前缀；
-- 删除 genview.mjs（被 rowsAt 取代的 WIP 期望模型）；
-- gentest 接入 npm test。
-
-全套 **13 套 / 269 条**（uitest 103 另计）。
-
-## 0.50.59
-
-**set 不再支持 this。**
-
-- set 会被宏原样重放；重放时的 this 指向重放者（execute）而不是当初的 set，语义会飘；
-- 工具层直接拒绝：option:"set" does not support this ... name the unit explicitly；
-- execute 仍然支持 this；工具描述与 CONTRACT.md 同步；
-- ptctest 里三处 set+this 用例改为具体单元，并重写 ⑦ 的断言（显式 replace 数、遮蔽区间、consumed）。
-
-全套 **12 套 / 263 条**（uitest 103 另计）。
-
-## 0.50.58
-
-**retrospect 与 set 预览统一成「一个 fold，三个切点」。**
-
-- 新增 messages.rowsAt(session, cut)：self / 历史 / 预览共用同一条取行管线；
-- self 切点 = 承载本次调用的 assistant 消息；历史切点 = 冻结事件；预览切点同上再叠加假想 surfaceOp；
-- 预览不再把本次调用自己画进去（旧实现多一条空 assistant 行：25 条 vs 实际 24 条）；
-- 实测：预览正文 == 提交后 self 去掉调用单元后的内容，逐行一致；
-- index 去掉 self 特判，retrospect 只剩一个入口。
-
-全套 **12 套 / 261 条**（uitest 103 另计）。
-
-## 0.50.57
-
-**retrospect 统一成「前缀折叠 + 切点」：self 的切点 = 本次调用的 assistant 消息。**
-
-- 旧做法按 toolCallId 剔除「本次调用的结果」，同一步多条调用时会留下**没有对应调用的孤儿 tool 行**（实测：self 末尾出现孤立 `Preview only`）；
-- 新做法与历史世代同一条规则，只换切点：self 切在承载本次调用的 assistant 消息之前，历史切在冻结事件之前；
-- 三条读取路径现在都是 fold(前缀)：self / 历史 / 预览（真事件+假想）；
-- 副作用：self 不再包含本步其余工具结果（它们不属于「本次请求的输入」）。
-
-全套 **12 套 / 261 条**（uitest 103 另计）。
-
-## 0.50.56
-
-**retrospect(self) 改为「全量折叠 − 本次调用自身」，不再用 seq 截止。**
-
-- 旧做法：取最后一条 assistant 的 seq 做前缀截止；等价但隐含「最后一条 assistant 一定晚于所有已写节点」这个前提；
-- 新做法：折叠当前工作面，只剔除承载本次调用的 assistant 消息与它的工具结果（按 callId，不按 seq）；实测两种写法在真实流程里等价，属于简化而非修 bug；
-- 历史世代仍走日志前缀折叠（探针会话），边界改为承载 execute 的那条事件；
-- 三条路径现在只差「折叠哪段日志」：预览=真事件+假想、self=全量、历史=前缀。
-
-全套 **12 套 / 261 条**（uitest 103 另计）；gentest 仍为 WIP。
-
-## 0.50.55
-
-**世代视图性质测试（WIP）抓到的两个真 bug，已修。**
-
-- set 预览把替代文本渲染成 user，真正提交后是 developer —— 预览骗了模型；现在两边同形（developer/message + 信封 turn/step/message）；
-- 历史世代边界取「再往前一条 assistant」，会漏掉上一条 assistant 的 tool result（实测少 2 条）；现在直接用边界事件 seq 做前缀截止；
-- retrospect(self) 增加 callId 锚点（cutoffForCall），不再用「最后一条 assistant」误裁提交后写入的替代节点；
-- 新增 genview.mjs（世代视图规格）与 gentest.mjs（P1 预览 / P2 self / P3 self-1 三条性质），**尚未接入 npm test**：P2、P3 仍在红；
-- 现有 12 套 / 261 条全绿。
-
-## 0.50.54
-
-**新增 PM 执行规格 pmspec.mjs（execute → surfaceOp，不依赖 DSH 消息推导）。**
-
-- 规格是纯函数：工作面节点 + ops + 安全区锁 → 应写出的 replace 事件（区间 / sourceEventSeqs / 文本）；
-- spectest.mjs 逐条比真实 flush 写出的事件，并带 30 例随机差分与 verify.js 审计；
-- 系统提示拒绝独立成错误码 system-prompt，与 safety-zone 互不调用；
-- CONTRACT.md 增加「执行规格」与「两种拒绝」两节。
-
-全套 **12 套 / 261 条**（uitest 103 另计）。
-
-## 0.50.53
-
-**新增独立规格 oracle 与差分测试（oracle.mjs / oracletest.mjs）。**
-
-- oracle.mjs 不 import engine/units：只从消息列表按规格推算 execute 之后应得的消息；
-- oracletest.mjs 随机生成 40 个互不重叠的操作，比对「真实管线结果 = oracle 预测」，并校验事件不变量（每段 replace 必须是执行前工作面上的连续片段、互不重叠、显式事件数 = 操作数）；
-- 差分测试立刻抓到真问题：unit 0（系统提示）无法被替换，但插件之前只在提交边界静默跳过；现在单元解析阶段直接报错；
-- contract.mjs 补回错误矩阵（缺 option、越界、系统提示、旧区间写法、未知字段、窗口单值）。
-
-全套 **11 套 / 239 条**（uitest 103 另计）。
-
-## 0.50.52
-
-**删除系统提示总纲，工具描述改中文并去重。**
-
-- 移除 plastic-memories:guide 段落：定义只留在工具描述里；
-- 三篇描述重写：统一「单元 / 选择器 / 操作 / 替代文本 / 会话日志 / 逻辑世代」等术语，删掉重复与开发者缩写；
-- 修正过期说法（ops 不再支持多段、宏不再要求「单独成段」）；
-- letter 描述改为「成功后会被自动隐藏、只能用 retrospect 读回」；
-- 参数描述改中文并压缩到一行，不再复述工具描述里的语义；
-- 新增 文案打磨-求助.md（理念 / 术语 / 待打磨文案 / 约束 / 待决问题）。
-
-全套 **10 套 / 232 条**（uitest 103 另计）。
-
-## 0.50.51
-
-**positions / preview_positions / result_positions 全部改为单值。**
-
-- op.positions：一个 op 只选一段、只产出一条替代文本；多段写多条 op；
-- preview_positions / result_positions：单值选择器，要多段就多次调用；
-- 删除 selectUnits 的多选择器路径与 normalizeSelectors，改为 normalizeSelector；
-- 命令与工具继续共用同一套语法（命令 = 单值选择器 + 冒号 + 文本）。
-
-全套 **10 套 / 232 条**（uitest 103 另计）。
-
-## 0.50.50
-
-**删除死字段 `types`。**
-
-- spans 通道移除后 types 没有任何实现（只被归一化、从不被读取）；
-- opshape 去掉字段与默认值，工具 schema 去掉枚举分支，契约文档同步；
-- 现在只剩一个多值字段：`ops`（按设计如此）。
-
-全套 **10 套 / 231 条**（uitest 103 另计）。
-
-## 0.50.49
-
-**重放改成 ops 数组里的宏元素，可在任意位置拼接。**
-
-- 宏写作 `{ "the last plasticize(set)": true }`（也接受同名字符串），在所在位置原地展开成待决 set 的 ops；
-- 宏只能出现一次，不能带其它字段，set 不能用；
-- ops 的 JSON Schema 改成 oneOf：普通 op / 宏对象 / 宏字符串；
-- unitops 先展开宏再做 op 校验，程序侧不必再拼两条 plasticize。
-
-全套 **10 套 / 231 条**（uitest 103 另计）。
-
-## 0.50.48
-
-**统一成「ops 必填」，新增重放元素 `"the last plasticize(set)"`。**
-
-- ops 在 set / execute 下都必填且非空；不再有「execute 可以空 ops」的特例；
-- 兑现待决 set 改为显式重放：`ops:[{positions:["the last plasticize(set)"]}]`；
-- 重放元素必须单独成段、且不能带 new_text / lock_this / types；
-- 删除 `also_execute_last_set`（execute 不再隐式消费待决 set）；
-- 新增 pending.js（unitops 与 index 共用），避免 unitops → plasticize 的循环依赖；
-- 待决扫描跳过「ops 为空」与「ops 含重放元素」的非法 set。
-
-全套 **10 套 / 230 条**（uitest 103 另计）。
-
-## 0.50.47
-
-**空 set 显式非法。**
-
-- `option:"set"` 没有任何 op 时报 `option:"set" requires at least one op`；
-- set 的全部意义是「给出可预览的下一代」，没有预览就没有 set；兑现待决 set 请用 execute（可省略 ops）；
-- findLastPendingSet 的跳过规则改为防御性注释（旧日志残留的空 set 仍不会被当成待决）；
-- contract.mjs 增加空 set / 空 ops set 两条断言。
-
-全套 **10 套 / 233 条**（uitest 103 另计）。
-
-## 0.50.46
-
-**新增 contract.mjs：契约测试三层（语法 / 工具 / 行为）。**
-
-- A 纯语法：选择器、命令文本、op 归一化、命令≡单元素 positions；
-- B 工具层：JSON 参数直调 execute，覆盖 retrospect / plasticize / letter 的正常与错误路径；
-- C 行为层：set→execute（省略 ops）、空 ops、无待决 set、安全区、重放一致性、世代计数；
-- 修复 findLastPendingSet：ops 为空的 set 不再被当成待决（否则会挡住后面的 execute）；
-- CONTRACT.md 补充世代计数与待决 set 的语义。
-
-全套 **10 套 / 232 条**（uitest 103 另计）。
-
-## 0.50.45
-
-**ops 改为选填（默认 []）；删除 spans 旧语法；删除 retrospect 的 units 视图。**
-
-- ops 不再是必填参数：execute 省略/传 [] 只兑现上一条 set，是否合法由「execute + 待决 set」合并后的塑形规则决定；
-- 彻底移除 spans（cookie 区间）通道：opshape / index / engine / plasticize 全部只认 positions；spans.js 不再随包发布；
-- 删除 unitretro.js 与 retrospect({units:true})；unit 号本来就在每行的 unit 字段里；
-- compactMessages 改用 seq 对齐（deriveMessages 不带 seq，之前用 id 反查，测试夹具没有 id 就漏标 locked）；
-- 移除只测 spans 的测试套（selftest / balanced / cookietest / autohide / persist / diffcheck / atomicity / livetest / zeroanchor），行为覆盖将由 contract.mjs 重建。
-
-全套 **9 套 / 157 条**（uitest 103 另计）。
-
-## 0.50.44
-
-**execute 接受空 ops：只兑现上一条 set。**
-
-- 实测（d013）：模型先 set 再发 `{option:"execute", ops:[]}`，被 “ops must be a non-empty array” 打回；
-- 工具层现在按 engine 的语义过滤空批次：空 ops 不再送进解析器；
-- 完全没有可执行批次（既无 ops 也无待决 set）时给出明确报错；
-- globaltest 增加回归断言。
-
-全套 **14 套 / 280 条**（uitest 103、livetest 97 另计）。
-
-## 0.50.43
-
-**去掉 PTC 门控，三个工具全局无条件注册。**
-
-- 删除 tools.register 的 when 选项（standard/任意 preset 都能看到工具）；
-- 删除 sessionOf 里的 preset 判定与 /plasticize 的预设检查；
-- 结果窗口（preview_positions / result_positions）已经把“结果太大”这件事交给调用方控制；
-- globaltest 改为断言三个工具都没有 when。
-
-全套 **14 套 / 278 条**（uitest 103、livetest 97 另计）。
-
-## 0.50.42
-
-**结果窗口参数改名，避免和 ops[].positions 混淆。**
-
-- plasticize 顶层 `positions` → `preview_positions`（只作用于 set 预览）；
-- retrospect `positions` → `result_positions`；
-- 内部 previewOf 选项同步改成 selectors，语义与 messages.windowRows 一致；
-- 两者仍是同一套单元语法（unit 17 / unit 17 to 28）。
-
-全套 **14 套 / 280 条**（uitest 103、livetest 97 另计）。
-
-## 0.50.41
-
-**retrospect 与 set 预览支持同一套 positions 结果窗口，非 PTC 也能限制结果大小。**
-
-- 两个工具都新增顶层 positions（与 ops[].positions 同一套单元语法）；
-- retrospect 只返回选中单元的行，附 total 与命中 units；行保持真实 n/unit；
-- plasticize(set) 预览只列选中单元，并显示 “showing units ... of N”；
-- 两者都拒绝 this（读取/命令路径没有调用锚点）；
-- messages.js 拆出 groupRows / windowRows，预览与 retrospect 复用同一套单元裁剪；
-- 修复 coords.clip 的空白正则写成 /s+/ 导致预览文本吃掉所有字母 s 的老 bug。
-
-全套 **14 套 / 280 条**（uitest 103、livetest 97 另计）。
-
-## 0.50.40
-
-**命令里的 this 提前拒绝，并给出可执行的替代写法。**
-
-- parseOpText 增加 allowThis（默认 true）；命令传 false；
-- lock/hide/unlock 分支同样拒绝 this；
-- 报错不再落到运行期的 "op #0: this is not resolvable"，而是一句话说明 this 的含义并提示写 unit 17；
-- uitest 增加命令拒绝 this、工具仍允许 this 的断言。
-
-全套 **14 套 / 275 条**（uitest 103、livetest 97 另计）。
-
-## 0.50.39
-
-**命令文本严格等价于「单元素 positions 的 op」。**
-
-- UNIT_SELECTOR_SOURCE 收录 `this`，命令与工具的选择器词法完全一致；
-- parseOpText 明确按 normalizeOp({positions:[冒号前那段], new_text:冒号后那段}) 实现；
-- parseUnitRange 对 `this` 给出“需由调用方解析”的明确错误；
-- uitest 增加不变式断言：四种写法下 parseOpText 与 normalizeOp 结果逐字节相同。
-
-全套 **14 套 / 275 条**（uitest 101、livetest 97 另计）。
-
-## 0.50.38
-
-**命令与工具真正共用一套 op 语法，不再只是同一个文件。**
-
-- normalizeOp 从 plasticize.js 移到新模块 opshape.js（plasticize 继续再导出）；
-- opshape.js 新增 parseOpText：文本形式 `<selector>: <new_text>`，命令专用；
-- commands.js 不再自带选择器正则，只做 kind 前缀 + parseOpText；
-- unitops.js 的 op 校验改为调用同一个 normalizeOp，删掉重复规则；
-- uitest 增加“命令 op 与工具 op 同源”断言。
-
-全套 **14 套 / 275 条**（uitest 97、livetest 97 另计）。
-
-## 0.50.37
-
-**选择器语法收敛到唯一一处定义。**
-
-- units.js 导出 `UNIT_SELECTOR_SOURCE`（非捕获），parseUnitRange 与 commands.js 都从它派生；
-- commands.js 不再自带一份选择器正则；
-- `this` 判定抽成 isThisSelector，unitops 不再写死字符串比较；
-- 语法错误统一由 parseUnitRange 抛出。
-
-全套 **14 套 / 275 条**（uitest 95、livetest 97 另计）。
-
-## 0.50.36
-
-**命令里的选择器用冒号终结，替代文本可以以 to 开头。**
-
-- `/plasticize unit 17: 文本`：冒号是必须的终结符，`unit 17 to ...` 不再被误读成区间；
-- `positions` 里的选择器可带尾随冒号（`"unit 17:"`）；
-- 缺冒号时直接报错并给出正确写法；
-- static 命令路径不再写 `interval: undefined`。
-
-全套 **14 套 / 275 条**（uitest 95 条另计）。
-
-## 0.50.35
-
-**安全区只属于当前世代；positions 改成自然语言；preset 门控用官方读面。**
-
-- retrospect 历史世代不再返回 locked（那时的锁还不存在）；self 才带 locked；
-- unitView 去掉与 locked 重复的 safety；
-- positions 改写为 `unit 17` / `unit 17 to 28`；`[17,28]` 这种数学写法直接拒绝并给出正确写法；
-- /plasticize 命令同步支持带空格的选择器；
-- preset 判定改用 agentPresets.presetForSession()，standard 会话不再出现 PM 工具。
-
-全套 **14 套 / 275 条**。
-
-## 0.50.34
-
-**PTC 工具门控 + 会话投影安全。**
-
-- 工具注册加 when：标准/非 PTC 会话不再列出 plasticize/retrospect/letter；
-- 旧会话无 preset 记录时保持兼容；
-- pmGenerations wire.summary:false；stateVersion 9；view 对任意 state 安全；
-- 55e 捕获 22/22 一致；历史 g0 的 locked 单元可见。
-
-全套 **14 套 / 275 条**。
-
-## 0.50.33
-
-**修复 pmGenerations 投影导致重启后会话不可用。**
-
-- wire.summary:false，不再把整份世代 wire 塞进会话列表/打开基线；
-- stateVersion 8→9；
-- stateSchema 归一化缺字段；viewSchema 兜底；
-- view() 对任何 state 都不抛，且同 state 返回同一引用；
-- positions 文档明确：[3,7] 是两个单元，闭区间必须写字符串 '[3,7]'。
-
-全套 **14 套 / 271 条**。
-
-## 0.50.32
-
-**compact messages 把 reasoning 计入 text。**
-
-- assistant 只有 reasoning + tool-call 时，text 不再为空；
-- textOf 接受任意 content block 的 text 字段；
-- 50ca 的 7 号单元现在能看到思考正文。
-
-全套 **14 套 / 271 条**。
-
-## 0.50.31
-
-**retrospect 收敛为模型可过滤的紧凑消息。**
-
-- 去掉 role / boundary / safety / id / source；
-- 每条 {n,unit,type,text,calls?,locked?}；
-- type 按旧规则：system/user/developer/assistant/tool/agent/skill/other；
-- locked 与 safety 合并；
-- self 与历史都走 capture/DSH 消息前缀 + compact；
-- preview=true 返回裁剪 text 的 messages。
-
-全套 **14 套 / 271 条**。
-
-## 0.50.30
-
-**self retrospect 不再包含当前 assistant 输出。**
-
-- 工具执行时当前 assistant/tool-call 已在 surface，但它不是本次请求输入；
-- self cutoff = 最新 assistant/message 的 seq；
-- 修复 self 12→14→16→18 的自增长；
-- 878a 的 6 次 self 边界与 capture 逐字节一致（11/13/15/17/19/21）。
-
-全套 **14 套 / 271 条**。
-
-## 0.50.29
-
-**retrospect 基线：DSH 消息管线 + Message[]。**
-
-- 新增 messagesAt(session, cutoff)：日志前缀交给 DSH Session，deriveMessages()；
-- self 返回当前 Message[]；
-- 历史世代 cutoff = 产生该 execute 的请求，取边界前最后一条 assistant 的 seq；
-- 返回 {logical,count,messages,letter}，不再返回手搓 {role,text,time}；
-- 6d 会话 g0 与 capture 17/17 逐字节一致；
-- units:true 保留旧单元迁移视图。
-
-全套 **14 套 / 271 条**。
-
-## 0.50.29
-
-**retrospect 切到 DSH 消息管线，并以 capture 为基线。**
-
-- messagesAt：日志前缀 → DSH Session → deriveMessages()；
-- self 返回当前 Message[]；
-- 历史世代取边界前最后一条 assistant 的 seq 作为输入 cutoff；
-- 返回 {logical,count,messages,letter}，不再手搓 text 视图；
-- units:true 保留旧单元视图；
-- 基线：6d/5c/10bf 各 g0 与 capture 逐字节一致；76e5 的 11 个世代 11/11 一致。
-
-全套 **14 套 / 271 条**。
-
-## 0.50.28
-
-**单元号对 tool/subtool 行做最近单元兜底。**
-
-- 直接 unitOfSeq 查不到 sourceSeq 时，找 seq 距离最近的单元；
-- 避免 tool 行没有编号、与 retrospect 编号错位；
-- UI 排序仍保持旧实现。
-
-全套 **14 套 / 269 条**。
-
-## 0.50.27
-
-**UI 回退到旧实现，仅加单元号。**
-
-- client-glue.js / client-patches.js 恢复 old 分支的排序、分组、徽标逻辑；
-- 去掉后来加的 firstCellIndex / toTurnModel / virtual row / page filter 等补丁；
-- 只在正文前缀加 #n；
-- 保留旧版物理/逻辑页签。
-
-全套 **14 套 / 269 条**。
-
-## 0.50.26
-
-**虚拟行优先按 callId 归属单元。**
-
-- tool/subtool cell 的 sourceSeq 可能缺失或不在 page.seqs；
-- 现在用 meta.calls 建 callId→unit 映射，再按根 callId（:ptc: 前缀前）定位；
-- 仍以 sourceSeq/最近 surface 作为兜底；
-- 修复 #8 完成语被排到 #7 工具行之前。
-
-全套 **14 套 / 269 条**。
-
-## 0.50.25
-
-**虚拟行按单元号重排，工具行跟随所属 assistant。**
-
-- applyReshapeVirtualRows 不再原样返回；
-- row 内 cell.sourceSeq 映射到当前页 unitOfSeq，取最小单元号；
-- tool/subtool 行按最近 surface 单元归属；
-- 修复完成语 #8 插在 #7 工具行之前。
-
-全套 **14 套 / 269 条**。
-
-## 0.50.24
-
-**tool/subtool 行映射到所属 assistant 单元的 surface 位置。**
-
-- tool/call、ptc-dispatch 的 sourceSeq 不在 page.seqs 时，按不大于 sourceSeq 的最近 surface seq 定位；
-- 不再回退旧 cell.index；
-- 修复完成语 #8 被插到 #7 与其工具调用之间。
-
-全套 **14 套 / 269 条**。
-
-## 0.50.23
-
-**unlock all 恢复；只删除开区间语法。**
-
-- 回退 0.50.22 的整段区间删除；
-- unlock all 走 mode:all，不再把 all 当 selector；
-- lock all 仍取消；
-- 保留闭区间 [start,end]；
-- 删除 (start,end)、[start,end)、(start,end] 等开/半开区间。
-
-全套 **14 套 / 269 条**。
-
-## 0.50.21
-
-**turn 内 cell 按 surface pos 重排，并拆分交错的 step group。**
-
-- 同一 turn 里 replacement developer 和后续 assistant 同属 step3 时，旧 group 会把 assistant 提前；
-- 现在先把所有 cells 按 page.seqs 排序，再按原 group title 合并连续段；
-- firstCellIndex 同步用 surface pos；
-- L1 与 seq74 捕获 17/17 完全一致。
-
-全套 **14 套 / 269 条**。
-
-## 0.50.20
-
-**回退展示层过度排序与重复徽标，恢复旧版 UI。**
-
-- 移除 firstCellIndex / toTurnModel / cell.index 的额外重排，只保留旧版 records + layoutEntryOrder；
-- 移除类型列重复的 diffTypeTag；差异徽标回到正文前缀，只显示一次；
-- 移除历史页按 page.seqs 过滤节点，避免把 #7 等节点过滤掉；
-- 只过滤 compaction 日志节点；
-- 保留单元 #n 与逻辑世代。
-
-全套 **14 套 / 269 条**。
-
-## 0.50.19
-
-**类型列重新显示被塑形/已塑形徽标。**
-
-- 官方类型文字保留；
-- 差异徽标同时注入类型列；
-- 替换消息在后续世代页仍显示已塑形；
-- 页面最终 turns/groups/cells 都由 __PM_SEQ_ORDER__ 排序。
-
-全套 **14 套 / 269 条**。
-
-## 0.50.18
-
-**turn 内 step/cell 也按 surface 排序；已塑形跨页保留徽标。**
-
-- toTurnModel 在渲染前按 __PM_SEQ_ORDER__ 重排 groups/cells；
-- firstCellIndex 与 cell.index 都已 surface 化；
-- 替换消息在后续世代页仍显示已塑形；
-- 被塑形目标由 next replacement 的 shadowed 标记。
-
-全套 **14 套 / 269 条**。
-
-## 0.50.17
-
-**修复展示层最后一次 cell.index 排序。**
-
-- applyReshapeRecords 重排 records 后，把新的 surface 顺序写回 cell.index；
-- 官方表格 firstCellIndex 不再按旧索引把 #8 排到 #6/#7 前面；
-- 页面行顺序、单元号、retrospect 顺序一致。
-
-全套 **14 套 / 269 条**。
-
-## 0.50.16
-
-**auto-hide 只在本次边界包含 execute 时运行。**
-
-- 删除 autoOnly 路径；没有 plasticize 声明的请求边界不再 auto-hide；
-- set/error/letter/retrospect 的 tool result 不会在模型消费前被吞；
-- 这修复了“没调用 plasticize 却 auto-hide，导致 retrospect 无限循环”。
-
-全套 **14 套 / 269 条**。
-
-## 0.50.15
-
-**auto-hide 不再吞掉最新 assistant 单元的结果。**
-
-- auto-hide 跳过包含最新 assistant/message 的单元；
-- retrospect / set / error 的 tool result 至少保留到模型消费一次；
-- 修复模型看不到 retrospect 结果、无限重试的问题；
-- 旧单元仍会在后续边界隐藏。
-
-全套 **14 套 / 269 条**。
-
-## 0.50.14
-
-**世代页只渲染该页 surface 节点，单元号严格按页面顺序。**
-
-- 历史世代页过滤掉不在 page.seqs 的 eventNodes；
-- 单元号只从当前所选页的 unitOfSeq 取，不再回退到 live 页；
-- 修复 #5/#8/#6/#7 这类非单调编号；
-- 页面顺序 = API messages 顺序 = retrospect 单元顺序。
-
-全套 **14 套 / 269 条**。
-
-## 0.50.13
-
-**空 developer 黑洞不再计入单元。**
-
-- 自动隐藏/纯 hide 写出的空 developer 是 surface 空洞，不是模型消息；
-- units 与 generations 的单元编号跳过这些空洞；
-- retrospect(self).count 不再被 auto-hide 空洞逐步撑大；
-- e2a3f045 当前单元数 12，与捕获的 API messages 数一致。
-
-全套 **14 套 / 269 条**。
-
-## 0.50.12
-
-**修复 positions 在 tool set 预览阶段的解析。**
-
-- tool handler 的 set/execute 预览分支原先直接调用 resolveOps，positions 会触发 op.spans is not iterable；
-- 现在与 engine 一致，positions 走 resolveUnitOps，spans 走旧 resolveOps。
-
-全套 **14 套 / 269 条**。
-
-## 0.50.11
-
-**世代页只显示模型消息。**
-
-- 历史世代页过滤掉 compaction 等非消息节点；
-- 不再合成/替换官方 compaction 行；
-- 压缩只以 checkpoint 摘要消息的形式出现；
-- 官方轨迹页保持自己的事件视图。
-
-全套 **14 套 / 269 条**。
-
-## 0.50.10
-
-**物理页随 append 增长到下一个 replacement。**
-
-- 当前物理页快照在 append 时更新，不再冻结在 replacement 那一刻；
-- 因此 L2 页包含 C2 之后直到 C3 之前的全部消息；
-- 官方 compaction 节点替换为下一条完整压缩，显示 C3 的 77 轮摘要；
-- stateVersion 仍为 8（此前的 8 已包含 compactions 元数据）。
-
-全套 **14 套 / 269 条**。
-
-## 0.50.9
-
-**官方压缩节点跟随正确的下一边界。**
-
-- 保存 compaction start/summary/end/checkpoint 元数据；
-- 每个世代页把官方 running compaction 节点替换为“下一条完整压缩”；
-- L2 页显示 77 轮压缩摘要，而不是 40 轮 running 文案；
-- stateVersion 升到 8。
-
-全套 **14 套 / 269 条**。
-
-## 0.50.8
-
-**物理世代改为 replacement 之后的快照，压缩事件交给官方装配器。**
-
-- page 0 是第一次 replacement 之前的初始 surface；
-- page g 是完成 g 次 replacement 之后的 surface；
-- compaction/start、summary、end 不再被 hiddenSteps/替代区间过滤；
-- 页面 cutoff 包含 checkpoint；官方 trajectory-compaction 节点自行渲染“已压缩”；
-- 移除自定义压缩边界 badge。
-
-全套 **14 套 / 269 条**。
-
-## 0.50.7
-
-**恢复官方样式的压缩边界标记。**
-
-- 旧页末尾在下一个 compaction 边界前显示“已压缩”；
-- 使用官方 compacted 配色与 type tag 尺寸；
-- 保留单行物理/逻辑 pager；
-- 物理轴仍是唯一 surface 轴。
-
-全套 **14 套 / 269 条**。
-
-## 0.50.6
-
-**pager 恢复旧版单行布局。**
-
-- 物理页和逻辑页在同一行；
-- 逻辑组用左侧分隔线隔开，不再上下两排；
-- 顶栏高度回到旧实现；
-- 保留物理轴 + 逻辑标签映射。
-
-全套 **14 套 / 269 条**。
-
-## 0.50.5
-
-**恢复物理/逻辑两排页签。**
-
-- 物理页仍为唯一 surface 轴；
-- 物理页按钮只显示物理号；
-- 逻辑页单独一排，L0..Ln 直接跳对应物理页；
-- 移除物理按钮内联的 L 标签；
-- 保留 #n 单元序号。
-
-全套 **14 套 / 269 条**。
-
-## 0.50.4
-
-**回退到物理世代唯一轴；逻辑世代只是物理页标签。**
-
-- G0 固定对应 physical 0；
-- 每次边界只把逻辑标签挂到某个物理页；不再生成合成逻辑页；
-- 最新物理页承载最新逻辑世代；
-- pager 只显示物理页，逻辑号作为按钮内小标签；
-- 移除双 pager、自定义“已压缩”徽标；压缩事件交回官方轨迹行。
-
-全套 **14 套 / 269 条**。
-
-## 0.50.3
-
-**修复传统会话初始世代、压缩事件样式与双 pager。**
-
-- 纯压缩会话显式加入 G0 初始页，压缩后依次为 G1..Gn；
-- acb02be6 不再出现逻辑 2/3 指向同一物理页；
-- 旧页末尾的“已压缩”改为官方 compacted 配色，并放回类型列；
-- 世代栏同时显示物理页组和逻辑页组；
-- 类型列显示 #n 单元序号。
-
-全套 **14 套 / 269 条**。
-
-## 0.50.2
-
-**修复逻辑页重复、恢复物理/逻辑双 pager、序列号显示。**
-
-- 压缩后无新物理页时，不再多造一个重复的“下一逻辑页”（acb 的 2/3 重复修复）；
-- 世代栏同时显示物理页和逻辑页；
-- 类型列显示 #n 单元序号；
-- 移除 pm 兼容 preset；profile 的 selectedDefault 需改为 ptc；
-- 保持 stateVersion 7 的 boundaries 持久化修复。
-
-全套 **14 套 / 269 条**。
-
-## 0.50.1
-
-**修复世代边界丢失与 pm preset 兼容。**
-
-- `generations.js` 的 surface append/replace 状态不再丢掉 `boundaries`；
-- compaction checkpoint 先记边界再执行 surface replace，物理页和逻辑页一致；
-- `GENERATIONS_STATE_VERSION` 升到 7，旧投影缓存失效；
-- 重新生成 `pm` 兼容 preset：等价 PTC（保留 compaction），不重复挂 PM 插件，修复 `Unknown agent preset: pm`；
-- 新增压缩边界跨后续 append 的回归测试。
-
-全套 **14 套 / 269 条**。
-
-## 0.50.0
-
-**通用 PTC-only 重构（WIP）：取消 PM preset/cookie，改为世代单元序号。**
-
-- `retrospect(self)` 返回当前世代单元数组，0 起；系统提示词 = 0；assistant + 工具结果 = 一个单元；
-- `plasticize` 使用 `positions` 单元序号；`this` 自噬替换生成 execute 的单元；
-- retrospect 默认 `preview:true`；单元含 type / autoInjected / safety / locked；
-- 自动隐藏：所有 set、报错 PM 工具、letter、retrospect；execute 不自动隐藏；
-- 安全区改为单元序号，最多 64 单元；自动补充类型不可锁；压缩后重放锁定原文；
-- 逻辑边界合并 PM private events 与成功 compaction checkpoint；
-- bundle 全局注册，不再依赖 PM preset；生产 cookie 注入移除；
-- 世代选项卡显示当前世代 `#n`，逻辑 pager 优先；
-
-当前全套 **14 套 268 条**。
-
-## 0.49.14
-
-**新增独立 PM 语义审计器 verify.js + verifytest。**
-
-- 不 import engine，直接回放事件检查：sourceEventSeqs/refs 是否精确等于 shadowed surface、替代内容与 op 形状、declaration/failed 对应、逻辑事件编号与物理页、锁记录是否在 surface/已锁/prelock 目标；
-- 在最新真实会话 76e53f1c 上审计 0 错误；
-- verifytest 覆盖正常通过 + sourceEventSeqs 缺节点/替代内容错误/锁定非 surface seq 三类变异均能抓出；
-- 这是“翻译结果事件级一致性”审计；ops→区间的独立参考解释器仍可作为下一层 differential 校验。
-
-全套 **18 套 670 条**。
-
-## 0.49.13
